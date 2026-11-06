@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <string>
 #include <vector>
 using u64 = std::uint64_t;
 static inline u64 step(u64 x) { return x * 6364136223846793005ULL + 1442695040888963407ULL; }
