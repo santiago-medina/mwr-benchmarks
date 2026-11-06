@@ -1,0 +1,37 @@
+name: C++ vs Rust benchmark
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'cpp/**'
+      - 'rust/**'
+      - 'scripts/**'
+      - '.github/workflows/benchmark.yml'
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust
+        run: |
+          rustc --version
+          g++ --version
+      - name: Build optimized binaries
+        run: |
+          mkdir -p build
+          g++ -std=c++17 -O3 -DNDEBUG cpp/bench.cpp -o build/cpp_bench
+          rustc -C opt-level=3 -C target-cpu=x86-64 rust/bench.rs -o build/rust_bench
+      - name: Run benchmarks
+        run: python3 scripts/run.py
+      - name: Publish job summary
+        if: success()
+        run: cat results/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-results
+          path: results/
+          if-no-files-found: ignore
