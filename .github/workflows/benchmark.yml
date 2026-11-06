@@ -35,6 +35,16 @@ jobs:
           nm -C --defined-only build/rust_sort > results/assembly/rust_symbols.txt
           g++ --version > results/assembly/compiler_versions.txt
           rustc --version >> results/assembly/compiler_versions.txt
+      - name: Build identical heapsort implementations
+        run: |
+          g++ -std=c++17 -O3 -DNDEBUG -g cpp/heapsort_bench.cpp -o build/cpp_heapsort
+          rustc -C opt-level=3 -C debuginfo=1 -C target-cpu=x86-64 rust/heapsort_bench.rs -o build/rust_heapsort
+          objdump -d -C -M intel build/cpp_heapsort > results/assembly/cpp_heapsort.asm
+          objdump -d -C -M intel build/rust_heapsort > results/assembly/rust_heapsort.asm
+          nm -C --defined-only build/cpp_heapsort > results/assembly/cpp_heapsort_symbols.txt
+          nm -C --defined-only build/rust_heapsort > results/assembly/rust_heapsort_symbols.txt
+      - name: Compare identical heapsort algorithms
+        run: python3 scripts/compare_heapsort.py
       - name: Sorting-only controlled comparison
         run: python3 scripts/sort_compare.py
       - name: Run benchmarks
@@ -45,6 +55,8 @@ jobs:
           cat results/summary.md >> "$GITHUB_STEP_SUMMARY"
           printf '\\n' >> "$GITHUB_STEP_SUMMARY"
           cat results/sorting.md >> "$GITHUB_STEP_SUMMARY"
+          printf '\\n' >> "$GITHUB_STEP_SUMMARY"
+          cat results/identical_heapsort.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
