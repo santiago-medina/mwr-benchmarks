@@ -43,6 +43,13 @@ jobs:
           objdump -d -C -M intel build/rust_heapsort > results/assembly/rust_heapsort.asm
           nm -C --defined-only build/cpp_heapsort > results/assembly/cpp_heapsort_symbols.txt
           nm -C --defined-only build/rust_heapsort > results/assembly/rust_heapsort_symbols.txt
+      - name: Build safe Rust heapsort and archive disassembly
+        run: |
+          rustc -C opt-level=3 -C debuginfo=1 -C target-cpu=x86-64 rust/heapsort_safe_slice.rs -o build/rust_safe_slice
+          objdump -d -C -M intel build/rust_safe_slice > results/assembly/rust_safe_slice.asm
+          nm -C --defined-only build/rust_safe_slice > results/assembly/rust_safe_slice_symbols.txt
+      - name: Compare safe Rust heapsort with original implementations
+        run: python3 scripts/compare_safe_slice.py
       - name: Compare identical heapsort algorithms
         run: python3 scripts/compare_heapsort.py
       - name: Sorting-only controlled comparison
@@ -57,6 +64,8 @@ jobs:
           cat results/sorting.md >> "$GITHUB_STEP_SUMMARY"
           printf '\\n' >> "$GITHUB_STEP_SUMMARY"
           cat results/identical_heapsort.md >> "$GITHUB_STEP_SUMMARY"
+          printf "\\n" >> "$GITHUB_STEP_SUMMARY"
+          cat results/safe_slice.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
