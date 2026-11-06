@@ -1,0 +1,30 @@
+name: MWR Security Lab — Chromium URL triage
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * *'
+  push:
+    branches: [main]
+    paths:
+      - 'security-lab/**'
+      - '.github/workflows/security-lab.yml'
+permissions:
+  contents: read
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unit tests
+        run: python3 -m unittest discover -s security-lab -p 'test_*.py' -v
+      - name: Fetch selected public Chromium sources and generate review report
+        run: python3 security-lab/audit.py --output security-lab/results
+      - name: Append report to workflow summary
+        run: cat security-lab/results/report.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-lab-review
+          path: security-lab/results/
+          if-no-files-found: ignore
