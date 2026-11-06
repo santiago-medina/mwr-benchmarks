@@ -24,11 +24,27 @@ jobs:
           mkdir -p build
           g++ -std=c++17 -O3 -DNDEBUG cpp/bench.cpp -o build/cpp_bench
           rustc -C opt-level=3 -C target-cpu=x86-64 rust/bench.rs -o build/rust_bench
+      - name: Build sorting-only binaries and disassembly
+        run: |
+          g++ -std=c++17 -O3 -DNDEBUG -g cpp/sort_bench.cpp -o build/cpp_sort
+          rustc -C opt-level=3 -C debuginfo=1 -C target-cpu=x86-64 rust/sort_bench.rs -o build/rust_sort
+          mkdir -p results/assembly
+          objdump -d -C -M intel build/cpp_sort > results/assembly/cpp_sort.asm
+          objdump -d -C -M intel build/rust_sort > results/assembly/rust_sort.asm
+          nm -C --defined-only build/cpp_sort > results/assembly/cpp_symbols.txt
+          nm -C --defined-only build/rust_sort > results/assembly/rust_symbols.txt
+          g++ --version > results/assembly/compiler_versions.txt
+          rustc --version >> results/assembly/compiler_versions.txt
+      - name: Sorting-only controlled comparison
+        run: python3 scripts/sort_compare.py
       - name: Run benchmarks
         run: python3 scripts/run.py
       - name: Publish job summary
         if: success()
-        run: cat results/summary.md >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          cat results/summary.md >> "$GITHUB_STEP_SUMMARY"
+          printf '\\n' >> "$GITHUB_STEP_SUMMARY"
+          cat results/sorting.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
