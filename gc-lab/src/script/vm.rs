@@ -12,6 +12,7 @@ pub enum ScriptError {
     Syntax(SyntaxError),
     Runtime(&'static str),
     Memory(Error),
+    Host(String),
 }
 impl From<Error> for ScriptError {
     fn from(e: Error) -> Self {
@@ -67,6 +68,10 @@ pub struct Engine {
     step_limit: usize,
     call_depth: usize,
     pub(super) native_depth: usize,
+    pub(super) adapter: Option<Box<dyn super::adapter::DomAdapter>>,
+    pub(super) remote_nodes: HashMap<Id, u64>,
+    pub(super) adapter_error: Option<String>,
+    pub(super) pending_release: Vec<u64>,
 }
 
 impl Engine {
@@ -81,6 +86,10 @@ impl Engine {
             step_limit: 10_000,
             call_depth: 0,
             native_depth: 0,
+            adapter: None,
+            remote_nodes: HashMap::new(),
+            adapter_error: None,
+            pending_release: vec![],
         })
     }
     pub fn set_stress(&mut self, enabled: bool) {
@@ -106,7 +115,49 @@ impl Engine {
     }
     pub fn collect(&mut self) {
         self.runtime.collect();
+        self.prune_metadata();
+    }
+    pub(super) fn prune_metadata(&mut self) {
+        let dead: Vec<_> = self
+            .remote_nodes
+            .iter()
+            .filter(|(id, _)| self.runtime.value(**id).is_err())
+            .map(|(_, remote)| *remote)
+            .collect();
+        self.remote_nodes
+            .retain(|id, _| self.runtime.value(*id).is_ok());
         self.objects.retain(|id, _| self.runtime.value(*id).is_ok());
+        self.pending_release.extend(dead);
+        self.flush_remote_releases();
+    }
+    pub(super) fn queue_remote_release(&mut self, remote: u64) {
+        self.pending_release.push(remote);
+        self.flush_remote_releases();
+    }
+    fn flush_remote_releases(&mut self) {
+        if self.pending_release.is_empty() {
+            return;
+        }
+        if let Some(adapter) = self.adapter.as_mut() {
+            match adapter.release(&self.pending_release) {
+                Ok(()) => {
+                    self.pending_release.clear();
+                    self.adapter_error = None;
+                }
+                Err(error) => self.adapter_error = Some(error),
+            }
+        }
+    }
+    pub fn host_error(&self) -> Option<&str> {
+        self.adapter_error.as_deref()
+    }
+    pub fn set_dom_adapter(&mut self, adapter: Box<dyn super::adapter::DomAdapter>) -> Result<()> {
+        if self.runtime.live_objects() != 0 || !self.pending_release.is_empty() {
+            return Err(ScriptError::Runtime("attach adapter before executing"));
+        }
+        self.adapter = Some(adapter);
+        self.adapter_error = None;
+        Ok(())
     }
     pub fn release_globals(&mut self) {
         if let Some(global) = self.global.take() {
@@ -151,9 +202,12 @@ impl Engine {
         if self.stress {
             self.collect();
         }
+        if let Some(error) = self.adapter_error.clone() {
+            return Err(ScriptError::Host(error));
+        }
         let result = self.runtime.allocate(domain, tag, 64);
         // The budget can trigger backend collection even with stress disabled.
-        self.objects.retain(|id, _| self.runtime.value(*id).is_ok());
+        self.prune_metadata();
         Ok(result?)
     }
     pub(super) fn protect(&mut self, value: &Value) -> Result<()> {

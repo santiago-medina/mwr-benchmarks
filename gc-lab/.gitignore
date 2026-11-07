@@ -1,1 +1,4 @@
 /target/
+/.servo-test/
+/servo-results/
+/__pycache__/
