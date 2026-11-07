@@ -1,0 +1,100 @@
+{
+  "node_version": "v24.22.1",
+  "cases": [
+    {
+      "case": "button",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "captured-string",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "returned-node",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "argument-temporaries",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "unicode",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "deduplicate-listener",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "removed-before-turn",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "temporal-dead-zone",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "callback-error",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "early-duplicate",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "ordinary-descriptors",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "reflect-receiver",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "finally-completion",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "bound-constructor",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "strict-this",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "strict-arguments",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "error-constructor-identity",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "global-variable-property",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    },
+    {
+      "case": "counter-object-state",
+      "matches_node_mock": true,
+      "released_all_objects_and_roots": true
+    }
+  ]
+}

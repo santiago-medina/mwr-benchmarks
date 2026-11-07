@@ -54,3 +54,26 @@ varios programas por documento, reentrada de callbacks ni `.click()` desde el
 programa experimental. La navegación normal limpia handles/listeners antes de
 destruir el runtime; el teardown tras un pánico solo descarta las raíces propias.
 No es un motor JS compatible con la web ni un sandbox para páginas no confiables.
+
+## Aplicación con objetos y compilaciones reutilizables
+
+```sh
+python3 gc-lab/servo-native/run.py \
+  --servo gc-lab/.servo-native/target/debug/servoshell \
+  --fixture gc-lab/servo-native/object-fixture.html \
+  --before 'Cuenta: 0' --after 'Cuenta: 1' \
+  --output gc-lab/native-object-results
+```
+
+El contador comprueba estado ordinario, getters/setters y el receptor real del
+listener. Se ejecutan además los controles de backend deshabilitado, espera sin
+click, CSP y sintaxis inválida. La prueba de 1.500 ciclos y dos navegaciones se
+mantiene como regresión independiente.
+
+Para evitar recompilar Servo en cada checkpoint, `servo-native` se activa con
+`[servo]` en el mensaje del commit de push o mediante `workflow_dispatch`.
+Los contratos siguen ejecutándose en commits normales; `[skip ci]` queda
+reservado a puntos de control incompletos. La caché de Actions reutiliza el target
+con la misma versión de Servo y Rust, y solo limpia los cuatro paquetes de
+integración antes de compilarlos. No hay una ABI estable de crates Rust: cambiar
+el toolchain o las features requiere una caché compatible o recompilar.

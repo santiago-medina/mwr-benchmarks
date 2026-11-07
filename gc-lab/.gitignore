@@ -9,3 +9,4 @@ __pycache__/
 
 .test262-source/
 conformance/results/cases.json
+/native-object-results/

@@ -1,12 +1,97 @@
 [
-  {"name":"button","binding":"button","source":"const button = document.createElement('button'); button.addEventListener('click', () => { button.textContent = 'Funciona'; }); button.click();"},
-  {"name":"captured-string","binding":"result","source":"const make = (x) => { return () => { return x; }; }; const f = make('captured'); const result = f();"},
-  {"name":"returned-node","binding":"button","source":"const make = (label) => { const n = document.createElement('button'); n.addEventListener('click', () => { n.textContent = label; }); return n; }; const button = make('kept'); button.click();"},
-  {"name":"argument-temporaries","binding":"result","source":"const first = (a,b) => { return a; }; const make = (x) => { return () => { return x; }; }; const f = first(make('first'), make('second')); const result = f();"},
-  {"name":"unicode","binding":"button","source":"const button = document.createElement('button'); button.textContent = 'Sí, funciona\\n';"},
-  {"name":"deduplicate-listener","binding":"button","source":"const button = document.createElement('button'); const handler = () => { button.removeEventListener('click', handler); button.click(); button.textContent = 'once'; }; button.addEventListener('click', handler); button.addEventListener('click', handler); button.click();"},
-  {"name":"removed-before-turn","binding":"button","source":"const button = document.createElement('button'); const second = () => { button.textContent = 'wrong'; }; const first = () => { button.removeEventListener('click', second); button.textContent = 'first'; }; button.addEventListener('click', first); button.addEventListener('click', second); button.click();"},
-  {"name":"temporal-dead-zone","binding":"result","source":"const result = result;"},
-  {"name":"callback-error","binding":"button","source":"const button = document.createElement('button'); button.addEventListener('click', () => { missing(); }); button.click();"},
-  {"name":"early-duplicate","binding":"result","source":"const f = () => { const x = 'a'; const x = 'b'; }; const result = 'unused';"}
+  {
+    "name": "button",
+    "binding": "button",
+    "source": "const button = document.createElement('button'); button.addEventListener('click', () => { button.textContent = 'Funciona'; }); button.click();"
+  },
+  {
+    "name": "captured-string",
+    "binding": "result",
+    "source": "const make = (x) => { return () => { return x; }; }; const f = make('captured'); const result = f();"
+  },
+  {
+    "name": "returned-node",
+    "binding": "button",
+    "source": "const make = (label) => { const n = document.createElement('button'); n.addEventListener('click', () => { n.textContent = label; }); return n; }; const button = make('kept'); button.click();"
+  },
+  {
+    "name": "argument-temporaries",
+    "binding": "result",
+    "source": "const first = (a,b) => { return a; }; const make = (x) => { return () => { return x; }; }; const f = first(make('first'), make('second')); const result = f();"
+  },
+  {
+    "name": "unicode",
+    "binding": "button",
+    "source": "const button = document.createElement('button'); button.textContent = 'S\u00ed, funciona\\n';"
+  },
+  {
+    "name": "deduplicate-listener",
+    "binding": "button",
+    "source": "const button = document.createElement('button'); const handler = () => { button.removeEventListener('click', handler); button.click(); button.textContent = 'once'; }; button.addEventListener('click', handler); button.addEventListener('click', handler); button.click();"
+  },
+  {
+    "name": "removed-before-turn",
+    "binding": "button",
+    "source": "const button = document.createElement('button'); const second = () => { button.textContent = 'wrong'; }; const first = () => { button.removeEventListener('click', second); button.textContent = 'first'; }; button.addEventListener('click', first); button.addEventListener('click', second); button.click();"
+  },
+  {
+    "name": "temporal-dead-zone",
+    "binding": "result",
+    "source": "const result = result;"
+  },
+  {
+    "name": "callback-error",
+    "binding": "button",
+    "source": "const button = document.createElement('button'); button.addEventListener('click', () => { missing(); }); button.click();"
+  },
+  {
+    "name": "early-duplicate",
+    "binding": "result",
+    "source": "const f = () => { const x = 'a'; const x = 'b'; }; const result = 'unused';"
+  },
+  {
+    "name": "ordinary-descriptors",
+    "binding": "result",
+    "source": "const p={get x(){return this.y;},set x(v){this.y=v;}};const o=Object.create(p);o.x=7;const result=String(o.x)+':'+String(p.y);"
+  },
+  {
+    "name": "reflect-receiver",
+    "binding": "result",
+    "source": "const p={get x(){return this.y;}};const result=String(Reflect.get(p,'x',{y:9}));"
+  },
+  {
+    "name": "finally-completion",
+    "binding": "result",
+    "source": "function f(){try{return {x:7};}finally{const scratch={a:{}};}}const result=String(f().x);"
+  },
+  {
+    "name": "bound-constructor",
+    "binding": "result",
+    "source": "function C(x,y){this.sum=x+y;}const B=C.bind({},3);const x=new B(5);const result=String(x.sum)+':'+String(x instanceof C)+':'+String(x instanceof B);"
+  },
+  {
+    "name": "strict-this",
+    "binding": "result",
+    "source": "function f(){return this;}const o={f:f};const result=String(f()===undefined)+':'+String(o.f()===o);"
+  },
+  {
+    "name": "strict-arguments",
+    "binding": "result",
+    "source": "function f(x){x=5;return String(arguments[0])+':'+String(x);}const result=f(4);"
+  },
+  {
+    "name": "error-constructor-identity",
+    "binding": "result",
+    "source": "let result='';try{throw new RangeError('bad');}catch(e){result=String(e.constructor===RangeError)+':'+e.message;}"
+  },
+  {
+    "name": "global-variable-property",
+    "binding": "result",
+    "source": "Object.defineProperty(Object.prototype,'prop',{value:1});var prop=2;this.prop=3;const result=String(prop)+':'+String(this.hasOwnProperty('prop'));"
+  },
+  {
+    "name": "counter-object-state",
+    "binding": "button",
+    "source": "const model = {\n  _count: 0,\n  increment: function () { this.count = this.count + 1; },\n  get label() { return 'Cuenta: ' + String(this.count); }\n};\nObject.defineProperty(model, 'count', {\n  get: function () { return this._count; },\n  set: function (value) {\n    if (value < 0) { throw new RangeError('negative count'); }\n    this._count = value;\n  },\n  enumerable: true\n});\nconst button = document.createElement('button');\nbutton.addEventListener('click', function () {\n  try {\n    model.increment();\n    this.textContent = model.label;\n  } catch (error) {\n    this.textContent = error.message;\n  }\n});\nbutton.textContent = model.label;\n\nbutton.click();button.click();"
+  }
 ]

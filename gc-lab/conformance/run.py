@@ -18,7 +18,9 @@ def main():
     p.add_argument('--binary',type=Path,default=HERE.parent/'target/release/js_check')
     p.add_argument('--output',type=Path,default=HERE/'results')
     p.add_argument('--record-baseline',action='store_true')
+    p.add_argument('--check-baseline',action='store_true',help='gate on lost passes and newly failing cases; known failures stay reported')
     args=p.parse_args(); binary=args.binary.resolve(); root=args.source.resolve()/'test'
+    assert (args.source/'.revision').read_text().strip()==REVISION, 'Use the pinned verified source from fetch.py'
     cases=sorted({path for scope in SCOPES for path in (root/scope).rglob('*.js') if not path.name.endswith('_FIXTURE.js')})
     assert all((root/scope).is_dir() for scope in SCOPES), 'Missing scope'
     def run(path):
@@ -44,11 +46,22 @@ def main():
     counts=dict(collections.Counter(r['status'] for r in results)); passing=sorted(r['path'] for r in results if r['status']=='passed')
     baseline=HERE/'required-pass.json'; required=json.loads(baseline.read_text()) if baseline.exists() else []
     regressions=sorted(set(required)-set(passing))
-    summary=dict(revision=REVISION,variant='strict script only; standard strict prefix; original test body',scopes=SCOPES,total=len(results),counts=counts,assertions=sum(r['assertions'] for r in results),regressions=regressions,unsupported_reasons=dict(collections.Counter(r['reason'] for r in results if r['status']=='unsupported')),failures=[r for r in results if r['status']=='failed'])
+    known_file=HERE/'known-failures.json'
+    known=json.loads(known_file.read_text()) if known_file.exists() else []
+    new_failures=sorted(r['path'] for r in results if r['status']=='failed' and r['path'] not in known)
+    implementation=hashlib.sha256()
+    for path in sorted((HERE.parent/'src').rglob('*.rs')):
+        implementation.update(path.relative_to(HERE.parent).as_posix().encode()+b'\0'+path.read_bytes())
+    summary=dict(revision=REVISION,archive_sha256='01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb',implementation_sha256=implementation.hexdigest(),runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),new_failures=new_failures,variant='strict script only; standard strict prefix; original test body',scopes=SCOPES,total=len(results),counts=counts,assertions=sum(r['assertions'] for r in results),regressions=regressions,unsupported_reasons=dict(collections.Counter(r['reason'] for r in results if r['status']=='unsupported')),failures=[r for r in results if r['status']=='failed'])
     args.output.mkdir(parents=True,exist_ok=True)
     (args.output/'cases.json').write_text(json.dumps(results,indent=2)+'\n')
     (args.output/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
-    if args.record_baseline: baseline.write_text(json.dumps(passing,indent=2)+'\n')
+    if args.record_baseline:
+        baseline.write_text(json.dumps(passing,indent=2)+'\n')
+        known_file.write_text(json.dumps(sorted(r['path'] for r in results if r['status']=='failed'),indent=2)+'\n')
     print(json.dumps({k:summary[k] for k in ('revision','total','counts','assertions','regressions')},indent=2))
+    if args.check_baseline:
+        assert required and known_file.exists(), 'A reviewed baseline is required'
+        return bool(regressions or new_failures)
     return bool(regressions or counts.get('failed',0))
 if __name__=='__main__': raise SystemExit(main())

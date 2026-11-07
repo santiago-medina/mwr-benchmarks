@@ -16,10 +16,10 @@ process.stdin.on('end', () => {
     constructor(tag) { this.tagName = tag.toUpperCase(); this.textContent = ''; this.listeners = []; }
     addEventListener(event, callback) { if (event !== 'click') throw Error('unsupported'); if (!this.listeners.includes(callback)) this.listeners.push(callback); }
     removeEventListener(event, callback) { if (event !== 'click') throw Error('unsupported'); this.listeners = this.listeners.filter(x => x !== callback); }
-    click() { for (const callback of [...this.listeners]) if (this.listeners.includes(callback)) callback(); }
+    click() { for (const callback of [...this.listeners]) if (this.listeners.includes(callback)) callback.call(this); }
   }
   try {
-    const value = vm.runInNewContext(source + '\n;' + binding, {document: {createElement: tag => new Node(tag)}}, {timeout: 1000});
+    const value = vm.runInNewContext('"use strict";\n' + source + '\n;' + binding, {document: {createElement: tag => new Node(tag)}}, {timeout: 1000});
     console.log(JSON.stringify({ok: true, value: typeof value === 'string' ? value : value.textContent}));
   } catch (e) { console.log(JSON.stringify({ok: false})); }
 });

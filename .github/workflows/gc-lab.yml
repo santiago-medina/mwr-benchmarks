@@ -29,6 +29,29 @@ jobs:
           node-version: '24'
       - name: Differential subset corpus
         run: python3 gc-lab/compare_script.py --binary gc-lab/target/release/script_demo
+  test262-objects:
+    runs-on: ubuntu-latest
+    needs: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build strict script checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - uses: actions/cache@v4
+        with:
+          path: gc-lab/.test262-source
+          key: test262-e4fbf57745c6aae3d1f12f181ecef78b1665d812
+      - name: Fetch verified official Test262 snapshot
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Preserve approved cases and reject new failures
+        run: python3 gc-lab/conformance/run.py --source gc-lab/.test262-source --check-baseline
+      - name: Preserve every case including known failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test262-ordinary-objects
+          path: gc-lab/conformance/results/
   servo-integration:
     runs-on: ubuntu-24.04
     needs: contracts
