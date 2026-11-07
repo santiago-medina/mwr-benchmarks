@@ -41,6 +41,11 @@ impl Value {
 }
 #[derive(Clone)]
 pub(super) enum Object {
+    Node {
+        tag: String,
+        text: String,
+        listeners: Vec<Id>,
+    },
     Environment {
         parent: Option<Id>,
         bindings: HashMap<String, Option<Value>>,

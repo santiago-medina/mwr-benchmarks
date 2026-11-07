@@ -18,14 +18,22 @@ Lecturas: 200.000 en sparse, 2.000.000 en dense. Los tokens se resuelven antes d
 | Archivo | Líneas con comentarios y vacías |
 | --- | ---: |
 | src/bin/dual_demo.rs | 55 |
-| src/dual.rs | 345 |
+| src/bin/script_demo.rs | 50 |
+| src/dual.rs | 355 |
 | src/host.rs | 71 |
-| src/lib.rs | 461 |
+| src/lib.rs | 463 |
 | src/main.rs | 48 |
 | src/operations.rs | 54 |
+| src/script/host.rs | 175 |
+| src/script/mod.rs | 5 |
+| src/script/parser.rs | 428 |
+| src/script/vm.rs | 343 |
 | tests/contracts.rs | 175 |
 | tests/dual_heap.rs | 303 |
 | tests/host_boundary.rs | 103 |
 | tests/scopes_and_map.rs | 213 |
+| tests/script_dom.rs | 99 |
+| tests/script_execution.rs | 66 |
+| tests/script_parser.rs | 53 |
 
 No se ha medido tiempo de revisión humana. Ver README.md para contratos, límites y metodología.

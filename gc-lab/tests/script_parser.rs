@@ -37,3 +37,17 @@ fn parser_enforces_source_token_and_recursion_limits() {
     assert!(parse(&format!("{}'x'{};", "(".repeat(100), ")".repeat(100))).is_err());
     assert!(parse(&"x;".repeat(5000)).is_err());
 }
+
+#[test]
+fn rejects_early_errors_even_in_uncalled_functions_and_unsupported_asi() {
+    for source in [
+        "const class = 'x';",
+        "const f = (x) => { const x = 'y'; };",
+        "const f = () => { const x = 'a'; const x = 'b'; };",
+        "return 'x';",
+        "const f = ()\n=> {};",
+        "const f = () => { return\n'x'; };",
+    ] {
+        assert!(parse(source).is_err(), "{source}");
+    }
+}

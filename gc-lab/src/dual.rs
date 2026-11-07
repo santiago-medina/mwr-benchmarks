@@ -181,6 +181,16 @@ impl Runtime {
         self.records.get_mut(&id).unwrap().links.clear();
         Ok(())
     }
+    /// Remove one edge, without allocating or collecting.
+    pub fn unlink(&mut self, from: Id, to: Id) -> Result<(), Error> {
+        self.value(from)?;
+        self.value(to)?;
+        let links = &mut self.records.get_mut(&from).unwrap().links;
+        if let Some(index) = links.iter().position(|id| *id == to) {
+            links.remove(index);
+        }
+        Ok(())
+    }
     pub fn root(&mut self, id: Id) -> Result<ExternalRoot, Error> {
         self.value(id)?;
         let token = self.heap_mut(id.domain()).root(id.handle())?;

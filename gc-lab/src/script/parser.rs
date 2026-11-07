@@ -45,13 +45,18 @@ pub fn parse(source: &str) -> Result<Vec<Stmt>, SyntaxError> {
             message: "source limit",
         });
     }
-    let mut tokens = Vec::new();
+    let mut tokens: Vec<(Token, usize)> = Vec::new();
     let mut chars = source.char_indices().peekable();
     while let Some((offset, ch)) = chars.next() {
         if ch.is_whitespace() {
             continue;
         }
         let error = |message| SyntaxError { offset, message };
+        if let Some((Token::Return, previous)) = tokens.last() {
+            if source[*previous..offset].contains(['\n', '\r']) {
+                return Err(error("automatic semicolon insertion is unsupported"));
+            }
+        }
         let token = match ch {
             '/' => match chars.next() {
                 Some((_, '/')) => {
@@ -124,6 +129,11 @@ pub fn parse(source: &str) -> Result<Vec<Stmt>, SyntaxError> {
                 Token::String(value)
             }
             '=' if chars.peek().is_some_and(|(_, c)| *c == '>') => {
+                if let Some((_, previous)) = tokens.last() {
+                    if source[*previous..offset].contains(['\n', '\r']) {
+                        return Err(error("newline before arrow"));
+                    }
+                }
                 chars.next();
                 Token::Arrow
             }
@@ -141,7 +151,9 @@ pub fn parse(source: &str) -> Result<Vec<Stmt>, SyntaxError> {
         cursor: 0,
         depth: 0,
     };
-    p.statements(false)
+    let body = p.statements(false)?;
+    validate(&body)?;
+    Ok(body)
 }
 
 impl Parser {
@@ -176,6 +188,9 @@ impl Parser {
     }
     fn name(&mut self) -> Result<String, SyntaxError> {
         if let Token::Name(name) = self.current().clone() {
+            if reserved(&name) {
+                return Err(self.error("unsupported reserved identifier"));
+            }
             self.cursor += 1;
             Ok(name)
         } else {
@@ -322,4 +337,92 @@ impl Parser {
         }
         Ok(expression)
     }
+}
+
+fn reserved(name: &str) -> bool {
+    matches!(
+        name,
+        "break"
+            | "case"
+            | "catch"
+            | "class"
+            | "continue"
+            | "debugger"
+            | "default"
+            | "delete"
+            | "do"
+            | "else"
+            | "enum"
+            | "export"
+            | "extends"
+            | "false"
+            | "finally"
+            | "for"
+            | "function"
+            | "if"
+            | "import"
+            | "in"
+            | "instanceof"
+            | "new"
+            | "null"
+            | "super"
+            | "switch"
+            | "this"
+            | "throw"
+            | "true"
+            | "try"
+            | "typeof"
+            | "var"
+            | "void"
+            | "while"
+            | "with"
+            | "yield"
+            | "let"
+            | "await"
+    )
+}
+
+/// Early checks also cover closures that are never invoked. AST has no spans yet;
+/// these structural diagnostics use offset zero rather than an invented position.
+fn validate(body: &[Stmt]) -> Result<(), SyntaxError> {
+    let error = |message| SyntaxError { offset: 0, message };
+    let mut bodies: Vec<(&[Stmt], &[String], bool)> = vec![(body, &[], false)];
+    while let Some((body, params, can_return)) = bodies.pop() {
+        let mut names = std::collections::HashSet::new();
+        names.extend(params.iter());
+        let mut expressions = Vec::new();
+        for statement in body {
+            match statement {
+                Stmt::Const(name, expr) => {
+                    if !names.insert(name) {
+                        return Err(error("duplicate lexical binding"));
+                    }
+                    expressions.push(expr);
+                }
+                Stmt::Set(receiver, _, expr) => {
+                    expressions.push(receiver);
+                    expressions.push(expr);
+                }
+                Stmt::Expr(expr) => expressions.push(expr),
+                Stmt::Return(expr) => {
+                    if !can_return {
+                        return Err(error("return outside function"));
+                    }
+                    expressions.push(expr);
+                }
+            }
+        }
+        while let Some(expr) = expressions.pop() {
+            match expr {
+                Expr::Arrow { params, body } => bodies.push((body, params, true)),
+                Expr::Call(callee, args) => {
+                    expressions.push(callee);
+                    expressions.extend(args);
+                }
+                Expr::Member(receiver, _) => expressions.push(receiver),
+                _ => {}
+            }
+        }
+    }
+    Ok(())
 }

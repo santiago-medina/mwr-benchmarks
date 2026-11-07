@@ -21,3 +21,10 @@ jobs:
         run: cargo +stable test --manifest-path gc-lab/Cargo.toml --release --offline
       - name: Two-heap recovery demo
         run: cargo +stable run --manifest-path gc-lab/Cargo.toml --bin dual_demo --release --offline
+      - name: JavaScript button demo
+        run: cargo +stable run --manifest-path gc-lab/Cargo.toml --bin script_demo --release --offline -- gc-lab/examples/button.js
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Differential subset corpus
+        run: python3 gc-lab/compare_script.py --binary gc-lab/target/release/script_demo

@@ -1,0 +1,12 @@
+[
+  {"name":"button","binding":"button","source":"const button = document.createElement('button'); button.addEventListener('click', () => { button.textContent = 'Funciona'; }); button.click();"},
+  {"name":"captured-string","binding":"result","source":"const make = (x) => { return () => { return x; }; }; const f = make('captured'); const result = f();"},
+  {"name":"returned-node","binding":"button","source":"const make = (label) => { const n = document.createElement('button'); n.addEventListener('click', () => { n.textContent = label; }); return n; }; const button = make('kept'); button.click();"},
+  {"name":"argument-temporaries","binding":"result","source":"const first = (a,b) => { return a; }; const make = (x) => { return () => { return x; }; }; const f = first(make('first'), make('second')); const result = f();"},
+  {"name":"unicode","binding":"button","source":"const button = document.createElement('button'); button.textContent = 'Sí, funciona\\n';"},
+  {"name":"deduplicate-listener","binding":"button","source":"const button = document.createElement('button'); const handler = () => { button.removeEventListener('click', handler); button.click(); button.textContent = 'once'; }; button.addEventListener('click', handler); button.addEventListener('click', handler); button.click();"},
+  {"name":"removed-before-turn","binding":"button","source":"const button = document.createElement('button'); const second = () => { button.textContent = 'wrong'; }; const first = () => { button.removeEventListener('click', second); button.textContent = 'first'; }; button.addEventListener('click', first); button.addEventListener('click', second); button.click();"},
+  {"name":"temporal-dead-zone","binding":"result","source":"const result = result;"},
+  {"name":"callback-error","binding":"button","source":"const button = document.createElement('button'); button.addEventListener('click', () => { missing(); }); button.click();"},
+  {"name":"early-duplicate","binding":"result","source":"const f = () => { const x = 'a'; const x = 'b'; }; const result = 'unused';"}
+]

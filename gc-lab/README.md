@@ -203,3 +203,11 @@ La siguiente etapa implementa dos arenas independientes y un coordinador de
 trazado, con presupuesto de bytes lógicos y 10 pruebas nuevas (30 en total).
 Ver [DUAL_HEAP.md](DUAL_HEAP.md) para invariantes, límites exactos del presupuesto,
 evidencia y reproducción. `dual-results.csv` registra los escenarios.
+
+
+## Primera ejecución de JavaScript
+
+El [intérprete del subconjunto](SCRIPT_ENGINE.md) ejecuta el programa de
+`examples/button.js` con closures reales del AST y el DOM simulado. Incluye
+46 tests en total y un corpus diferencial de diez programas contra Node + mock.
+Ver SCRIPT_ENGINE.md para reproducción y límites exactos.
