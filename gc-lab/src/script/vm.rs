@@ -701,6 +701,9 @@ impl Drop for Frame<'_, '_> {
 /// A VM between native event-loop invocations; it holds no borrowed host context.
 pub struct SuspendedEngine(Engine<'static>);
 impl SuspendedEngine {
+    pub fn module_status(&mut self, url: &str) -> Result<super::modules::ModuleStatus> {
+        self.0.module_status(url)
+    }
     pub fn take_unhandled_rejections(&mut self) -> Vec<String> {
         self.0.take_unhandled_rejections()
     }

@@ -139,10 +139,9 @@ index f35b770..aa139c0 100644
          let mut handlers = self.handlers.borrow_mut();
  
 diff --git a/components/script/dom/html/scripting/htmlscriptelement.rs b/components/script/dom/html/scripting/htmlscriptelement.rs
-index 66b7ade..0ae3253 100644
 --- a/components/script/dom/html/scripting/htmlscriptelement.rs
 +++ b/components/script/dom/html/scripting/htmlscriptelement.rs
-@@ -702,6 +702,19 @@ impl HTMLScriptElement {
+@@ -702,6 +702,19 @@
              return;
          }
  
@@ -162,12 +161,27 @@ index 66b7ade..0ae3253 100644
          // Step 20. If el has an event attribute and a for attribute, and el's type is "classic", then:
          if script_type == ScriptType::Classic {
              let for_attribute = element.get_attribute_string_value(&local_name!("for"));
-@@ -1102,6 +1115,9 @@ impl HTMLScriptElement {
+@@ -779,6 +792,11 @@
+         // Step 30. Let settings object be el's node document's relevant settings object.
+ 
+         let base_url = doc.base_url();
++        if crate::mwr::enabled() && element.get_attribute_string_value(&local_name!("type"))
++            .is_some_and(|ty|ty.trim().eq_ignore_ascii_case("application/x-mwr-module")) {
++            crate::mwr::execute_modules(cx,&doc,&text,element.get_attribute_string_value(&local_name!("src")),script_fetch_options);
++            return;
++        }
+ 
+         let kind = self.get_script_kind(script_type);
+         let delayed_document = self.get_script_active_document(kind);
+@@ -1102,6 +1120,12 @@
                  }
              },
              (Some(ty), _) => {
 +                if crate::mwr::enabled() && ty.trim().eq_ignore_ascii_case("application/x-mwr-js") {
 +                    return Some(ScriptType::Classic);
++                }
++                if crate::mwr::enabled() && ty.trim().eq_ignore_ascii_case("application/x-mwr-module") {
++                    return Some(ScriptType::Module);
 +                }
                  debug!("script type={}", ty);
  

@@ -188,9 +188,7 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
     let mut imports = HashSet::new();
     for import in &module.imports {
         for (_, local) in &import.bindings {
-            if super::reserved(local)
-                || matches!(local.as_str(), "default" | "import" | "export")
-            {
+            if super::reserved(local) || matches!(local.as_str(), "default" | "import" | "export") {
                 return Err(p.error("invalid imported binding"));
             }
             if !imports.insert(local.clone()) {

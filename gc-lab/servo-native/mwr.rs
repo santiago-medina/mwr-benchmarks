@@ -36,6 +36,8 @@ use crate::dom::window::Window;
 
 #[path = "mwr_gc_test.rs"]
 mod gc_test;
+#[path = "mwr_modules.rs"]
+mod module_loader;
 #[path = "mwr_network.rs"]
 mod network;
 
@@ -44,6 +46,7 @@ thread_local! {
     static SESSIONS: RefCell<HashMap<PipelineId, Rc<Session>>> = RefCell::new(HashMap::new());
 }
 struct Session {
+    module_load: RefCell<module_loader::Load>,
     engine: RefCell<Option<SuspendedEngine>>,
     registry: Rc<RefCell<Registry>>,
     marked: RefCell<HashSet<u64>>,
@@ -344,12 +347,13 @@ pub(crate) fn execute(cx: &mut JSContext, doc: &Document, source: &str) {
         }
     });
 }
-fn execute_inner(cx: &mut JSContext, doc: &Document, source: &str) -> Result<()> {
+fn create_session(cx: &mut JSContext, doc: &Document, source: &str) -> Result<Rc<Session>> {
     let window = doc.window();
     if session(window).is_some() {
         return Err("only one experimental script per document is supported".into());
     }
     let state = Rc::new(Session {
+        module_load: RefCell::new(module_loader::Load::default()),
         engine: RefCell::new(None),
         registry: Rc::new(RefCell::new(Registry {
             network: network::Network::default(),
@@ -370,7 +374,11 @@ fn execute_inner(cx: &mut JSContext, doc: &Document, source: &str) -> Result<()>
         .map_err(|e| format!("{e:?}"))?;
     engine.execute(source).map_err(|e| format!("{e:?}"))?;
     *state.engine.borrow_mut() = Some(engine.suspend());
-    SESSIONS.with(|s| s.borrow_mut().insert(window.pipeline_id(), state));
+    SESSIONS.with(|s| s.borrow_mut().insert(window.pipeline_id(), state.clone()));
+    Ok(state)
+}
+fn execute_inner(cx: &mut JSContext, doc: &Document, source: &str) -> Result<()> {
+    create_session(cx, doc, source)?;
     eprintln!("MWR_NATIVE_EXECUTED");
     network::on_execute(doc);
     queue_collection(doc);
@@ -478,6 +486,7 @@ pub(crate) fn retire(cx: &mut JSContext, window: &Window) {
     if let Some(state) = state {
         // Invalidate callbacks before aborting: native rejection delivery can
         // enqueue work, but an unloaded document must never resume its VM.
+        module_loader::abort_state(&state);
         network::abort_state(cx, &state);
         clear_listeners(&state);
     }
@@ -634,6 +643,7 @@ impl MicrotaskRunnable for MwrMicrotask {
                 Err(error) => eprintln!("MWR_NATIVE_ERROR {error:?}"),
             }
             queue_collection(&doc);
+            module_loader::queue_observation(&doc);
         });
     }
 }
@@ -647,4 +657,22 @@ pub(crate) fn finish_microtask_checkpoint() {
             }
         }
     }
+}
+
+pub(crate) fn execute_modules(
+    cx: &mut JSContext,
+    doc: &Document,
+    text: &str,
+    src: Option<String>,
+    options: crate::modules::script_module::ScriptFetchOptions,
+) {
+    let global = doc.global();
+    run_a_script::<DomTypeHolder, _, _>(cx, &global, |cx| match create_session(cx, doc, "") {
+        Ok(state) => {
+            if let Err(error) = module_loader::begin(cx, doc, &state, text, src, options) {
+                module_loader::fail(cx, doc, &state, error);
+            }
+        }
+        Err(error) => eprintln!("MWR_NATIVE_MODULE_ERROR {error}"),
+    });
 }
