@@ -1,0 +1,618 @@
+{
+  "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
+  "variant": "strict script only; standard strict prefix; original test body",
+  "scopes": [
+    "built-ins/Object/create",
+    "built-ins/Object/defineProperty",
+    "built-ins/Object/defineProperties",
+    "built-ins/Object/getOwnPropertyDescriptor",
+    "built-ins/Object/getPrototypeOf",
+    "built-ins/Object/setPrototypeOf",
+    "built-ins/Object/preventExtensions",
+    "built-ins/Object/isExtensible",
+    "built-ins/Object/is",
+    "built-ins/Object/freeze",
+    "built-ins/Object/seal",
+    "built-ins/Object/isFrozen",
+    "built-ins/Object/isSealed",
+    "built-ins/Reflect/get",
+    "built-ins/Reflect/set",
+    "built-ins/Reflect/defineProperty",
+    "built-ins/Reflect/setPrototypeOf"
+  ],
+  "total": 2837,
+  "counts": {
+    "passed": 1164,
+    "unsupported": 1602,
+    "failed": 71
+  },
+  "assertions": 2319,
+  "regressions": [],
+  "unsupported_reasons": {
+    "standard intrinsic not implemented": 308,
+    "unsupported harness includes: propertyHelper.js": 789,
+    "syntax: unsupported or missing expression": 228,
+    "array-producing reflection": 3,
+    "syntax: unsupported reserved expression": 223,
+    "unsupported harness includes: isConstructor.js": 17,
+    "syntax: expected punctuation": 6,
+    "unsupported harness includes: compareArray.js": 5,
+    "unsupported harness includes: compareArray.js,resizableArrayBufferUtils.js": 4,
+    "unsupported execution flags: noStrict": 11,
+    "ordinary reflection on host objects": 1,
+    "syntax: unsupported property key": 2,
+    "unsupported harness includes: resizableArrayBufferUtils.js": 1,
+    "dynamic function or function source": 2,
+    "syntax: expected identifier": 2
+  },
+  "failures": [
+    {
+      "path": "built-ins/Object/defineProperty/15.2.3.6-4-625gs.js",
+      "source_sha256": "ec802d166c088afae6dadd469a5d9dc5f2f8b2cbfdeae1e21c1bf6bd555bf851",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: None, message: \"\", value: String(\"this.prop should take precedence over Object.prototype.prop\") })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-10.js",
+      "source_sha256": "60f67c236595fece4c44116115032b9638cf32e274b404f162cb33b73050da7c",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 83 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-11.js",
+      "source_sha256": "2dba33ab24bc859c39c2cd7ca5bf8ae5d1e1ff5212e81a08c1e8faa5a9675c1c",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 83 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-169.js",
+      "source_sha256": "c650611f4dba5a3412482f9eb5e6c85851e949c5d41077933f30a15356b54a42",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-170.js",
+      "source_sha256": "4c8502475fe0969495b2576031e63494a5eb71dddd94c752fe3e1b45f8183b27",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-175.js",
+      "source_sha256": "6c0fd8349bd5487e558da94bf24de7dcb317077d7a94e631f632350ee64eccfd",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-178.js",
+      "source_sha256": "f784643f81e4a4499c5ea05bb8762f95525076d97b1b874d6addedde2fc96e00",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 73, serial: 88 })) })); expected None",
+      "assertions": 1,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-179.js",
+      "source_sha256": "c997691a2dec29b00f5e5a7e483f5dce422a28dff3a5bc11101997c911b13dd3",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 73, serial: 88 })) })); expected None",
+      "assertions": 1,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-180.js",
+      "source_sha256": "22086f56fd08a770b09ee25786d4f4103dc643e962f1e3d2e2560933e775c7b6",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 73, serial: 88 })) })); expected None",
+      "assertions": 1,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-196.js",
+      "source_sha256": "85d816fb14cd8fd43968a2421ca68aee23ba6381e0b3f9e3a51aef7ec6132b92",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 83 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-197.js",
+      "source_sha256": "daac6d55a5444dadf1301b033cfd7334c4339ad77124cbbf1fd286694e8b0cd5",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 83 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-198.js",
+      "source_sha256": "f7ebfa84d5bfd83bf57c78237f420679fe9ed3d63a0a967c5e8adc05038ac7ef",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 83 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-199.js",
+      "source_sha256": "ac306e43d43bba864915e3f1762e3217146c8922a0c8fa2501d171f1ca55074e",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 83 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-200.js",
+      "source_sha256": "1ade48e7749142c485d649bddc250ddc427aadc9b2fc16a0ada36d12c43e00f2",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 83 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-217.js",
+      "source_sha256": "049ef8095e388b818b83cfc715dc4b11203919e2818d631f7f850fd6f799c1bd",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-222.js",
+      "source_sha256": "e5a359519143a93c9230959cedf901dc62ba3aa3269fad6fe0019c86ef0a4de7",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-33.js",
+      "source_sha256": "b9f0e2f935a1d5d3bc886df531083e75ab117a5ead19e8d7605765d283c4703d",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-36.js",
+      "source_sha256": "7ca3689cccab8689c76d907e0829e0c887eda0e2e5c731b35ade43a1d233e7bf",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-4.js",
+      "source_sha256": "5843722b3d37266c92f670daf6bba7f815b115e2a364bd0d072007ced6749673",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 83 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-5.js",
+      "source_sha256": "84e53264509d9689575052b75c7699c6f991f7680f0b80ed2d7cbb5374c64e11",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 83 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-6.js",
+      "source_sha256": "2a5b8fd5c20b23cba92bcb6641487005264954531135ab905952d059c24ad7d4",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 83 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-61.js",
+      "source_sha256": "d6a03419e13fb16eb799ca39474e59f3a03f090c5fd48e4fc47846821e0d6bbf",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 83 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-63.js",
+      "source_sha256": "046aa235963d8ce0bab818071ac9357666793d25c895f94472a5007ec721efe0",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-64.js",
+      "source_sha256": "38db6a2d4711472a1cee96c99c96ca509d651f4a8450e74a3b0d859296eaa5c8",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-65.js",
+      "source_sha256": "dc5c9aac6e869c5887cbc7db3dd40b6b1dc1122b59ef2f7b9b50f3863193e464",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-66.js",
+      "source_sha256": "9fd0c5d37677e67da852493b8efc95ffb72506918b99817af1d4c7792fa9ed96",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-67.js",
+      "source_sha256": "e1b43918ab8769a5694df74a8697504e71c080e57e9efdccda3ec4b10f5e2658",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-68.js",
+      "source_sha256": "b7dea7e565506c9fe02a55e58178db6538b3da9942e10641ef34efffad52eb20",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-69.js",
+      "source_sha256": "75d068d104629278aa780a713bb0b26d5a95f5f017ca0cef1de19b65849ac7b3",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-7.js",
+      "source_sha256": "3b61f1a4d2f5a27ef6fd800a6c5fc6b856aed315f56a4242f8769a592ed0eb94",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 83 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-70.js",
+      "source_sha256": "23f742f80600a4cd24101de001b6a3ef9a8f21ac0c756bc5cd8c968b29ff6347",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-71.js",
+      "source_sha256": "917e105bb8ccaf347904276fa774679af49815ff46a5b3f1b55951f93f89fdc9",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-72.js",
+      "source_sha256": "3fa9375657afe79e567e2319924004173521d9366fff720c10efc7d0a85ebf97",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-73.js",
+      "source_sha256": "df7b92c3c24d4ae7211e9acc6754a65bcbb293f5c5a4477f0bd76ca35cc1e9e6",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-75.js",
+      "source_sha256": "36578abfa86d0c773b223fb3dd7b8a8927cb9e0770308fdd2e388cd2e0117052",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-77.js",
+      "source_sha256": "2415cecdf5fef1f5f4e261f33b0ff7ed283d1c12143bb008438528a7b2a6988b",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-79.js",
+      "source_sha256": "8828845dc79a24a724fdac0e1e2b38e32c52944e36b595799358fbf4d03f2826",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-8.js",
+      "source_sha256": "1e0e9d6a028fb3b8f440b678a4c1c651f17301b1f05176a62a6e8c51b73e0915",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 83 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-80.js",
+      "source_sha256": "289fac53a645338a80e4e8a8394275d5f7ef9132603a9afe3986d7e335d2a1e0",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-81.js",
+      "source_sha256": "6997be726e39a0da724b35df7ac2a01f0daa604a26b0d45e220dd41496ce95c1",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-82.js",
+      "source_sha256": "5959a464c5b2d2d554059e827b0721b05eedbb8a16cbff753f47a5de2542dbe1",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-9.js",
+      "source_sha256": "3239903e6e8009f86d9467c71436e75a43ffa72f310020dc1de7fb744dac8e3a",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 83 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-90.js",
+      "source_sha256": "375c4033c89a710d1a2290e255be8bba52799bd874b48212ec5688dd826d556a",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-91.js",
+      "source_sha256": "057e47b00faae52361a059a5822ceb88fa319846a375fd3d9f0eaba86dd2cd69",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-92.js",
+      "source_sha256": "bc17bc64ad8fddf9fa5c629e682fd2373d9791e410832e22649639676dfe8ab6",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getOwnPropertyDescriptor/15.2.3.3-4-93.js",
+      "source_sha256": "1e16344e37a06ad0cb13680943cbf9fbf3b52913541845c3835db377c19161f8",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 72, serial: 84 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getPrototypeOf/15.2.3.2-2-12.js",
+      "source_sha256": "5f65be9837cbd582a34adab3133af88d0e7be5291c56b0a751cf863193361957",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 78 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/getPrototypeOf/15.2.3.2-2-17.js",
+      "source_sha256": "30806b8286e57524ee935b27c28ca27aefb233309dd0f613f06fc1da6bf72641",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 78 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/isFrozen/15.2.3.12-3-21.js",
+      "source_sha256": "41a0a5f5420d639f440ca9615c0a28a2b40458191d6625819882501da7c80f69",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/isFrozen/15.2.3.12-3-26.js",
+      "source_sha256": "abfff521377cf90fbdce112608f67e8e1404c5daf82d107058e2d8bfad9d916c",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/isSealed/15.2.3.11-4-21.js",
+      "source_sha256": "d0c63d644e2d21b3df6a57508de2091f2e1b75185171c67f8e00fdb62da9bcf4",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/isSealed/15.2.3.11-4-26.js",
+      "source_sha256": "40f5633ea35f3aae47ac797dcabbbe425740b0f24c8ce9d1635bea8935761027",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-arraybuffer.js",
+      "source_sha256": "b3a0d779dbfe9492c807baf2bad4e254a65f403547400ecd0516653041c5312f",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-arrowfunction.js",
+      "source_sha256": "4dd7bb817c696b6d66d9e2d6dcebcb978867ccc0fddbf48c0b628563d95d041b",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"builtin not a constructor\", value: Object(Js(Handle { heap: 2, index: 72, serial: 87 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-bigint64array.js",
+      "source_sha256": "7369f2a650a2b06b3a45ea384c5ccf78542145a61ce775b99aa4d60c14412115",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-biguint64array.js",
+      "source_sha256": "a4850602bb3e9198916ace75eea082be4a81615aafb166d56321360b7daf9d83",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-dataview.js",
+      "source_sha256": "e29a9fe13e41a5b660d6b5143fe4e78c1350bad42ca04051bc0a691ef428b6db",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-evalerror.js",
+      "source_sha256": "9c4eac2eca7ceecc941fd30b4ac380209ba7f21598ad446e1009774be37401f3",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-finalizationregistry.js",
+      "source_sha256": "1abf7ea2a718f4f91e7280d0d4877384beb0f86359875496bec913ea8450ef40",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-float32array.js",
+      "source_sha256": "e8dea5007212acebd82f310236fdb4b176bb107f982e0f64147db21570a10bc4",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-float64array.js",
+      "source_sha256": "eeb79cf1aea3a9a4c80bcd63a6e72378ac86f1865ed8e1d424e50a78f22eb940",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-function.js",
+      "source_sha256": "ed3208f9066908c64f2966f3da996965499e4915c4d21790555c596de67933b1",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"builtin not a constructor\", value: Object(Js(Handle { heap: 2, index: 72, serial: 77 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-int16array.js",
+      "source_sha256": "b993a3bfe28c433f205b8b2fe79e4481d98b101603d5da5f9cdd1f3a0316384c",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-int32array.js",
+      "source_sha256": "9176f21b65c78d42575b9c8cf2437601498e89b3f176e1c86e015e5734408f88",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-int8array.js",
+      "source_sha256": "526f5e244194221e8dc1b7f69a2be39193aa3c6ae38b201b3dc7cd171edfba48",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-sharedarraybuffer.js",
+      "source_sha256": "87d07592327e35279be0e764159d4eb004d0aa711f16d1793f25c4efab2c1163",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-uint16array.js",
+      "source_sha256": "0f704025fa66eb9a2e5b6ec1bfff7d283b320e6d436e917333e0c4e652d3aea2",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-uint32array.js",
+      "source_sha256": "7ea53044c85597d5f31d60fabba09c22b6e3787b208340b35fd78cc64fddebf1",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-uint8clampedarray.js",
+      "source_sha256": "12c6296257196a871cdc1d5846dc072ad1410fca38e8a0bec56daeef10ae8954",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-urierror.js",
+      "source_sha256": "37a4c4e74e1289e7f1b7c0efae4907fd49923ee232d193257d9b141f941cfa36",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Object/seal/seal-weakref.js",
+      "source_sha256": "5b1f217605796462744a0a761bac989039546196f6854d193b5880629ed63ccd",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"unknown identifier\", value: Object(Js(Handle { heap: 2, index: 72, serial: 76 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    }
+  ]
+}

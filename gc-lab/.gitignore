@@ -6,3 +6,6 @@ __pycache__/
 /.servo-native.tar.gz
 /native-results/
 /native-gc-results/
+
+.test262-source/
+conformance/results/cases.json
