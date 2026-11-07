@@ -4,7 +4,7 @@
   "passed": 10,
   "failures": [],
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
-  "contracts_sha256": "aa5df9db2f1e4b99b45c2e52f101471f39d86ec273c1277b8ef9c89c153028de",
+  "contracts_sha256": "94e8f945164e5aaa75d4719f3f62ded8cb22fd9b8a3d1beac65dd205a46ef302",
   "runner_sha256": "816773c3037a4206265cfbae73efb7344ee915cf86ba19d14dfcc23a9adfe975",
   "cases": [
     {

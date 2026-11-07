@@ -303,14 +303,21 @@ struct NavigationProbe {
     document: Arc<AtomicBool>,
     pipeline: PipelineId,
     attempts: usize,
+    module_source: bool,
 }
 static NAVIGATION: std::sync::Mutex<Option<NavigationProbe>> = std::sync::Mutex::new(None);
 fn begin_navigation(cx: &mut JSContext, doc: &Document) -> Result<()> {
+    begin_navigation_inner(cx, doc, false)
+}
+pub(super) fn begin_module_navigation(cx: &mut JSContext, doc: &Document) -> Result<()> {
+    begin_navigation_inner(cx, doc, true)
+}
+fn begin_navigation_inner(cx: &mut JSContext, doc: &Document, module_source: bool) -> Result<()> {
     if NAVIGATION.lock().unwrap().is_some() {
         return Ok(());
     }
     let state = session(doc.window()).ok_or("no navigation session")?;
-    if state.registry.borrow().network.pending.is_empty() {
+    if !module_source && state.registry.borrow().network.pending.is_empty() {
         return Err("navigation did not interrupt a pending body".into());
     }
     let document = state
@@ -327,6 +334,7 @@ fn begin_navigation(cx: &mut JSContext, doc: &Document) -> Result<()> {
         document,
         pipeline: doc.window().pipeline_id(),
         attempts: 0,
+        module_source,
     });
     let url = doc.url().join("/?after=1").map_err(|e| e.to_string())?;
     let window = doc.window();
@@ -362,9 +370,11 @@ fn poll_navigation(doc: &Document) {
         }
         rooted!(&in(&mut cx) let value=UndefinedValue());
         // Exercise the actual completion dispatcher with a retired pipeline ID.
-        if let Err(error)=(Completion{pipeline:probe.pipeline,serial:u64::MAX,body:true,reject:false}).deliver(&mut cx,value.handle()){
+        if probe.module_source {
+            module_loader::dispatch_retired_source(&mut cx,probe.pipeline);
+        } else if let Err(error)=(Completion{pipeline:probe.pipeline,serial:u64::MAX,body:true,reject:false}).deliver(&mut cx,value.handle()){
             eprintln!("MWR_NATIVE_ERROR stale fetch: {error}");return;
         }
-        eprintln!("MWR_NATIVE_FETCH_PROOF {}",serde_json::json!({"after":"navigated","native_fetch":true,"old_session_collected":true,"old_document_collected":true,"retired_completion_ignored":true}));
+        eprintln!("MWR_NATIVE_FETCH_PROOF {}",serde_json::json!({"after":"navigated","native_fetch":!probe.module_source,"native_modules":probe.module_source,"old_session_collected":true,"old_document_collected":true,"retired_completion_ignored":true}));
     }));
 }

@@ -222,6 +222,21 @@ impl FetchResponseListener for SourceListener {
                     self.error = Some("module HTTP status is not successful".into());
                 }
                 self.metadata = Some(metadata);
+                eprintln!("MWR_NATIVE_MODULE_HEADERS {}", self.url);
+                if std::env::var_os("MWR_NATIVE_MODULE_NAVIGATION").is_some()
+                    && self.url.ends_with("/slow.js")
+                {
+                    if let Some(state) = SESSIONS.with(|s| s.borrow().get(&self.pipeline).cloned())
+                    {
+                        if let Ok(doc) = state.registry.borrow().document() {
+                            let document = Trusted::new(&*doc);
+                            doc.global().task_manager().dom_manipulation_task_source().queue(task!(MwrPendingModuleNavigation:move|cx|{
+                                let doc=document.root();let mut realm=crate::realms::enter_auto_realm(cx,doc.window());
+                                if let Err(error)=network::begin_module_navigation(&mut realm.current_realm(),&doc){eprintln!("MWR_NATIVE_ERROR module navigation: {error}");}
+                            }));
+                        }
+                    }
+                }
             }
             Err(error) => self.error = Some(format!("module network/policy error: {error:?}")),
         }
@@ -235,55 +250,13 @@ impl FetchResponseListener for SourceListener {
         }
     }
     fn process_response_eof(
-        mut self,
+        self,
         cx: &mut JSContext,
         _: RequestId,
         response: std::result::Result<(), NetworkError>,
         _: ResourceFetchTiming,
     ) {
-        let Some(state) = SESSIONS.with(|s| s.borrow().get(&self.pipeline).cloned()) else {
-            return;
-        };
-        let lease = state.module_load.borrow_mut().pending.remove(&self.url);
-        if let Some(lease) = lease {
-            lease.finish();
-        }
-        let Ok(doc) = state.registry.borrow().document() else {
-            return;
-        };
-        if let Err(error) = response {
-            self.error = Some(format!("module body error: {error:?}"));
-        }
-        let result = (|| {
-            if let Some(error) = self.error {
-                return Err(error);
-            }
-            let metadata = self.metadata.take().ok_or("missing module metadata")?;
-            let policy: net_traits::ReferrerPolicy = metadata
-                .headers
-                .and_then(|h| h.typed_get::<ReferrerPolicyHeader>())
-                .into();
-            if policy != net_traits::ReferrerPolicy::EmptyString {
-                self.options.referrer_policy = policy;
-            }
-            let mime: Option<mime::Mime> = metadata.content_type.map(|s| s.into_inner().into());
-            if !mime.as_ref().is_some_and(MimeClassifier::is_javascript) {
-                return Err("module requires a JavaScript MIME type".into());
-            }
-            let (source, _) = UTF_8.decode_with_bom_removal(&self.data);
-            add_source(
-                cx,
-                &doc,
-                &state,
-                self.url,
-                metadata.final_url,
-                source.into_owned(),
-                self.options,
-            )
-        })();
-        if let Err(error) = result {
-            fail(cx, &doc, &state, error);
-        }
+        self.complete(cx, response);
     }
     fn process_csp_violations(
         &mut self,
@@ -372,4 +345,65 @@ fn finish_blocker(cx: &mut JSContext, doc: &Document, state: &Session) {
     if let Some(url) = blocker {
         doc.finish_load(LoadType::Script(url), cx);
     }
+}
+
+impl SourceListener {
+    fn complete(mut self, cx: &mut JSContext, response: std::result::Result<(), NetworkError>) {
+        let Some(state) = SESSIONS.with(|s| s.borrow().get(&self.pipeline).cloned()) else {
+            eprintln!("MWR_NATIVE_STALE_MODULE_SOURCE");
+            return;
+        };
+        let lease = state.module_load.borrow_mut().pending.remove(&self.url);
+        if let Some(lease) = lease {
+            lease.finish();
+        }
+        let Ok(doc) = state.registry.borrow().document() else {
+            return;
+        };
+        if let Err(error) = response {
+            self.error = Some(format!("module body error: {error:?}"));
+        }
+        let result = (|| {
+            if let Some(error) = self.error {
+                return Err(error);
+            }
+            let metadata = self.metadata.take().ok_or("missing module metadata")?;
+            let policy: net_traits::ReferrerPolicy = metadata
+                .headers
+                .and_then(|h| h.typed_get::<ReferrerPolicyHeader>())
+                .into();
+            if policy != net_traits::ReferrerPolicy::EmptyString {
+                self.options.referrer_policy = policy;
+            }
+            let mime: Option<mime::Mime> = metadata.content_type.map(|s| s.into_inner().into());
+            if !mime.as_ref().is_some_and(MimeClassifier::is_javascript) {
+                return Err("module requires a JavaScript MIME type".into());
+            }
+            let (source, _) = UTF_8.decode_with_bom_removal(&self.data);
+            add_source(
+                cx,
+                &doc,
+                &state,
+                self.url,
+                metadata.final_url,
+                source.into_owned(),
+                self.options,
+            )
+        })();
+        if let Err(error) = result {
+            fail(cx, &doc, &state, error);
+        }
+    }
+}
+
+pub(super) fn dispatch_retired_source(cx: &mut JSContext, pipeline: PipelineId) {
+    SourceListener {
+        pipeline,
+        url: "retired".into(),
+        options: ScriptFetchOptions::default_classic_script(),
+        data: vec![],
+        metadata: None,
+        error: None,
+    }
+    .complete(cx, Ok(()));
 }

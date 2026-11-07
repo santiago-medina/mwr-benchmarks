@@ -65,6 +65,8 @@ jobs:
         run: python3 gc-lab/conformance/compare_node.py --source gc-lab/.test262-source --profile async --output gc-lab/conformance/results-async/node-report.json
       - name: Compare actual async contract programs with official Node harness
         run: python3 gc-lab/conformance/compare_async_contracts.py --source gc-lab/.test262-source
+      - name: Compare actual module graphs with Node module VM
+        run: python3 gc-lab/conformance/compare_module_contracts.py --source gc-lab/.test262-source
       - name: Preserve every case including known failures
         if: always()
         uses: actions/upload-artifact@v4
@@ -76,6 +78,7 @@ jobs:
             gc-lab/conformance/results-promises/
             gc-lab/conformance/results-async/
             gc-lab/conformance/async-contract-node.json
+            gc-lab/conformance/module-contract-node.json
   servo-integration:
     runs-on: ubuntu-24.04
     needs: contracts
@@ -176,6 +179,8 @@ jobs:
           --output gc-lab/native-microtask-interop-results
       - name: Await native HTTP Fetch headers and Response text under joint GC
         run: python3 gc-lab/servo-native/run_fetch.py --servo gc-lab/.servo-native/target/debug/servoshell
+      - name: Load native ES module graphs and enforce script/CORS/MIME policies
+        run: python3 gc-lab/servo-native/run_modules.py --servo gc-lab/.servo-native/target/debug/servoshell
       - name: Collect real cross-heap cycles with the realm still alive
         run: python3 gc-lab/servo-native/run_gc.py --servo gc-lab/.servo-native/target/debug/servoshell
       - name: Preserve native integration evidence
@@ -191,3 +196,4 @@ jobs:
             gc-lab/native-promise-results/
             gc-lab/native-microtask-interop-results/
             gc-lab/native-fetch-results/
+            gc-lab/native-module-results/
