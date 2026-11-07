@@ -47,8 +47,8 @@ fn method_receiver_and_callee_getter_are_saved_before_await_arguments() {
     check("let order='';const o={n:5,get f(){order=order+'g';return function(x){assert.sameValue(this,o);return this.n+x;};}};async function f(){return o.f(await Promise.resolve(3));}const p=f();assert.sameValue(order,'g');o.n=7;p.then(function(v){assert.sameValue(v,10);assert.sameValue(order,'g');});");
 }
 #[test]
-fn reference_key_coercion_precedes_rhs_suspension() {
-    check("let order='';const object={};const key={toString:function(){order=order+'k';return 'x';}};async function f(){object[key]=await 7;return object.x;}const p=f();assert.sameValue(order,'k');p.then(function(v){assert.sameValue(v,7);assert.sameValue(order,'k');});");
+fn reference_key_value_is_saved_but_coercion_waits_for_the_assignment() {
+    check("let order='';const object={};const key={toString:function(){order=order+'k';return 'x';}};function getKey(){order=order+'e';return key;}function rhs(){order=order+'r';return 7;}async function f(){object[getKey()]=await rhs();return object.x;}const p=f();assert.sameValue(order,'er');key.toString=function(){order=order+'n';return 'x';};p.then(function(v){assert.sameValue(v,7);assert.sameValue(order,'ern');});");
 }
 #[test]
 fn arrays_objects_and_short_circuit_preserve_effects() {
@@ -76,4 +76,9 @@ fn parser_rejects_await_outside_async_and_across_ordinary_function_boundary() {
     ] {
         assert!(parse(source).is_err(), "{source}");
     }
+}
+
+#[test]
+fn nullish_property_access_does_not_coerce_the_key() {
+    check("let keys=0;let rhs=0;const key={toString:function(){keys=keys+1;return 'x';}};assert.throws(TypeError,function(){null[key];});async function f(){try{null[key]=await next();assert(false);}catch(error){assert.sameValue(error.constructor,TypeError);assert.sameValue(rhs,1);assert.sameValue(keys,0);}}function next(){rhs=rhs+1;return 1;}f();");
 }

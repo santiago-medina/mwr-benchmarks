@@ -504,7 +504,7 @@ impl Engine<'_> {
                 self.protect(&a)?;
                 let k = self.eval(k, env)?;
                 self.protect(&k)?;
-                let k = self.to_key(k)?;
+                let k = self.member_key(&a, k)?;
                 self.get_member(a, &k)
             }
             Expr::Call(f, args) => self.eval_call(f, args, env, false),
@@ -530,15 +530,21 @@ impl Engine<'_> {
                     self.protect(&r)?;
                     let k = self.eval(k, env)?;
                     self.protect(&k)?;
-                    let k = self.to_key(k)?;
                     let v = self.eval(b, env)?;
                     self.protect(&v)?;
+                    let k = self.member_key(&r, k)?;
                     self.set_member(r, &k, v.clone())?;
                     Ok(v)
                 }
                 _ => Err(ScriptError::Runtime("invalid assignment")),
             },
         }
+    }
+    fn member_key(&mut self, receiver: &Value, key: Value) -> Result<Key> {
+        if matches!(receiver, Value::Null | Value::Undefined) {
+            return self.throw_error("TypeError", "nullish property receiver");
+        }
+        self.to_key(key)
     }
     fn eval_object(&mut self, props: &[(String, Literal)], env: Id) -> Result<Value> {
         let id = self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;
@@ -617,7 +623,7 @@ impl Engine<'_> {
                     self.protect(&r)?;
                     let k = self.eval(k, env)?;
                     self.protect(&k)?;
-                    let k = self.to_key(k)?;
+                    let k = self.member_key(&r, k)?;
                     let f = self.get_member(r.clone(), &k)?;
                     (r, f)
                 }
@@ -841,7 +847,10 @@ impl Engine<'_> {
                     self.protect(&r)?;
                     let k = self.eval(k, env)?;
                     self.protect(&k)?;
-                    Some((r, self.to_key(k)?))
+                    {
+                        let key = self.member_key(&r, k)?;
+                        Some((r, key))
+                    }
                 }
                 _ => {
                     self.eval(x, env)?;

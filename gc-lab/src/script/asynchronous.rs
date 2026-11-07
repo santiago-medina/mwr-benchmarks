@@ -16,7 +16,6 @@ pub(super) enum Op {
         new: bool,
         out: usize,
     },
-    Key(usize),
     Init(String, usize, bool),
     Enter(Vec<Stmt>),
     Exit,
@@ -124,7 +123,6 @@ impl Compiler {
             Expr::Computed(base, key) => {
                 let base = self.expression(base)?;
                 let key = self.expression(key)?;
-                self.emit(Op::Key(key));
                 Ok((
                     base,
                     Expr::Computed(Box::new(read(base)), Box::new(read(key))),
@@ -589,18 +587,6 @@ impl Engine<'_> {
                                 e.invoke_this(f, this, args)?
                             };
                             e.store(&frame, out, v)?;
-                        }
-                        Op::Key(r) => {
-                            let v = e.register(&frame, r)?;
-                            let key = e.to_key(v)?;
-                            e.store(
-                                &frame,
-                                r,
-                                match key {
-                                    super::objects::Key::String(s) => Value::String(s),
-                                    super::objects::Key::Symbol(s) => Value::Symbol(s),
-                                },
-                            )?;
                         }
                         Op::Init(n, r, var) => {
                             let v = e.register(&frame, r)?;
