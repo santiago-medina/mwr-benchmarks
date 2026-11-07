@@ -2,7 +2,7 @@ use gc_lab::{
     script::{Engine, ScriptError},
     Model,
 };
-fn engine() -> Engine {
+fn engine() -> Engine<'static> {
     Engine::new(Model::Indirect, Model::Indirect).unwrap()
 }
 #[test]

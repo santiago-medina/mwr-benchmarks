@@ -4,7 +4,7 @@ use super::vm::{Engine, Object, ScriptError, Value};
 use crate::dual::{Domain, ExternalRoot, Id};
 type Result<T> = std::result::Result<T, ScriptError>;
 
-impl Engine {
+impl Engine<'_> {
     pub fn text_content(&mut self, binding: &str) -> Result<String> {
         let Value::Object(id) = self.binding(binding)? else {
             return Err(ScriptError::Runtime("not a node"));

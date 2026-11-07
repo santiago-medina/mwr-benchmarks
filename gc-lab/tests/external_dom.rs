@@ -98,7 +98,7 @@ impl DomAdapter for Host {
     }
 }
 const SOURCE: &str = "const button = document.querySelector('#button'); button.addEventListener('click', () => { button.textContent = 'Funciona'; });";
-fn engine() -> (Engine, Rc<RefCell<State>>) {
+fn engine() -> (Engine<'static>, Rc<RefCell<State>>) {
     let state = Rc::new(RefCell::new(State::default()));
     let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
     e.set_dom_adapter(Box::new(Host(state.clone()))).unwrap();
@@ -186,4 +186,59 @@ fn data_wire_roundtrips_without_turning_text_into_source() {
     for invalid in ["a", "zz", "ff", "0g"] {
         assert!(wire::decode(invalid).is_err());
     }
+}
+
+impl DomAdapter for &mut Host {
+    fn create_element(&mut self, tag: &str) -> Result<u64, String> {
+        (**self).create_element(tag)
+    }
+    fn query_selector(&mut self, selector: &str) -> Result<u64, String> {
+        (**self).query_selector(selector)
+    }
+    fn tag_name(&mut self, node: u64) -> Result<String, String> {
+        (**self).tag_name(node)
+    }
+    fn text_content(&mut self, node: u64) -> Result<String, String> {
+        (**self).text_content(node)
+    }
+    fn set_text_content(&mut self, node: u64, text: &str) -> Result<(), String> {
+        (**self).set_text_content(node, text)
+    }
+    fn set_click_listener(&mut self, node: u64, enabled: bool) -> Result<(), String> {
+        (**self).set_click_listener(node, enabled)
+    }
+    fn click(&mut self, node: u64) -> Result<Vec<u64>, String> {
+        (**self).click(node)
+    }
+    fn release(&mut self, nodes: &[u64]) -> Result<(), String> {
+        (**self).release(nodes)
+    }
+}
+
+#[test]
+fn borrowed_host_context_can_end_between_script_and_native_event() {
+    let state = Rc::new(RefCell::new(State::default()));
+    let mut host = Host(state.clone());
+    let suspended = {
+        let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+        e.set_dom_adapter(Box::new(&mut host)).unwrap();
+        e.execute(SOURCE).unwrap();
+        e.suspend()
+    };
+    // The host borrow has ended, but the VM closure and lease are still alive.
+    assert_eq!(host.text_content(1).unwrap(), "Pulsar");
+    assert!(state.borrow().hooks.contains(&1));
+    let suspended = {
+        let mut e = suspended.resume(Box::new(&mut host));
+        e.dispatch_remote_click(1).unwrap();
+        assert_eq!(e.text_content("button").unwrap(), "Funciona");
+        e.suspend()
+    };
+    assert_eq!(host.text_content(1).unwrap(), "Funciona");
+    let mut e = suspended.resume(Box::new(&mut host));
+    e.release_globals();
+    assert_eq!(e.remote_node_count(), 0);
+    assert_eq!(e.live_objects(), 0);
+    assert!(state.borrow().leases.is_empty());
+    assert!(state.borrow().hooks.is_empty());
 }

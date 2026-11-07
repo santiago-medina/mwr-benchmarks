@@ -58,7 +58,7 @@ pub(super) enum Object {
     },
 }
 
-pub struct Engine {
+pub struct Engine<'host> {
     pub(super) runtime: Runtime,
     pub(super) objects: HashMap<Id, Object>,
     roots: Vec<ExternalRoot>,
@@ -68,13 +68,13 @@ pub struct Engine {
     step_limit: usize,
     call_depth: usize,
     pub(super) native_depth: usize,
-    pub(super) adapter: Option<Box<dyn super::adapter::DomAdapter>>,
+    pub(super) adapter: Option<Box<dyn super::adapter::DomAdapter + 'host>>,
     pub(super) remote_nodes: HashMap<Id, u64>,
     pub(super) adapter_error: Option<String>,
     pub(super) pending_release: Vec<u64>,
 }
 
-impl Engine {
+impl<'host> Engine<'host> {
     pub fn new(dom: Model, js: Model) -> Result<Self> {
         Ok(Self {
             runtime: Runtime::new(dom, js)?,
@@ -91,6 +91,33 @@ impl Engine {
             adapter_error: None,
             pending_release: vec![],
         })
+    }
+    // Move all VM state while changing only the lifetime of the borrowed host.
+    fn rebind<'next>(
+        self,
+        adapter: Option<Box<dyn super::adapter::DomAdapter + 'next>>,
+    ) -> Engine<'next> {
+        Engine {
+            runtime: self.runtime,
+            objects: self.objects,
+            roots: self.roots,
+            global: self.global,
+            stress: self.stress,
+            steps: self.steps,
+            step_limit: self.step_limit,
+            call_depth: self.call_depth,
+            native_depth: self.native_depth,
+            remote_nodes: self.remote_nodes,
+            adapter_error: self.adapter_error,
+            pending_release: self.pending_release,
+            adapter,
+        }
+    }
+    /// End a host invocation without releasing the persistent VM or DOM leases.
+    /// The embedder must keep the same host registry alive until it resumes or
+    /// discards this state. No script can execute while the VM is suspended.
+    pub fn suspend(self) -> SuspendedEngine {
+        SuspendedEngine(self.rebind(None))
     }
     pub fn set_stress(&mut self, enabled: bool) {
         self.stress = enabled;
@@ -151,7 +178,10 @@ impl Engine {
     pub fn host_error(&self) -> Option<&str> {
         self.adapter_error.as_deref()
     }
-    pub fn set_dom_adapter(&mut self, adapter: Box<dyn super::adapter::DomAdapter>) -> Result<()> {
+    pub fn set_dom_adapter(
+        &mut self,
+        adapter: Box<dyn super::adapter::DomAdapter + 'host>,
+    ) -> Result<()> {
         if self.runtime.live_objects() != 0 || !self.pending_release.is_empty() {
             return Err(ScriptError::Runtime("attach adapter before executing"));
         }
@@ -381,11 +411,11 @@ impl Engine {
         })
     }
 }
-struct Frame<'a> {
-    engine: &'a mut Engine,
+struct Frame<'a, 'host> {
+    engine: &'a mut Engine<'host>,
     mark: usize,
 }
-impl Drop for Frame<'_> {
+impl Drop for Frame<'_, '_> {
     fn drop(&mut self) {
         for root in self.engine.roots.drain(self.mark..) {
             self.engine
@@ -393,5 +423,17 @@ impl Drop for Frame<'_> {
                 .unroot(root)
                 .expect("owned execution root");
         }
+    }
+}
+
+/// A VM between native event-loop invocations; it holds no borrowed host context.
+pub struct SuspendedEngine(Engine<'static>);
+impl SuspendedEngine {
+    /// Resume against the same DOM registry, borrowing its current context.
+    pub fn resume<'host>(
+        self,
+        adapter: Box<dyn super::adapter::DomAdapter + 'host>,
+    ) -> Engine<'host> {
+        self.0.rebind(Some(adapter))
     }
 }

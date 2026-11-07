@@ -2,7 +2,7 @@
 mod host;
 pub mod parser;
 mod vm;
-pub use vm::{Engine, ScriptError};
+pub use vm::{Engine, ScriptError, SuspendedEngine};
 
 mod adapter;
 pub use adapter::DomAdapter;
