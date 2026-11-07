@@ -298,7 +298,9 @@ impl Parser {
         };
         let mut postfix_depth = 0;
         loop {
-            if postfix_depth >= 64 { return Err(self.error("postfix nesting limit")); }
+            if postfix_depth >= 64 {
+                return Err(self.error("postfix nesting limit"));
+            }
             postfix_depth += 1;
             if self.punct('.') {
                 expression = Expr::Member(Box::new(expression), self.name()?);
