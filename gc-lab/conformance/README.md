@@ -66,3 +66,11 @@ comprobar exactamente un `$DONE`, y los errores de aserción no manejados se
 conservan aunque se recoja la promesa. Todos los perfiles vacían ahora sus jobs;
 objetos y arrays siguen excluyendo el modo async. El comparador Node espera
 al checkpoint real antes de inspeccionar `$DONE`. Ver [PROMISES.md](../PROMISES.md).
+
+## Funciones async y await
+
+`--profile async` recorre los directorios completos de expresiones async-function,
+async-arrow-function y await, y declaraciones async-function: 249 casos, 40 aprobados,
+209 no soportados, cero fallos. Los 40 aprobados también pasan en Node 24 con el
+harness oficial. Los negativos de parseo y los includes adicionales permanecen
+fuera del perfil de ejecución. Ver [ASYNC.md](../ASYNC.md) para límites.

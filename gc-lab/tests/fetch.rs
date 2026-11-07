@@ -252,3 +252,24 @@ fn missing_url_and_conversion_exceptions_reject_without_starting_transport() {
         finish(&mut e);
     }
 }
+
+#[test]
+fn wrong_kind_and_duplicate_completions_do_not_consume_other_operations() {
+    for model in [Model::Stable, Model::Indirect] {
+        let (mut e, state) = engine(model);
+        e.execute("fetch('/data').then(function(r){assert.sameValue(r.status,200);});")
+            .unwrap();
+        let serial = state.borrow().requests[0].0;
+        assert!(matches!(
+            e.complete_response_text(serial, Ok("wrong".into())),
+            Err(ScriptError::Runtime(_))
+        ));
+        assert_eq!(e.pending_fetches(), 1);
+        assert!(e.complete_fetch(serial, Ok(headers(7, 200))).unwrap());
+        assert!(!e.complete_fetch(serial, Ok(headers(7, 200))).unwrap());
+        drain(&mut e);
+        assert_eq!(e.assertion_count(), 1);
+        finish(&mut e);
+        assert_eq!(state.borrow().released, vec![7]);
+    }
+}

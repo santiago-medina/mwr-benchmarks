@@ -162,6 +162,9 @@ run();
     report = dict(servo_revision='aac43a3f31a259f04a574f5ec4e959c943ad7cc7',
                   binary_sha256=hashlib.file_digest(binary.open('rb'), 'sha256').hexdigest(),
                   module_sha256=hashlib.file_digest((HERE / 'mwr_network.rs').open('rb'), 'sha256').hexdigest(),
+                  runner_sha256=hashlib.file_digest(Path(__file__).open('rb'), 'sha256').hexdigest(),
+                  patch_sha256=hashlib.file_digest((HERE / 'servo.patch').open('rb'), 'sha256').hexdigest(),
+                  tested_commit=os.environ.get('GITHUB_SHA'),
                   scenarios=results, native_fetch=True, javascript_transport=False, webdriver=False)
     (output / 'report.json').write_text(json.dumps(report, indent=2) + '\n')
 
