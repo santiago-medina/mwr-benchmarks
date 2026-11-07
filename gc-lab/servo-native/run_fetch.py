@@ -24,6 +24,7 @@ def main():
     results = {}
     for scenario in ['success', 'http404', 'empty', 'network-error', 'cors', 'csp', 'navigation']:
         release_load = threading.Event()
+        release_old_image = threading.Event()
         headers_seen = threading.Event()
         requests = []
 
@@ -44,10 +45,10 @@ def main():
                     data = fixture.encode()
                     self.send_response(200)
                     self.send_header('Content-Type', 'text/html; charset=utf-8')
-                elif self.path == '/hold':
+                elif self.path in ('/hold', '/hold?old'):
                     # Images delay load, without blocking execution of the script.
                     # Release only after native observation proves final DOM state.
-                    release_load.wait(45)
+                    (release_old_image if self.path.endswith('?old') else release_load).wait(45)
                     data = b'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>'
                     self.send_response(200)
                     self.send_header('Content-Type', 'image/svg+xml')
@@ -81,7 +82,7 @@ def main():
         fixture = '''<!doctype html><meta charset="utf-8">''' + policy + '''
 <title>Fetch nativo con async/await</title>
 <style>body{font:24px sans-serif;padding:48px;background:#edf4f2;color:#18362d}#result{background:white;padding:24px}</style>
-<h1>Red nativa y continuaciones Rust</h1><p id="result">Pendiente</p><img src="/hold" alt="">
+<h1>Red nativa y continuaciones Rust</h1><p id="result">Pendiente</p><img src="/hold?old" alt="">
 <script type="application/x-mwr-js">
 const result=document.querySelector('#result');
 async function run(){
@@ -122,7 +123,10 @@ run();
                         lines.append(line)
                         if line.startswith('MWR_NATIVE_FETCH_COMPLETION ') and line.rstrip().endswith(' headers'):
                             headers_seen.set()
+                        if line.startswith('MWR_NATIVE_FETCH_NAVIGATING'):
+                            release_old_image.set()
                         if line.startswith('MWR_NATIVE_FETCH_PROOF '):
+                            release_old_image.set()
                             release_load.set()
 
                 reader = threading.Thread(target=read, daemon=True)
@@ -159,6 +163,7 @@ run();
                                          requests=requests, joint_gc_before_microtasks=log.count('MWR_NATIVE_MICROTASK_GC\n'))
                 print(scenario, 'passed', flush=True)
         finally:
+            release_old_image.set()
             release_load.set()
             headers_seen.set()
             for service in (server, other):

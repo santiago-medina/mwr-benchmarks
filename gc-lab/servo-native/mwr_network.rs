@@ -335,7 +335,7 @@ fn poll_navigation(doc: &Document) {
         let Some(mut probe)=NAVIGATION.lock().unwrap().take()else{return;};
         if !(probe.session.load(Ordering::Acquire)&&probe.document.load(Ordering::Acquire)){
             probe.attempts+=1;
-            if probe.attempts>200{eprintln!("MWR_NATIVE_ERROR pending fetch retained old realm");return;}
+            if probe.attempts>200{eprintln!("MWR_NATIVE_ERROR pending fetch retained old realm: session_collected={} document_collected={} still_registered={}",probe.session.load(Ordering::Acquire),probe.document.load(Ordering::Acquire),SESSIONS.with(|s|s.borrow().contains_key(&probe.pipeline)));return;}
             *NAVIGATION.lock().unwrap()=Some(probe);poll_navigation(&doc);return;
         }
         rooted!(&in(&mut cx) let value=UndefinedValue());
