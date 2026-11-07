@@ -23,6 +23,9 @@ pub enum Expr {
         body: Vec<Stmt>,
         method: bool,
     },
+    AsyncFunction {name:Option<String>,params:Vec<String>,body:Vec<Stmt>,method:bool},
+    AsyncArrow {params:Vec<String>,body:Vec<Stmt>},
+    Await(Box<Expr>),
     Object(Vec<(String, Property)>),
     Array(Vec<Option<Expr>>),
     Member(Box<Expr>, String),
@@ -46,6 +49,7 @@ pub enum Stmt {
     Let(String, Expr),
     Var(String, Option<Expr>),
     Function(String, Vec<String>, Vec<Stmt>),
+    AsyncFunction(String, Vec<String>, Vec<Stmt>),
     Set(Expr, String, Expr),
     Expr(Expr),
     Return(Expr),
@@ -403,6 +407,9 @@ impl Parser<'_> {
                 body,
             });
         }
+        if self.current()==&Token::Name("async".into()) && self.tokens.get(self.cursor+1).is_some_and(|(t,offset)|t==&Token::Name("function".into())&&!self.source[self.tokens[self.cursor].1..*offset].contains(['\n','\r'])) {
+            self.take();self.take();let name=self.name()?;let params=self.params()?;return Ok(Stmt::AsyncFunction(name,params,self.block()?));
+        }
         if self.word("function") {
             let n = self.name()?;
             let p = self.params()?;
@@ -553,6 +560,8 @@ impl Parser<'_> {
         Ok(a)
     }
     fn unary(&mut self) -> Result<Expr, SyntaxError> {
+        if self.word("await"){if self.depth>=64{return Err(self.error("syntax nesting limit"));}self.depth+=1;let value=self.unary();self.depth-=1;return Ok(Expr::Await(Box::new(value?)));}
+
         if matches!(self.current(),Token::Op(s)if s=="!"||s=="+"||s=="-")
             || matches!(self.current(),Token::Name(s)if s=="typeof"||s=="delete"||s=="void")
         {
@@ -588,6 +597,13 @@ impl Parser<'_> {
         self.postfix(a)
     }
     fn primary(&mut self) -> Result<Expr, SyntaxError> {
+        if self.current()==&Token::Name("async".into()) && self.tokens.get(self.cursor+1).is_some_and(|(t,offset)|!self.source[self.tokens[self.cursor].1..*offset].contains(['\n','\r'])&&(t==&Token::Name("function".into())||t==&Token::Punct('('))) {
+            let save=self.cursor;self.take();
+            if self.word("function"){let name=if self.current()==&Token::Punct('('){None}else{Some(self.name()?)};let params=self.params()?;return Ok(Expr::AsyncFunction{name,params,body:self.block()?,method:false});}
+            if self.is_arrow(){let params=self.params()?;self.op("=>");let body=if self.current()==&Token::Punct('{'){self.block()?}else{vec![Stmt::Return(self.expression()?)]};return Ok(Expr::AsyncArrow{params,body});}
+            self.cursor=save;
+        }
+
         if self.word("function") {
             let name = if self.current() == &Token::Punct('(') {
                 None
@@ -781,7 +797,7 @@ fn validate(
     can_return: bool,
     depth: usize,
 ) -> Result<(), SyntaxError> {
-    validate_loop(body, params, can_return, depth, false)
+    validate_loop(body, params, can_return, depth, false,false)
 }
 fn validate_loop(
     body: &[Stmt],
@@ -789,6 +805,7 @@ fn validate_loop(
     can_return: bool,
     depth: usize,
     in_loop: bool,
+    in_async:bool,
 ) -> Result<(), SyntaxError> {
     let err = |message| SyntaxError { offset: 0, message };
     if depth >= 64 {
@@ -816,11 +833,11 @@ fn validate_loop(
                     work.push((e, depth));
                 }
             }
-            Stmt::Function(n, p, b) => {
+            Stmt::Function(n, p, b) | Stmt::AsyncFunction(n,p,b) => {
                 if names.contains(n.as_str()) {
                     return Err(err("function conflicts with lexical binding"));
                 }
-                validate(b, p, true, depth + 1)?;
+                validate_loop(b,p,true,depth+1,false,matches!(s,Stmt::AsyncFunction(..)))?;
             }
             Stmt::Return(e) => {
                 if !can_return {
@@ -839,14 +856,14 @@ fn validate_loop(
             }
             Stmt::ForOf { iterable, body, .. } => {
                 work.push((iterable, depth));
-                validate_loop(std::slice::from_ref(body), &[], can_return, depth + 1, true)?;
+                validate_loop(std::slice::from_ref(body), &[], can_return, depth + 1, true,in_async)?;
             }
-            Stmt::Block(b) => validate_loop(b, &[], can_return, depth + 1, in_loop)?,
+            Stmt::Block(b) => validate_loop(b, &[], can_return, depth + 1, in_loop,in_async)?,
             Stmt::If(e, a, b) => {
                 work.push((e, depth));
-                validate_loop(std::slice::from_ref(a), &[], can_return, depth + 1, in_loop)?;
+                validate_loop(std::slice::from_ref(a), &[], can_return, depth + 1, in_loop,in_async)?;
                 if let Some(b) = b {
-                    validate_loop(std::slice::from_ref(b), &[], can_return, depth + 1, in_loop)?;
+                    validate_loop(std::slice::from_ref(b), &[], can_return, depth + 1, in_loop,in_async)?;
                 }
             }
             Stmt::Try {
@@ -854,12 +871,12 @@ fn validate_loop(
                 catch,
                 finally,
             } => {
-                validate_loop(body, &[], can_return, depth + 1, in_loop)?;
+                validate_loop(body, &[], can_return, depth + 1, in_loop,in_async)?;
                 if let Some((n, b)) = catch {
-                    validate_loop(b, std::slice::from_ref(n), can_return, depth + 1, in_loop)?;
+                    validate_loop(b, std::slice::from_ref(n), can_return, depth + 1, in_loop,in_async)?;
                 }
                 if let Some(b) = finally {
-                    validate_loop(b, &[], can_return, depth + 1, in_loop)?;
+                    validate_loop(b, &[], can_return, depth + 1, in_loop,in_async)?;
                 }
             }
         }
@@ -869,6 +886,8 @@ fn validate_loop(
             return Err(err("AST nesting limit"));
         }
         match e {
+            Expr::Await(value)=>{if !in_async{return Err(err("await outside async function"));}work.push((value,d+1));},
+            Expr::AsyncArrow{params,body}|Expr::AsyncFunction{params,body,..}=>validate_loop(body,params,true,d+1,false,true)?,
             Expr::Arrow { params, body } | Expr::Function { params, body, .. } => {
                 validate(body, params, true, d + 1)?
             }

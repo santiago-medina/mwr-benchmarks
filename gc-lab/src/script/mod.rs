@@ -15,3 +15,5 @@ pub mod wire;
 mod arrays;
 
 mod promises;
+
+mod asynchronous;

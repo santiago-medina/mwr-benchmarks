@@ -103,6 +103,7 @@ impl Engine<'_> {
         };
         let id = self.allocate(Domain::Js, -400)?;
         self.runtime.link(id, env)?;
+        let program=if matches!(kind,FunctionKind::Async|FunctionKind::AsyncArrow|FunctionKind::AsyncMethod){Some(super::asynchronous::compile(body)?)}else{None};
         self.objects.insert(
             id,
             Object::Closure {
@@ -110,6 +111,7 @@ impl Engine<'_> {
                 params: params.to_vec(),
                 body: body.to_vec(),
                 kind,
+                program,
                 data: Data::new(None),
             },
         );
@@ -173,8 +175,9 @@ impl Engine<'_> {
         can_return: bool,
     ) -> Result<Option<Value>> {
         for s in body {
-            if let Stmt::Function(n, p, b) = s {
-                let f = self.make_function(env, Some(n), p, b, FunctionKind::Ordinary, false)?;
+            if let Stmt::Function(n, p, b)|Stmt::AsyncFunction(n,p,b) = s {
+                let kind=if matches!(s,Stmt::AsyncFunction(..)){FunctionKind::Async}else{FunctionKind::Ordinary};
+                let f = self.make_function(env, Some(n), p, b, kind, false)?;
                 self.initialize(env, n, f)?;
             }
         }
@@ -192,7 +195,7 @@ impl Engine<'_> {
         self.protect(&Value::Object(local))?;
         self.block(body, local, can_return)
     }
-    fn statement(&mut self, s: &Stmt, env: Id, can_return: bool) -> Result<Option<Value>> {
+    pub(super) fn statement(&mut self, s: &Stmt, env: Id, can_return: bool) -> Result<Option<Value>> {
         match s {
             Stmt::Const(n, x) | Stmt::Let(n, x) => {
                 let v = self.eval(x, env)?;
@@ -213,7 +216,7 @@ impl Engine<'_> {
                 iterable,
                 body,
             } => return self.for_of(kind, name, iterable, body, env, can_return),
-            Stmt::Function(..) => {}
+            Stmt::Function(..)|Stmt::AsyncFunction(..) => {}
             Stmt::Expr(x) => {
                 self.eval(x, env)?;
             }
@@ -428,6 +431,9 @@ impl Engine<'_> {
                 },
                 name.is_some(),
             ),
+            Expr::Await(_)=>Err(ScriptError::Runtime("await requires continuation")),
+            Expr::AsyncArrow{params,body}=>self.make_function(env,None,params,body,FunctionKind::AsyncArrow,false),
+            Expr::AsyncFunction{name,params,body,method}=>self.make_function(env,name.as_deref(),params,body,if *method{FunctionKind::AsyncMethod}else{FunctionKind::Async},name.is_some()),
             Expr::Array(elements) => {
                 let id = self.new_array(elements.len() as u32)?;
                 self.protect(&Value::Object(id))?;
@@ -642,8 +648,10 @@ impl Engine<'_> {
                 params,
                 body,
                 kind,
+                program,
                 ..
             }) => {
+                if let Some(program)=program{return self.start_async(environment,params,body,kind,receiver,args,program);}
                 let local = self.new_environment(Some(environment), &body, true)?;
                 self.protect(&Value::Object(local))?;
                 if kind != FunctionKind::Arrow {
