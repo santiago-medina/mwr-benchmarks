@@ -55,3 +55,37 @@ jobs:
             gc-lab/servo-results/button.png
             gc-lab/servo-results/servo.log
             gc-lab/servo-results/bridge.log
+  servo-native:
+    runs-on: ubuntu-24.04
+    needs: contracts
+    timeout-minutes: 180
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_INCREMENTAL: '0'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native Servo build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang libclang-dev cmake ninja-build gperf m4 pkg-config libdbus-1-dev libfreetype-dev libfontconfig1-dev libglib2.0-dev libudev-dev libunwind-dev libssl-dev libx11-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-0 libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev libegl-dev libgles-dev libasound2-dev libgl1-mesa-dri fonts-dejavu-core
+      - name: Install pinned Servo Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal
+      - name: Prepare pinned vendored Servo fork
+        run: python3 gc-lab/servo-native/prepare.py
+      - uses: actions/cache@v4
+        with:
+          path: gc-lab/.servo-native/target
+          key: servo-native-0.7.0-rust-1.97.1-${{ hashFiles('gc-lab/servo-native/**', 'gc-lab/src/**') }}
+          restore-keys: servo-native-0.7.0-rust-1.97.1-
+      - name: Compile Servo with our interpreter linked inside script
+        working-directory: gc-lab/.servo-native
+        run: cargo +1.97.1 build -p servoshell --no-default-features --features bundled,js_jit --offline
+      - name: Execute native callbacks without WebDriver or JS transport
+        run: python3 gc-lab/servo-native/run.py --servo gc-lab/.servo-native/target/debug/servoshell
+      - name: Preserve native integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: servo-native-interpreter
+          path: gc-lab/native-results/

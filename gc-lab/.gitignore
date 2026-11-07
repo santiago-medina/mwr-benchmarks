@@ -2,3 +2,6 @@
 /.servo-test/
 /servo-results/
 /__pycache__/
+/.servo-native/
+/.servo-native.tar.gz
+/native-results/

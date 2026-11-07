@@ -1,0 +1,206 @@
+diff --git a/Cargo.toml b/Cargo.toml
+index 546ec6f..314b5b3 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -7,9 +7,14 @@ members = [
+     "ports/servoshell",
+     "tests/capi",
+     "tests/unit/*",
++    "vendor/mozjs_collator_glue-153.3.0",
++    "vendor/mozjs_locale_glue-153.3.0",
++    "vendor/mozjs_normalizer_glue-153.3.0",
++    "vendor/mozjs_properties_glue-153.3.0",
++    "vendor/mozjs_unicode_bidi_ffi-153.3.0",
+ ]
+ default-members = ["ports/servoshell"]
+-exclude = [".cargo", "support/crown"]
++exclude = [".cargo", "support/crown", "vendor"]
+ 
+ [workspace.package]
+ version = "0.7.0"
+@@ -444,6 +449,11 @@ lto = "thin"
+ codegen-units = 1
+ 
+ [patch.crates-io]
++mozjs_collator_glue = { path = "vendor/mozjs_collator_glue-153.3.0" }
++mozjs_locale_glue = { path = "vendor/mozjs_locale_glue-153.3.0" }
++mozjs_normalizer_glue = { path = "vendor/mozjs_normalizer_glue-153.3.0" }
++mozjs_properties_glue = { path = "vendor/mozjs_properties_glue-153.3.0" }
++mozjs_unicode_bidi_ffi = { path = "vendor/mozjs_unicode_bidi_ffi-153.3.0" }
+ # If you need to temporarily test Servo with a local fork of some upstream
+ # crate, add that here. Use the form:
+ #
+diff --git a/components/script/Cargo.toml b/components/script/Cargo.toml
+index fc41100..2031fb8 100644
+--- a/components/script/Cargo.toml
++++ b/components/script/Cargo.toml
+@@ -83,6 +83,7 @@ webxr = ["webgl", "gamepad", "webxr-api", "script_bindings/webxr"]
+ workspace = true
+ 
+ [dependencies]
++gc-lab = { path = "../../mwr-gc-lab" }
+ accesskit = { workspace = true }
+ aes = { workspace = true, optional = true }
+ aes-gcm = { workspace = true, optional = true }
+diff --git a/components/script/dom/event/event.rs b/components/script/dom/event/event.rs
+index 82d2779..28e3bfa 100644
+--- a/components/script/dom/event/event.rs
++++ b/components/script/dom/event/event.rs
+@@ -1440,7 +1440,7 @@ fn inner_invoke(
+         };
+ 
+         // Step 2.6 Let global be listener callback’s associated realm’s global object.
+-        let global = compiled_listener.associated_global();
++        let global = compiled_listener.associated_global(&event_target);
+ 
+         // Step 2.7 Let currentEvent be undefined.
+         let mut current_event = None;
+diff --git a/components/script/dom/event/eventtarget.rs b/components/script/dom/event/eventtarget.rs
+index f35b770..db9e4c9 100644
+--- a/components/script/dom/event/eventtarget.rs
++++ b/components/script/dom/event/eventtarget.rs
+@@ -165,6 +165,7 @@ fn get_compiled_handler(
+ #[cfg_attr(crown, crown::unrooted_must_root_lint::must_root)]
+ enum EventListenerType {
+     Additive(TracedCallback<EventListener>),
++    Mwr(u64),
+     Inline(RefCell<InlineEventListener>),
+ }
+ 
+@@ -178,6 +179,7 @@ impl EventListenerType {
+         ty: &Atom,
+     ) -> Option<CompiledEventListener> {
+         match *self {
++            EventListenerType::Mwr(id) => Some(CompiledEventListener::Mwr(id)),
+             EventListenerType::Inline(ref inline) => {
+                 get_compiled_handler(cx, inline, owner, ty).map(CompiledEventListener::Handler)
+             },
+@@ -198,6 +200,7 @@ impl EventListenerType {
+ #[cfg_attr(crown, crown::unrooted_must_root_lint::must_root)]
+ pub(crate) enum CompiledEventListener {
+     Listener(TracedCallback<EventListener>),
++    Mwr(u64),
+     Handler(CommonEventHandler),
+ }
+ 
+@@ -205,8 +208,9 @@ impl js::gc::Rootable for CompiledEventListener {}
+ 
+ impl CompiledEventListener {
+     #[expect(unsafe_code)]
+-    pub(crate) fn associated_global(&self) -> DomRoot<GlobalScope> {
++    pub(crate) fn associated_global(&self, target: &EventTarget) -> DomRoot<GlobalScope> {
+         let obj = match self {
++            CompiledEventListener::Mwr(_) => return target.global(),
+             CompiledEventListener::Listener(listener) => listener.callback(),
+             CompiledEventListener::Handler(CommonEventHandler::EventHandler(handler)) => {
+                 handler.callback()
+@@ -231,6 +235,10 @@ impl CompiledEventListener {
+     ) -> Fallible<()> {
+         // Step 3
+         match *self {
++            CompiledEventListener::Mwr(id) => crate::mwr::dispatch(cx, object, id).map_err(|e| {
++                eprintln!("MWR_NATIVE_ERROR {e}");
++                Error::Operation(Some(e))
++            }),
+             CompiledEventListener::Listener(ref listener) => {
+                 listener.HandleEvent_(cx, object, event, exception_handle)
+             },
+@@ -602,6 +610,32 @@ impl EventTarget {
+         }
+     }
+ 
++    pub(crate) fn set_mwr_listener(&self, id: u64, enabled: bool) {
++        let ty = atom!("click");
++        let mut handlers = self.ensure_handlers();
++        let entries = handlers
++            .entry(ty.clone())
++            .or_insert_with(|| EventListeners(vec![]));
++        let index = entries.iter().position(|entry| {
++            matches!(entry.borrow().listener, EventListenerType::Mwr(existing) if existing == id)
++        });
++        if let Some(index) = index {
++            if !enabled {
++                entries.remove(index).borrow_mut().removed = true;
++                self.notify_listener_removed(&ty);
++            }
++        } else if enabled {
++            entries.push(Rc::new(RefCell::new(EventListenerEntry {
++                phase: ListenerPhase::Bubbling,
++                listener: EventListenerType::Mwr(id),
++                once: false,
++                passive: false,
++                removed: false,
++            })));
++            self.notify_listener_added(&ty);
++        }
++    }
++
+     pub(crate) fn remove_listener(&self, ty: &Atom, entry: &Rc<RefCell<EventListenerEntry>>) {
+         let mut handlers = self.handlers.borrow_mut();
+ 
+diff --git a/components/script/dom/html/scripting/htmlscriptelement.rs b/components/script/dom/html/scripting/htmlscriptelement.rs
+index 66b7ade..0ae3253 100644
+--- a/components/script/dom/html/scripting/htmlscriptelement.rs
++++ b/components/script/dom/html/scripting/htmlscriptelement.rs
+@@ -702,6 +702,19 @@ impl HTMLScriptElement {
+             return;
+         }
+ 
++        if crate::mwr::enabled()
++            && element
++                .get_attribute_string_value(&local_name!("type"))
++                .is_some_and(|ty| ty.trim().eq_ignore_ascii_case("application/x-mwr-js"))
++        {
++            if element.has_attribute(&local_name!("src")) {
++                eprintln!("MWR_NATIVE_ERROR external experimental scripts are unsupported");
++            } else {
++                crate::mwr::execute(cx, &doc, &text);
++            }
++            return;
++        }
++
+         // Step 20. If el has an event attribute and a for attribute, and el's type is "classic", then:
+         if script_type == ScriptType::Classic {
+             let for_attribute = element.get_attribute_string_value(&local_name!("for"));
+@@ -1102,6 +1115,9 @@ impl HTMLScriptElement {
+                 }
+             },
+             (Some(ty), _) => {
++                if crate::mwr::enabled() && ty.trim().eq_ignore_ascii_case("application/x-mwr-js") {
++                    return Some(ScriptType::Classic);
++                }
+                 debug!("script type={}", ty);
+ 
+                 if ty
+diff --git a/components/script/dom/window/window.rs b/components/script/dom/window/window.rs
+index 1ab2f91..073ecfd 100644
+--- a/components/script/dom/window/window.rs
++++ b/components/script/dom/window/window.rs
+@@ -549,6 +549,7 @@ impl Window {
+ 
+     #[expect(unsafe_code)]
+     pub(crate) fn clear_js_runtime_for_script_deallocation(&self) {
++        crate::mwr::discard(self);
+         self.as_global_scope()
+             .remove_web_messaging_and_dedicated_workers_infra();
+         unsafe {
+@@ -2476,6 +2477,7 @@ impl Window {
+     }
+ 
+     pub(crate) fn clear_js_runtime(&self) {
++        crate::mwr::clear(self);
+         self.as_global_scope()
+             .remove_web_messaging_and_dedicated_workers_infra();
+ 
+diff --git a/components/script/lib.rs b/components/script/lib.rs
+index c6ad274..6d5520b 100644
+--- a/components/script/lib.rs
++++ b/components/script/lib.rs
+@@ -42,6 +42,7 @@ pub mod layout_dom;
+ pub(crate) mod messaging;
+ pub(crate) mod mime;
+ pub(crate) mod modules;
++mod mwr;
+ mod navigation;
+ mod realms;
+ mod routed_promise;
