@@ -621,7 +621,13 @@ impl Engine<'_> {
             return self.throw_error("TypeError", "value is not callable");
         };
         match self.objects.get(&id).cloned() {
-            Some(Object::Builtin { name, .. }) => self.builtin(&name, receiver, args),
+            Some(Object::Builtin { name, data }) => {
+                if let Some(action) = data.internal {
+                    self.promise_internal(action, args)
+                } else {
+                    self.builtin(&name, receiver, args)
+                }
+            }
             Some(Object::Bound {
                 target,
                 receiver,
@@ -657,6 +663,28 @@ impl Engine<'_> {
             _ => self.throw_error("TypeError", "value is not callable"),
         }
     }
+    pub(super) fn constructible(&self, value: &Value) -> bool {
+        let Value::Object(id) = value else {
+            return false;
+        };
+        match self.objects.get(id) {
+            Some(Object::Closure {
+                kind: FunctionKind::Ordinary,
+                ..
+            }) => true,
+            Some(Object::Bound { target, .. }) => self.constructible(target),
+            Some(Object::Builtin { name, .. }) => {
+                matches!(
+                    name.as_str(),
+                    "Promise" | "Array" | "Object" | "Function" | "String" | "Number" | "Boolean"
+                ) || self
+                    .intrinsics
+                    .as_ref()
+                    .is_some_and(|i| i.errors.contains_key(name))
+            }
+            _ => false,
+        }
+    }
     pub(super) fn construct(&mut self, f: Value, args: Vec<Value>) -> Result<Value> {
         let Value::Object(id) = f.clone() else {
             return self.throw_error("TypeError", "not a constructor");
@@ -671,6 +699,10 @@ impl Engine<'_> {
                 self.construct(target, prefix)
             }
             Some(Object::Builtin { name, .. }) => {
+                if name == "Promise" {
+                    return self
+                        .promise_constructor(args.first().cloned().unwrap_or(Value::Undefined));
+                }
                 if matches!(name.as_str(), "String" | "Number" | "Boolean") {
                     let v = self.builtin(&name, Value::Undefined, args)?;
                     self.box_value(v).map(Value::Object)

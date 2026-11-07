@@ -10,6 +10,7 @@ type Result<T> = std::result::Result<T, ScriptError>;
 pub(super) struct Intrinsics {
     pub object: Id,
     pub array: Id,
+    pub promise: Id,
     pub array_iterator: Id,
     pub function: Id,
     pub global: Id,
@@ -76,6 +77,8 @@ const METHODS: &[(&str, &[&str])] = &[
         ],
     ),
     ("Array", &["isArray"]),
+    ("Promise", &["resolve", "reject"]),
+    ("Promise.prototype", &["then", "catch", "finally"]),
     (
         "Array.prototype",
         &[
@@ -124,7 +127,8 @@ impl Engine<'_> {
             name.rsplit('.').next().unwrap()
         };
         let arity = match name {
-            "parseInt"
+            "Promise.prototype.then"
+            | "parseInt"
             | "Object.create"
             | "Object.defineProperties"
             | "Object.getOwnPropertyDescriptor"
@@ -187,6 +191,7 @@ impl Engine<'_> {
         self.intrinsics = Some(Intrinsics {
             object,
             array: object,
+            promise: object,
             array_iterator: object,
             function,
             global,
@@ -210,6 +215,8 @@ impl Engine<'_> {
             "Array",
             "Symbol",
             "parseInt",
+            "Promise",
+            "queueMicrotask",
             "Function",
             "String",
             "Number",
@@ -218,7 +225,7 @@ impl Engine<'_> {
         ];
         names.extend(ERRORS.iter().copied());
         if self.test_harness {
-            names.extend(["assert", "$ERROR"]);
+            names.extend(["assert", "$ERROR", "$DONE"]);
         }
         for name in names {
             let id = self.intrinsic_function(env, name, Some(function))?;
@@ -229,6 +236,10 @@ impl Engine<'_> {
                 .insert(name.into(), id);
             objects.insert(name.into(), id);
         }
+        let promise = self.new_object(Some(object))?;
+        self.runtime.link(env, promise)?;
+        self.intrinsics.as_mut().unwrap().promise = promise;
+        objects.insert("Promise.prototype".into(), promise);
         objects.insert("Array.prototype".into(), array);
         let reflect = self.new_object(Some(object))?;
         self.runtime.link(env, reflect)?;
@@ -338,6 +349,25 @@ impl Engine<'_> {
             super::objects::Key::Symbol(1),
             Descriptor {
                 value: Some(Value::String("Array Iterator".into())),
+                configurable: Some(true),
+                ..Descriptor::default()
+            },
+        )?;
+        let species = self.intrinsic_function(env, "Promise.species", Some(function))?;
+        self.define(
+            objects["Promise"],
+            super::objects::Key::Symbol(2),
+            Descriptor {
+                get: Some(Value::Object(species)),
+                configurable: Some(true),
+                ..Descriptor::default()
+            },
+        )?;
+        self.define(
+            promise,
+            super::objects::Key::Symbol(1),
+            Descriptor {
+                value: Some(Value::String("Promise".into())),
                 configurable: Some(true),
                 ..Descriptor::default()
             },
@@ -624,6 +654,13 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name == "Promise"
+            || name.starts_with("Promise.")
+            || name == "queueMicrotask"
+            || name == "$DONE"
+        {
+            return self.promise_builtin(name, receiver, args);
+        }
         if name == "Array"
             || name == "Symbol"
             || name.starts_with("Array.")
