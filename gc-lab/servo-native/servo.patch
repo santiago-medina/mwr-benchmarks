@@ -364,7 +364,7 @@ diff --git a/components/script/fetch/fetch.rs b/components/script/fetch/fetch.rs
      {
          body.cancel(cx, global, abort_reason);
      }
-@@ -354,13 +354,28 @@
+@@ -354,13 +354,39 @@
          return;
      };
      // Step 5. If response’s body is non-null and is readable, then error response’s body with error.
@@ -388,6 +388,17 @@ diff --git a/components/script/fetch/fetch.rs b/components/script/fetch/fetch.rs
 +    pub(crate) fn detach(&self) {
 +        let context = self.context.lock().unwrap().take();
 +        let global = self.global.lock().unwrap().take();
++        if let Some(context) = &context {
++            // No EOF notification will run after detaching. Remove the already
++            // aborted record here instead of retaining stale host bookkeeping.
++            let request = context.request.root();
++            context
++                .global
++                .root()
++                .fetch_group_mut()
++                .fetch_records
++                .remove(&request.request().id);
++        }
 +        drop(context);
 +        drop(global);
 +    }
@@ -395,7 +406,7 @@ diff --git a/components/script/fetch/fetch.rs b/components/script/fetch/fetch.rs
  /// <https://fetch.spec.whatwg.org/#dom-global-fetch>
  #[expect(non_snake_case)]
  pub(crate) fn Fetch(
-@@ -369,6 +384,17 @@
+@@ -369,6 +395,17 @@
      init: &RequestInit,
      cx: &mut CurrentRealm,
  ) -> RootedPromise {
@@ -413,7 +424,7 @@ diff --git a/components/script/fetch/fetch.rs b/components/script/fetch/fetch.rs
      // Step 1. Let p be a new promise.
      let promise = Promise::new_in_realm(cx);
  
-@@ -384,7 +410,7 @@
+@@ -384,7 +421,7 @@
              response.error_stream(cx, e.clone());
              promise.reject_error(cx, e);
              return promise;
@@ -422,7 +433,7 @@ diff --git a/components/script/fetch/fetch.rs b/components/script/fetch/fetch.rs
          Ok(r) => r,
      };
      // Step 3. Let request be requestObject’s request.
-@@ -437,6 +463,10 @@
+@@ -437,6 +474,10 @@
          global.task_manager().networking_task_source().to_sendable(),
          global,
      );
@@ -433,7 +444,7 @@ diff --git a/components/script/fetch/fetch.rs b/components/script/fetch/fetch.rs
      let fetch_context = network_listener.context.clone();
  
      // Step 11. Add the following abort steps to requestObject’s signal:
-@@ -708,7 +738,7 @@
+@@ -708,7 +749,7 @@
                  response.set_type(cx, DOMResponseType::Error);
                  response.error_stream(cx, Error::Type(c"Network error occurred".to_owned()));
                  return;
@@ -442,7 +453,7 @@ diff --git a/components/script/fetch/fetch.rs b/components/script/fetch/fetch.rs
              // Step 12.4. Set responseObject to the result of creating a Response object,
              // given response, "immutable", and relevantRealm.
              Ok(metadata) => match metadata {
-@@ -716,28 +746,28 @@
+@@ -716,28 +757,28 @@
                      let r = self.response_object.root();
                      fill_headers_with_metadata(cx, &r, m);
                      r.set_type(cx, DOMResponseType::Default);
@@ -476,7 +487,7 @@ diff --git a/components/script/fetch/fetch.rs b/components/script/fetch/fetch.rs
                  },
              },
          }
-@@ -762,8 +792,8 @@
+@@ -762,8 +803,8 @@
          let response_object = self.response_object.root();
          let mut realm = enter_auto_realm(cx, &*response_object);
          let cx = &mut realm.current_realm();
@@ -487,7 +498,7 @@ diff --git a/components/script/fetch/fetch.rs b/components/script/fetch/fetch.rs
          {
              response_object.error_stream(cx, Error::Type(c"Network error occurred".to_owned()));
          }
-@@ -883,14 +913,14 @@
+@@ -883,14 +924,14 @@
      let mut muted_errors = false;
      loop {
          match action_receiver.recv().unwrap() {
@@ -504,7 +515,7 @@ diff --git a/components/script/fetch/fetch.rs b/components/script/fetch/fetch.rs
              FetchResponseMsg::ProcessResponseChunk(_, data) => buf.extend_from_slice(&data),
              FetchResponseMsg::ProcessResponseEOF(_, Ok(_), _) => {
                  let metadata = metadata.unwrap();
-@@ -898,15 +928,15 @@
+@@ -898,15 +939,15 @@
                      submit_timing_data(cx, global, url, InitiatorType::Other, timing);
                  }
                  return Ok((metadata, buf, muted_errors));
