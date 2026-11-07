@@ -13,7 +13,7 @@ pub(super) struct Capability {
     pub reject: Value,
 }
 impl Capability {
-    fn values(&self) -> Vec<Value> {
+    pub(super) fn values(&self) -> Vec<Value> {
         vec![
             self.promise.clone(),
             self.resolve.clone(),
@@ -25,7 +25,7 @@ impl Capability {
 pub(super) struct Reaction {
     pub fulfilled: Option<Value>,
     pub rejected: Option<Value>,
-    pub capability: Capability,
+    pub capability: Option<Capability>,
 }
 #[derive(Clone)]
 pub(super) enum State {
@@ -49,13 +49,14 @@ impl PromiseState {
         for r in &self.reactions {
             values.extend(r.fulfilled.clone());
             values.extend(r.rejected.clone());
-            values.extend(r.capability.values());
+            for cap in &r.capability{values.extend(cap.values());}
         }
         values.iter().filter_map(Value::id).collect()
     }
 }
 #[derive(Clone)]
 pub(super) enum Internal {
+    AsyncResume {activation:Id,reject:bool},
     Resolve {
         cell: Id,
         reject: bool,
@@ -76,6 +77,7 @@ pub(super) enum Internal {
 impl Internal {
     pub fn edges(&self) -> Vec<Id> {
         match self {
+            Self::AsyncResume{activation,..}=>vec![*activation],
             Self::Resolve { cell, .. } | Self::Capability { cell } => vec![*cell],
             Self::Finally {
                 handler,
@@ -111,7 +113,7 @@ pub(super) enum Job {
         handler: Option<Value>,
         argument: Value,
         reject: bool,
-        capability: Capability,
+        capability: Option<Capability>,
     },
     Thenable {
         thenable: Value,
@@ -132,7 +134,7 @@ impl Job {
             } => {
                 let mut values = vec![argument.clone()];
                 values.extend(handler.clone());
-                values.extend(capability.values());
+                for cap in capability{values.extend(cap.values());}
                 values
             }
             Self::Thenable {
@@ -270,17 +272,10 @@ impl Engine<'_> {
                 } else {
                     Ok(argument)
                 };
-                match outcome {
-                    Ok(v) => {
-                        self.protect(&v)?;
-                        self.invoke(capability.resolve, vec![v])?;
-                    }
-                    Err(ScriptError::Thrown(e)) => {
-                        self.protect(&e.value)?;
-                        self.invoke(capability.reject, vec![e.value])?;
-                    }
-                    Err(e) => return Err(e),
-                }
+                if let Some(capability)=capability {match outcome {
+                    Ok(v)=>{self.protect(&v)?;self.invoke(capability.resolve,vec![v])?;},
+                    Err(ScriptError::Thrown(e))=>{self.protect(&e.value)?;self.invoke(capability.reject,vec![e.value])?;},Err(e)=>return Err(e)
+                }}else{outcome?;}
                 Ok(())
             }
             Job::Thenable {
@@ -329,7 +324,7 @@ impl Engine<'_> {
             .map(|(_, (_, message))| message)
             .collect()
     }
-    fn internal_function(&mut self, action: Internal, length: usize) -> Result<Value> {
+    pub(super) fn internal_function(&mut self, action: Internal, length: usize) -> Result<Value> {
         let id = self.new_object(Some(self.intrinsics.as_ref().unwrap().function))?;
         self.protect(&Value::Object(id))?;
         let mut data = self.data(id)?.clone();
@@ -415,7 +410,7 @@ impl Engine<'_> {
         }
         Ok(Value::Object(id))
     }
-    fn capability(&mut self, constructor: Value) -> Result<Capability> {
+    pub(super) fn capability(&mut self, constructor: Value) -> Result<Capability> {
         let cell = self.new_object(None)?;
         self.protect(&Value::Object(cell))?;
         let mut data = self.data(cell)?.clone();
@@ -532,7 +527,7 @@ impl Engine<'_> {
             Ok(species)
         }
     }
-    fn promise_resolve(&mut self, constructor: Value, value: Value) -> Result<Value> {
+    pub(super) fn promise_resolve(&mut self, constructor: Value, value: Value) -> Result<Value> {
         if !matches!(constructor, Value::Object(_)) {
             return self.throw_error("TypeError", "promise constructor is not object");
         }
@@ -553,6 +548,7 @@ impl Engine<'_> {
     pub(super) fn promise_internal(&mut self, action: Internal, args: Vec<Value>) -> Result<Value> {
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Undefined);
         match action {
+            Internal::AsyncResume{activation,reject}=>self.resume_async(activation,arg(0),reject),
             Internal::Resolve { cell, reject } => {
                 let mut data = self.data(cell)?.clone();
                 let Some(Cell::Resolving { promise, resolved }) = data.cell.as_mut() else {
@@ -613,6 +609,12 @@ impl Engine<'_> {
             }
         }
     }
+    pub(super) fn attach_reaction(&mut self,id:Id,fulfilled:Option<Value>,rejected:Option<Value>,capability:Option<Capability>)->Result<()> {
+        let reaction=Reaction{fulfilled,rejected,capability};
+        let mut data=self.data(id)?.clone();let p=data.promise.as_mut().ok_or(ScriptError::Runtime("missing promise record"))?;p.handled=true;
+        let job=match &p.state {State::Pending=>{p.reactions.push(reaction);None},State::Fulfilled(v)=>Some(Job::Reaction{handler:reaction.fulfilled,argument:v.clone(),reject:false,capability:reaction.capability}),State::Rejected(v)=>Some(Job::Reaction{handler:reaction.rejected,argument:v.clone(),reject:true,capability:reaction.capability})};
+        self.replace_data(id,data)?;self.unhandled.remove(&id);if let Some(job)=job{self.enqueue_job(job)?;}Ok(())
+    }
     pub(super) fn promise_builtin(
         &mut self,
         name: &str,
@@ -652,45 +654,7 @@ impl Engine<'_> {
                 }
                 let c = self.species(receiver)?;
                 let cap = self.capability(c)?;
-                let reaction = Reaction {
-                    fulfilled: if self.callable(&arg(0)) {
-                        Some(arg(0))
-                    } else {
-                        None
-                    },
-                    rejected: if self.callable(&arg(1)) {
-                        Some(arg(1))
-                    } else {
-                        None
-                    },
-                    capability: cap.clone(),
-                };
-                let mut data = self.data(id)?.clone();
-                let p = data.promise.as_mut().unwrap();
-                p.handled = true;
-                let job = match &p.state {
-                    State::Pending => {
-                        p.reactions.push(reaction);
-                        None
-                    }
-                    State::Fulfilled(v) => Some(Job::Reaction {
-                        handler: reaction.fulfilled,
-                        argument: v.clone(),
-                        reject: false,
-                        capability: reaction.capability,
-                    }),
-                    State::Rejected(v) => Some(Job::Reaction {
-                        handler: reaction.rejected,
-                        argument: v.clone(),
-                        reject: true,
-                        capability: reaction.capability,
-                    }),
-                };
-                self.replace_data(id, data)?;
-                self.unhandled.remove(&id);
-                if let Some(job) = job {
-                    self.enqueue_job(job)?;
-                }
+                self.attach_reaction(id,if self.callable(&arg(0)){Some(arg(0))}else{None},if self.callable(&arg(1)){Some(arg(1))}else{None},Some(cap.clone()))?;
                 Ok(cap.promise)
             }
             "Promise.prototype.catch" => {

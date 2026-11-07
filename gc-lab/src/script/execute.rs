@@ -168,12 +168,7 @@ impl Engine<'_> {
         }
         Ok(Value::Object(id))
     }
-    pub(super) fn block(
-        &mut self,
-        body: &[Stmt],
-        env: Id,
-        can_return: bool,
-    ) -> Result<Option<Value>> {
+    pub(super) fn hoist_functions(&mut self,body:&[Stmt],env:Id)->Result<()> {
         for s in body {
             if let Stmt::Function(n, p, b)|Stmt::AsyncFunction(n,p,b) = s {
                 let kind=if matches!(s,Stmt::AsyncFunction(..)){FunctionKind::Async}else{FunctionKind::Ordinary};
@@ -181,6 +176,15 @@ impl Engine<'_> {
                 self.initialize(env, n, f)?;
             }
         }
+        Ok(())
+    }
+    pub(super) fn block(
+        &mut self,
+        body: &[Stmt],
+        env: Id,
+        can_return: bool,
+    ) -> Result<Option<Value>> {
+        self.hoist_functions(body,env)?;
         for s in body {
             self.tick()?;
             let completion = self.frame(|e| e.statement(s, env, can_return))?;
@@ -493,10 +497,8 @@ impl Engine<'_> {
             },
         }
     }
-    fn eval_object(&mut self, props: &[(String, Literal)], env: Id) -> Result<Value> {
-        let id = self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;
-        self.protect(&Value::Object(id))?;
-        for (k, p) in props {
+    fn eval_object(&mut self,props:&[(String,Literal)],env:Id)->Result<Value>{let id=self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;self.protect(&Value::Object(id))?;for(k,p)in props{self.literal_property(id,k,p,env)?;}Ok(Value::Object(id))}
+    pub(super) fn literal_property(&mut self,id:Id,k:&str,p:&Literal,env:Id)->Result<()> {
             let d = match p {
                 Literal::Prototype(x) => {
                     let v = self.eval(x, env)?;
@@ -509,7 +511,7 @@ impl Engine<'_> {
                         }
                         _ => {}
                     }
-                    continue;
+                    return Ok(());
                 }
                 Literal::Value(x) => {
                     let v = self.eval(x, env)?;
@@ -550,8 +552,7 @@ impl Engine<'_> {
                 }
             };
             self.define(id, k, d)?;
-        }
-        Ok(Value::Object(id))
+        Ok(())
     }
     fn eval_call(&mut self, f: &Expr, args: &[Expr], env: Id, new: bool) -> Result<Value> {
         let (receiver, callee) = if !new {
