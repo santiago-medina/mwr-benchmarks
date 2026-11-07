@@ -90,6 +90,10 @@ pub(super) struct Data {
     pub boxed: Option<Value>,
     pub arguments: bool,
     pub array: bool,
+    pub promise:Option<super::promises::PromiseState>,
+    pub internal:Option<super::promises::Internal>,
+    pub cell:Option<super::promises::Cell>,
+    pub job:Option<super::promises::Job>,
     pub iterator: Option<super::arrays::IteratorState>,
 }
 impl Data {
@@ -103,6 +107,7 @@ impl Data {
             arguments: false,
             array: false,
             iterator: None,
+            promise:None, internal:None, cell:None, job:None,
         }
     }
     fn edges(&self) -> Vec<Id> {
@@ -110,11 +115,14 @@ impl Data {
             .into_iter()
             .chain(self.boxed.as_ref().and_then(Value::id))
             .chain(self.iterator.as_ref().and_then(|i| i.target))
+            .chain(self.promise.as_ref().into_iter().flat_map(|p|p.edges()))
+            .chain(self.internal.as_ref().into_iter().flat_map(|p|p.edges()))
+            .chain(self.cell.as_ref().into_iter().flat_map(|p|p.edges()))
+            .chain(self.job.as_ref().into_iter().flat_map(|p|p.edges()))
             .chain(self.properties.iter().flat_map(|(_, p)| p.edges()))
             .collect()
     }
     pub fn own(&self, key: impl Into<Key>) -> Option<&Property> {
-        let key = key.into();
         let key = key.into();
         self.properties
             .iter()

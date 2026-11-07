@@ -13,3 +13,5 @@ pub use adapter::DomAdapter;
 pub mod wire;
 
 mod arrays;
+
+mod promises;

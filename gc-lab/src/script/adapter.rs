@@ -6,6 +6,8 @@ pub trait DomAdapter {
         false
     }
 
+    /// Notification only: enqueue in the host's microtask queue, never execute inline.
+    fn queue_microtask(&mut self,_serial:u64)->Result<(),String>{Ok(())}
     fn create_element(&mut self, tag: &str) -> Result<u64, String>;
     fn query_selector(&mut self, selector: &str) -> Result<u64, String>;
     fn tag_name(&mut self, node: u64) -> Result<String, String>;

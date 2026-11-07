@@ -106,6 +106,9 @@ pub struct Engine<'host> {
     pub(super) evaluation_depth: usize,
     pub(super) next_symbol: u64,
     pub(super) join_stack: Vec<Id>,
+    pub(super) jobs:std::collections::VecDeque<super::promises::QueuedJob>,
+    pub(super) next_job:u64,
+    pub(super) checkpoint_running:bool,
     stress: bool,
     steps: usize,
     step_limit: usize,
@@ -130,6 +133,7 @@ impl<'host> Engine<'host> {
             evaluation_depth: 0,
             next_symbol: 3,
             join_stack: vec![],
+            jobs:super::promises::empty_queue(), next_job:1, checkpoint_running:false,
             stress: true,
             steps: 0,
             step_limit: 10_000,
@@ -157,6 +161,7 @@ impl<'host> Engine<'host> {
             evaluation_depth: self.evaluation_depth,
             next_symbol: self.next_symbol,
             join_stack: self.join_stack,
+            jobs:self.jobs,next_job:self.next_job,checkpoint_running:self.checkpoint_running,
             stress: self.stress,
             steps: self.steps,
             step_limit: self.step_limit,
@@ -261,6 +266,7 @@ impl<'host> Engine<'host> {
         Ok(())
     }
     pub fn release_globals(&mut self) {
+        self.cancel_microtasks();
         if let Some(global) = self.global.take() {
             self.runtime.unroot(global).expect("owned global root");
         }
