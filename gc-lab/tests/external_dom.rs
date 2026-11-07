@@ -20,9 +20,13 @@ struct State {
     fail_tag: bool,
     fail_listener: bool,
     fail_set: bool,
+    traced: bool,
 }
 struct Host(Rc<RefCell<State>>);
 impl DomAdapter for Host {
+    fn traces_native_edges(&self) -> bool {
+        self.0.borrow().traced
+    }
     fn create_element(&mut self, _: &str) -> Result<u64, String> {
         let mut s = self.0.borrow_mut();
         s.next += 1;
@@ -189,6 +193,9 @@ fn data_wire_roundtrips_without_turning_text_into_source() {
 }
 
 impl DomAdapter for &mut Host {
+    fn traces_native_edges(&self) -> bool {
+        (**self).traces_native_edges()
+    }
     fn create_element(&mut self, tag: &str) -> Result<u64, String> {
         (**self).create_element(tag)
     }
@@ -241,4 +248,77 @@ fn borrowed_host_context_can_end_between_script_and_native_event() {
     assert_eq!(e.live_objects(), 0);
     assert!(state.borrow().leases.is_empty());
     assert!(state.borrow().hooks.is_empty());
+}
+
+#[test]
+fn native_marking_keeps_a_scoped_listener_alive_then_reclaims_the_cycle() {
+    let (mut e, state) = engine();
+    state.borrow_mut().traced = true;
+    e.execute("const setup = () => { const button = document.querySelector('#button'); button.addEventListener('click', () => { button.textContent = 'Funciona'; }); }; ").unwrap();
+    let baseline = e.live_objects();
+    e.call_global("setup").unwrap();
+    e.collect();
+    assert!(e.live_objects() > baseline);
+    let suspended = e.suspend();
+    assert!(suspended.trace_native_edges(None).is_empty());
+    assert_eq!(suspended.trace_native_edges(Some(1)), vec![1]);
+    let mut e = suspended.resume(Box::new(Host(state.clone())));
+    e.collect_native(&[1]).unwrap();
+    e.dispatch_remote_click(1).unwrap();
+    assert_eq!(state.borrow().text[&1], "Funciona");
+    // The native collector reports no incoming edge after the DOM node dies.
+    e.collect_native(&[]).unwrap();
+    assert_eq!(e.live_objects(), baseline);
+    assert_eq!(e.metadata_objects(), baseline);
+    assert_eq!(e.live_roots(), 1); // Realm remains alive throughout.
+    assert_eq!(e.remote_node_count(), 0);
+    assert!(state.borrow().hooks.is_empty());
+    assert!(e.dispatch_remote_click(1).is_err());
+    // Repeating setup must not depend on a discarded realm or stale IDs.
+    for _ in 0..100 {
+        e.call_global("setup").unwrap();
+        e.collect_native(&[1]).unwrap();
+        e.dispatch_remote_click(1).unwrap();
+        e.collect_native(&[]).unwrap();
+        assert_eq!(e.live_objects(), baseline);
+    }
+}
+
+#[test]
+fn vm_roots_and_foreign_callbacks_trace_transitive_native_edges() {
+    let (mut e, state) = engine();
+    state.borrow_mut().traced = true;
+    e.execute("const keep = document.createElement('button'); const setup = () => { const a = document.querySelector('#button'); const b = document.createElement('button'); a.addEventListener('click', () => { b.textContent = 'kept'; }); }; ").unwrap();
+    let baseline = e.live_objects();
+    e.call_global("setup").unwrap();
+    let suspended = e.suspend();
+    let roots = suspended.trace_native_edges(None);
+    assert_eq!(roots.len(), 1); // Detached node retained by our JS global.
+    let native = suspended.trace_native_edges(Some(1));
+    assert!(native.contains(&1));
+    assert!(native.len() >= 2); // Native listener -> VM closure -> second node.
+    let mut e = suspended.resume(Box::new(Host(state.clone())));
+    e.collect_native(&native).unwrap();
+    e.dispatch_remote_click(1).unwrap();
+    assert!(state.borrow().text.values().any(|v| v == "kept"));
+    e.collect_native(&[]).unwrap();
+    assert_eq!(e.live_objects(), baseline);
+    assert_eq!(e.remote_node_count(), 1);
+    assert!(e.text_content("keep").is_ok());
+}
+
+#[test]
+fn throwing_setup_unwinds_frames_without_losing_a_native_listener() {
+    let (mut e, state) = engine();
+    state.borrow_mut().traced = true;
+    e.execute("const setup = () => { const button = document.querySelector('#button'); button.addEventListener('click', () => { button.textContent = 'after error'; }); button.unsupported(); }; ").unwrap();
+    let baseline = e.live_objects();
+    assert!(e.call_global("setup").is_err());
+    assert_eq!(e.live_roots(), 1);
+    e.collect_native(&[1]).unwrap();
+    e.dispatch_remote_click(1).unwrap();
+    assert_eq!(state.borrow().text[&1], "after error");
+    e.collect_native(&[]).unwrap();
+    assert_eq!(e.live_objects(), baseline);
+    assert_eq!(e.remote_node_count(), 0);
 }

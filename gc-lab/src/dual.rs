@@ -54,6 +54,7 @@ pub struct Runtime {
     records: HashMap<Id, Record>,
     budget: Option<usize>,
     stress: bool,
+    foreign_roots: HashSet<Id>,
 }
 
 impl Runtime {
@@ -69,6 +70,7 @@ impl Runtime {
             records: HashMap::new(),
             budget: None,
             stress: false,
+            foreign_roots: HashSet::new(),
         })
     }
 
@@ -212,25 +214,48 @@ impl Runtime {
         self.records.len()
     }
 
-    pub fn collect(&mut self) -> Collected {
-        let before = self.charged_bytes();
-        let mut pending: Vec<_> = self
-            .dom
+    /// Native listeners pin the VM between coordinated collections. These are
+    /// NOT seed roots when tracing the combined native/VM graph.
+    pub fn pin_foreign(&mut self, id: Id, enabled: bool) -> Result<(), Error> {
+        self.value(id)?;
+        if enabled {
+            self.foreign_roots.insert(id);
+        } else {
+            self.foreign_roots.remove(&id);
+        }
+        Ok(())
+    }
+    pub fn root_ids(&self) -> Vec<Id> {
+        self.dom
             .root_handles()
             .into_iter()
             .map(Id::Dom)
             .chain(self.js.root_handles().into_iter().map(Id::Js))
-            .collect();
+            .collect()
+    }
+    pub fn reachable(&self, seeds: &[Id]) -> Result<HashSet<Id>, Error> {
+        let mut pending = seeds.to_vec();
         let mut live = HashSet::new();
         while let Some(id) = pending.pop() {
+            self.value(id)?;
             if live.insert(id) {
-                let record = self
-                    .records
-                    .get(&id)
-                    .expect("root or bridge to missing record");
-                pending.extend(record.links.iter().copied());
+                pending.extend(self.records[&id].links.iter().copied());
             }
         }
+        Ok(live)
+    }
+    pub fn collect(&mut self) -> Collected {
+        let foreign: Vec<_> = self.foreign_roots.iter().copied().collect();
+        self.collect_joint(&foreign).expect("valid foreign roots")
+    }
+    /// The caller has completed native marking, including callbacks back into
+    /// this arena. Ignore conservative pins; only real VM roots and native marks
+    /// seed this sweep. Validate every seed before changing either heap.
+    pub fn collect_joint(&mut self, native: &[Id]) -> Result<Collected, Error> {
+        let before = self.charged_bytes();
+        let mut seeds = self.root_ids();
+        seeds.extend_from_slice(native);
+        let live = self.reachable(&seeds)?;
         let dom: Vec<_> = live
             .iter()
             .filter_map(|id| match id {
@@ -250,11 +275,12 @@ impl Runtime {
         let dom = self.dom.collect_with_roots(&dom);
         let js = self.js.collect_with_roots(&js);
         self.records.retain(|id, _| live.contains(id));
-        Collected {
+        self.foreign_roots.retain(|id| live.contains(id));
+        Ok(Collected {
             dom,
             js,
             reclaimed_charge: before - self.charged_bytes(),
-        }
+        })
     }
 
     pub fn scope<T>(&mut self, f: impl FnOnce(&mut Scope<'_>) -> T) -> T {

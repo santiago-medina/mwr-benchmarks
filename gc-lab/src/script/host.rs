@@ -251,6 +251,13 @@ impl Engine<'_> {
                         unreachable!()
                     };
                     listeners.push(*callback);
+                    if self
+                        .adapter
+                        .as_ref()
+                        .is_some_and(|a| a.traces_native_edges())
+                    {
+                        self.runtime.pin_foreign(node, true)?;
+                    }
                 } else if name == "removeEventListener" && present {
                     if count == 1 {
                         if let Some(remote) = self.remote_nodes.get(&node).copied() {
@@ -266,6 +273,9 @@ impl Engine<'_> {
                         unreachable!()
                     };
                     listeners.retain(|id| id != callback);
+                    if listeners.is_empty() {
+                        self.runtime.pin_foreign(node, false)?;
+                    }
                 }
                 Ok(Value::Undefined)
             }

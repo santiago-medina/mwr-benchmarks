@@ -195,6 +195,31 @@ impl<'host> Engine<'host> {
         }
         self.collect();
     }
+    /// Invoke an existing global function without replacing its realm. A failed
+    /// call unwinds its frames, preserving listeners already installed in the DOM.
+    pub fn call_global(&mut self, name: &str) -> Result<()> {
+        self.steps = 0;
+        let callee = self.binding(name)?;
+        let result = self.frame(|e| {
+            e.protect(&callee)?;
+            e.invoke(callee, vec![]).map(|_| ())
+        });
+        self.collect();
+        result
+    }
+    /// Complete a native stop-the-world mark. Conservative listener pins must
+    /// not participate in the initial mark, or cross-heap cycles never die.
+    pub fn collect_native(&mut self, marked_remotes: &[u64]) -> Result<()> {
+        let seeds: Vec<_> = self
+            .remote_nodes
+            .iter()
+            .filter(|(_, remote)| marked_remotes.contains(remote))
+            .map(|(id, _)| *id)
+            .collect();
+        self.runtime.collect_joint(&seeds)?;
+        self.prune_metadata();
+        Ok(())
+    }
     pub fn binding_string(&self, name: &str) -> Result<String> {
         match self.binding(name)? {
             Value::String(value) => Ok(value),
@@ -429,6 +454,30 @@ impl Drop for Frame<'_, '_> {
 /// A VM between native event-loop invocations; it holds no borrowed host context.
 pub struct SuspendedEngine(Engine<'static>);
 impl SuspendedEngine {
+    /// Return native edges reachable from real VM roots or ONE native listener.
+    /// Read-only: never allocate VM objects, call a host operation or collect.
+    pub fn trace_native_edges(&self, listener: Option<u64>) -> Vec<u64> {
+        let mut seeds = if let Some(remote) = listener {
+            self.0
+                .remote_nodes
+                .iter()
+                .filter(|(_, r)| **r == remote)
+                .map(|(id, _)| *id)
+                .collect()
+        } else {
+            self.0.runtime.root_ids()
+        };
+        // Empty seeds intentionally do not include the conservative native pins.
+        let live = self.0.runtime.reachable(&seeds).expect("valid VM graph");
+        seeds.clear();
+        self.0
+            .remote_nodes
+            .iter()
+            .filter(|(id, _)| live.contains(id))
+            .map(|(_, remote)| *remote)
+            .collect()
+    }
+
     /// Resume against the same DOM registry, borrowing its current context.
     pub fn resume<'host>(
         self,

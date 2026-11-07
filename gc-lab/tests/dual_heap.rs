@@ -301,3 +301,22 @@ fn quota_failure_after_first_cross_edge_does_not_make_a_permanent_root() {
         assert_eq!(r.charged_bytes(), 0);
     }
 }
+
+#[test]
+fn conservative_foreign_pins_are_not_joint_roots_and_invalid_marks_do_not_sweep() {
+    let mut r = Runtime::new(Model::Indirect, Model::Indirect).unwrap();
+    let node = gc_lab::dual::create_cycle(&mut r).unwrap();
+    r.pin_foreign(node, true).unwrap();
+    r.collect();
+    assert_eq!(r.live_objects(), 2);
+    assert!(r.root_ids().is_empty());
+    let mut other = Runtime::new(Model::Indirect, Model::Indirect).unwrap();
+    let wrong_heap = other.allocate(Domain::Js, 0, 0).unwrap();
+    assert!(r.collect_joint(&[wrong_heap]).is_err());
+    assert_eq!(r.live_objects(), 2);
+    r.collect_joint(&[node]).unwrap();
+    assert_eq!(r.live_objects(), 2);
+    r.collect_joint(&[]).unwrap();
+    assert_eq!(r.live_objects(), 0);
+    assert!(r.pin_foreign(node, true).is_err());
+}

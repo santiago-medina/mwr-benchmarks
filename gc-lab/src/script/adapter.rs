@@ -1,5 +1,11 @@
 //! Typed DOM operations. Program source and closure bodies never cross this API.
 pub trait DomAdapter {
+    /// Opt in only if the embedder traces VM roots into its native collector and
+    /// native listeners back into the VM, then completes a coordinated sweep.
+    fn traces_native_edges(&self) -> bool {
+        false
+    }
+
     fn create_element(&mut self, tag: &str) -> Result<u64, String>;
     fn query_selector(&mut self, selector: &str) -> Result<u64, String>;
     fn tag_name(&mut self, node: u64) -> Result<String, String>;
