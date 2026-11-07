@@ -17,3 +17,6 @@ mod arrays;
 mod promises;
 
 mod asynchronous;
+
+mod network;
+pub use network::FetchResponse;

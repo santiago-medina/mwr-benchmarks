@@ -115,6 +115,7 @@ pub struct Engine<'host> {
     pub(super) runtime: Runtime,
     pub(super) objects: HashMap<Id, Object>,
     roots: Vec<ExternalRoot>,
+    pub(super) network: super::network::Network,
     pub(super) global: Option<ExternalRoot>,
     pub(super) intrinsics: Option<Intrinsics>,
     pub(super) test_harness: bool,
@@ -147,6 +148,7 @@ impl<'host> Engine<'host> {
             runtime: Runtime::new(dom, js)?,
             objects: HashMap::new(),
             roots: vec![],
+            network: super::network::Network::default(),
             global: None,
             intrinsics: None,
             test_harness: false,
@@ -182,6 +184,7 @@ impl<'host> Engine<'host> {
             runtime: self.runtime,
             objects: self.objects,
             roots: self.roots,
+            network: self.network,
             global: self.global,
             intrinsics: self.intrinsics,
             test_harness: self.test_harness,
@@ -266,6 +269,7 @@ impl<'host> Engine<'host> {
             self.intrinsics = None;
         }
         self.pending_release.extend(dead);
+        self.prune_responses();
         self.flush_remote_releases();
     }
     pub(super) fn queue_remote_release(&mut self, remote: u64) {

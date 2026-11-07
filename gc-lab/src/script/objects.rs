@@ -90,6 +90,8 @@ pub(super) struct Data {
     pub boxed: Option<Value>,
     pub arguments: bool,
     pub array: bool,
+    pub response: Option<super::network::Response>,
+    pub request: Option<super::network::Request>,
     pub activation: Option<super::asynchronous::Activation>,
     pub promise: Option<super::promises::PromiseState>,
     pub internal: Option<super::promises::Internal>,
@@ -109,6 +111,8 @@ impl Data {
             array: false,
             iterator: None,
             activation: None,
+            response: None,
+            request: None,
             promise: None,
             internal: None,
             cell: None,
@@ -120,6 +124,7 @@ impl Data {
             .into_iter()
             .chain(self.boxed.as_ref().and_then(Value::id))
             .chain(self.iterator.as_ref().and_then(|i| i.target))
+            .chain(self.request.as_ref().into_iter().flat_map(|r| r.edges()))
             .chain(self.activation.as_ref().into_iter().flat_map(|a| a.edges()))
             .chain(self.promise.as_ref().into_iter().flat_map(|p| p.edges()))
             .chain(self.internal.as_ref().into_iter().flat_map(|p| p.edges()))

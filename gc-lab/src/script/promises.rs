@@ -172,6 +172,7 @@ impl Engine<'_> {
         self.jobs.len()
     }
     pub fn cancel_microtasks(&mut self) {
+        self.cancel_fetches();
         let jobs = std::mem::take(&mut self.jobs);
         for job in jobs {
             self.runtime.unroot(job.root).expect("owned microtask root");

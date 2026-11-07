@@ -109,7 +109,12 @@ impl Engine<'_> {
         )?;
         Ok(())
     }
-    fn intrinsic_function(&mut self, global: Id, name: &str, prototype: Option<Id>) -> Result<Id> {
+    pub(super) fn intrinsic_function(
+        &mut self,
+        global: Id,
+        name: &str,
+        prototype: Option<Id>,
+    ) -> Result<Id> {
         let id = self.allocate(Domain::Js, -600)?;
         self.runtime.link(global, id)?;
         self.objects.insert(
@@ -253,6 +258,7 @@ impl Engine<'_> {
             "parseInt",
             "Promise",
             "queueMicrotask",
+            "fetch",
             "Function",
             "String",
             "Number",
@@ -719,6 +725,9 @@ impl Engine<'_> {
             || name.starts_with("%IteratorPrototype%")
         {
             return self.array_builtin(name, receiver, args);
+        }
+        if name == "fetch" || name.starts_with("Response.") {
+            return self.fetch_builtin(name, receiver, args);
         }
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Undefined);
         if ERRORS.contains(&name) {
