@@ -213,8 +213,8 @@ evidencia y reproducción. `dual-results.csv` registra los escenarios.
 ## Primera ejecución de JavaScript
 
 El [intérprete del subconjunto](SCRIPT_ENGINE.md) ejecuta el programa de
-`examples/button.js` con closures reales del AST y el DOM simulado. Incluye
-46 tests en total y un corpus diferencial de diez programas contra Node + mock.
+`examples/button.js` con closures reales del AST y el DOM simulado. En aquella etapa incluía
+46 tests y un corpus diferencial de diez programas contra Node + mock.
 Ver SCRIPT_ENGINE.md para reproducción y límites exactos.
 
 
@@ -223,4 +223,14 @@ Ver SCRIPT_ENGINE.md para reproducción y límites exactos.
 El [puente experimental](SERVO_INTEGRATION.md) ejecuta nuestro intérprete contra
 un botón renderizado por Servo 0.7.0, con click nativo y retirada de handles.
 SpiderMonkey sigue presente para el transporte DOM; no es un reemplazo interno.
-La suite actual tiene 52 tests y CI conserva el informe y la captura de la prueba.
+Aquella etapa tenía 52 tests; CI conserva el informe y la captura de la prueba.
+
+## Objetos, estado y ejecución nativa
+
+El estado actual está descrito en [OBJECTS.md](OBJECTS.md): 88 contratos,
+19 comparaciones con Node y un perfil de 2.837 casos oficiales de Test262
+con aprobados, no soportados y fallidos publicados por separado.
+La [integración nativa](servo-native/README.md) ejecuta el contador dentro de
+Servo, sin transporte de JavaScript para nuestro programa. SpiderMonkey sigue
+siendo necesario para los reflectores y el GC nativo. Las dependencias de la
+compilación se reutilizan mediante la caché de Actions.

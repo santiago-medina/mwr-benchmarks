@@ -73,7 +73,7 @@ mantiene como regresión independiente.
 Para evitar recompilar Servo en cada checkpoint, `servo-native` se activa con
 `[servo]` en el mensaje del commit de push o mediante `workflow_dispatch`.
 Los contratos siguen ejecutándose en commits normales; `[skip ci]` queda
-reservado a puntos de control incompletos. La caché de Actions reutiliza el target
+para puntos de control incompletos o commits que solo archivan evidencia ya validada. La caché de Actions reutiliza el target
 con la misma versión de Servo y Rust, y solo limpia los cuatro paquetes de
 integración antes de compilarlos. No hay una ABI estable de crates Rust: cambiar
 el toolchain o las features requiere una caché compatible o recompilar.

@@ -46,3 +46,18 @@ SpiderMonkey sigue gestionando los reflectores y el GC nativo de Servo. El
 programa experimental y sus callbacks se ejecutan en nuestro intérprete Rust.
 La prueba nativa usa un click sintético de `HTMLElement::Click`, no entrada física.
 El resultado de la aplicación y del GC nativo se verifica separadamente en CI.
+
+## Evidencia de ejecución
+
+El hito nativo guarda la prueba de la aplicación en `native-object-proof.json`
+y la del GC real en `native-object-gc-proof.json`, con commit y workflow concretos.
+La captura `native-object-counter.png` permite revisar el resultado renderizado.
+`conformance/results/summary.json`, `conformance/node-report.json` y
+`conformance/differential-report.json` recogen las comprobaciones del lenguaje.
+
+Validación final: [CI 42388366054](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/42388366054),
+commit `676483c75cfb92c03600b1d810ed108e46889b88`. Pasaron los cuatro jobs:
+contratos, Test262, puente DOM y Servo nativo. El contador pasó de «Cuenta: 0»
+a «Cuenta: 1». La regresión conservó 74 objetos de VM de la realm, finalizó
+3.000 botones nativos en 1.500 ciclos y verificó dos navegaciones, sin
+`release_globals`. La compilación nativa reutilizó la caché y tardó 70 segundos.

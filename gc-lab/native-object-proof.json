@@ -1,0 +1,58 @@
+{
+  "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+  "binary_sha256": "006cf2c4bc8258021f5afabd1d93ed60426e500a8f59e819b982eacca6472c89",
+  "patch_sha256": "440edf088407336ee84a0d415768a910dd87c2765e44d79c399348bcb9db2fcb",
+  "callback_after_event_loop_turn": true,
+  "module_sha256": "393209590642860e175260eb75fad2224b8b749745860b2236bd3fd3ef7b3b13",
+  "fixture_sha256": "9a7bd3bb9182bdb9804962c90b6f22b439168a55f0ad6ed29579bd052d7a095c",
+  "in_process": true,
+  "webdriver": false,
+  "javascript_transport": false,
+  "input": "Rust HTMLElement::Click; synthetic, not hardware input",
+  "scenarios": {
+    "disabled": {
+      "executions": 0,
+      "callbacks": 0,
+      "errors": [],
+      "proofs": []
+    },
+    "waiting": {
+      "executions": 1,
+      "callbacks": 0,
+      "errors": [],
+      "proofs": []
+    },
+    "callback": {
+      "executions": 1,
+      "callbacks": 1,
+      "errors": [],
+      "proofs": [
+        {
+          "before": "Cuenta: 0",
+          "after": "Cuenta: 1",
+          "click": "rust-dom-synthetic"
+        }
+      ]
+    },
+    "csp-blocked": {
+      "executions": 0,
+      "callbacks": 0,
+      "errors": [],
+      "proofs": []
+    },
+    "syntax-error": {
+      "executions": 0,
+      "callbacks": 0,
+      "errors": [
+        "MWR_NATIVE_ERROR Syntax(SyntaxError { offset: 382, message: \"expected identifier\" })"
+      ],
+      "proofs": []
+    }
+  },
+  "tested_commit": "676483c75cfb92c03600b1d810ed108e46889b88",
+  "workflow_run": "https://github.com/santiago-medina/mwr-benchmarks/actions/runs/42388366054",
+  "artifact_id": 13580806484,
+  "artifact_sha256": "2db1e97294d36e14712fd3207a22b12cea597158b05fc63cf19812b3adf1c917",
+  "dependency_cache_hit": true,
+  "native_compile_seconds": 70
+}
