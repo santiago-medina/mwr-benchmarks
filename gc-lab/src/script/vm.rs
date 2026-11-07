@@ -116,6 +116,7 @@ pub struct Engine<'host> {
     pub(super) runtime: Runtime,
     pub(super) objects: HashMap<Id, Object>,
     roots: Vec<ExternalRoot>,
+    pub(super) modules: super::modules::Registry,
     pub(super) network: super::network::Network,
     pub(super) global: Option<ExternalRoot>,
     pub(super) intrinsics: Option<Intrinsics>,
@@ -150,6 +151,7 @@ impl<'host> Engine<'host> {
             objects: HashMap::new(),
             roots: vec![],
             network: super::network::Network::default(),
+            modules: super::modules::Registry::default(),
             global: None,
             intrinsics: None,
             test_harness: false,
@@ -186,6 +188,7 @@ impl<'host> Engine<'host> {
             objects: self.objects,
             roots: self.roots,
             network: self.network,
+            modules: self.modules,
             global: self.global,
             intrinsics: self.intrinsics,
             test_harness: self.test_harness,
@@ -309,6 +312,7 @@ impl<'host> Engine<'host> {
     }
     pub fn release_globals(&mut self) {
         self.cancel_microtasks();
+        self.modules = super::modules::Registry::default();
         self.unhandled.clear();
         if let Some(global) = self.global.take() {
             self.runtime.unroot(global).expect("owned global root");

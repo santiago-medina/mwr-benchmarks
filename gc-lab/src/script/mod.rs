@@ -20,3 +20,6 @@ mod asynchronous;
 
 mod network;
 pub use network::FetchResponse;
+
+mod modules;
+pub use modules::{ModuleSource, ModuleStatus};

@@ -15,21 +15,13 @@ pub struct Export {
 #[derive(Clone, Debug)]
 pub struct Module {
     pub body: Vec<Stmt>,
+    pub requests: Vec<String>,
     pub imports: Vec<Import>,
     pub exports: Vec<Export>,
 }
 impl Module {
     pub fn dependencies(&self) -> Vec<&str> {
-        self.imports
-            .iter()
-            .map(|i| i.specifier.as_str())
-            .chain(self.exports.iter().filter_map(|e| e.from.as_deref()))
-            .fold(Vec::new(), |mut list, s| {
-                if !list.contains(&s) {
-                    list.push(s);
-                }
-                list
-            })
+        self.requests.iter().map(String::as_str).collect()
     }
 }
 fn specifier(p: &mut Parser<'_>) -> Result<String, SyntaxError> {
@@ -69,6 +61,7 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
     };
     let mut module = Module {
         body: vec![],
+        requests: vec![],
         imports: vec![],
         exports: vec![],
     };
@@ -79,6 +72,9 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
         if p.word("import") {
             if matches!(p.current(), Token::String(_)) {
                 let specifier = specifier(&mut p)?;
+                if !module.requests.contains(&specifier) {
+                    module.requests.push(specifier.clone());
+                }
                 p.semi()?;
                 module.imports.push(Import {
                     specifier,
@@ -103,6 +99,9 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
                 }
             }
             let specifier = specifier(&mut p)?;
+            if !module.requests.contains(&specifier) {
+                module.requests.push(specifier.clone());
+            }
             p.semi()?;
             module.imports.push(Import {
                 specifier,

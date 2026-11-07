@@ -58,6 +58,10 @@ impl PromiseState {
 }
 #[derive(Clone)]
 pub(super) enum Internal {
+    ModuleSettled {
+        index: usize,
+        reject: bool,
+    },
     AsyncResume {
         activation: Id,
         reject: bool,
@@ -82,6 +86,7 @@ pub(super) enum Internal {
 impl Internal {
     pub fn edges(&self) -> Vec<Id> {
         match self {
+            Self::ModuleSettled { .. } => vec![],
             Self::AsyncResume { activation, .. } => vec![*activation],
             Self::Resolve { cell, .. } | Self::Capability { cell } => vec![*cell],
             Self::Finally {
@@ -567,6 +572,7 @@ impl Engine<'_> {
     pub(super) fn promise_internal(&mut self, action: Internal, args: Vec<Value>) -> Result<Value> {
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Undefined);
         match action {
+            Internal::ModuleSettled { index, reject } => self.module_settled(index, arg(0), reject),
             Internal::AsyncResume { activation, reject } => {
                 self.resume_async(activation, arg(0), reject)
             }

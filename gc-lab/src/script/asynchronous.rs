@@ -68,7 +68,7 @@ fn expr_await(e: &Expr) -> bool {
         _ => false,
     }
 }
-fn stmt_await(s: &Stmt) -> bool {
+pub(super) fn stmt_await(s: &Stmt) -> bool {
     match s {
         Stmt::Const(_, e) | Stmt::Let(_, e) | Stmt::Return(e) | Stmt::Throw(e) | Stmt::Expr(e) => {
             expr_await(e)
@@ -367,6 +367,14 @@ pub(super) fn compile(body: &[Stmt]) -> Result<Arc<Program>> {
         registers: c.next,
     }))
 }
+pub(super) fn compile_module(body: &[Stmt]) -> Result<Arc<Program>> {
+    let mut program = compile(body)?;
+    // Module functions were instantiated before any dependency executes.
+    if let Op::Hoist(_) = &program.ops[0] {
+        Arc::get_mut(&mut program).unwrap().ops[0] = Op::Jump(1);
+    }
+    Ok(program)
+}
 #[derive(Clone)]
 enum Completion {
     Normal,
@@ -440,6 +448,14 @@ impl Engine<'_> {
         for (i, n) in params.iter().enumerate() {
             self.mutable_binding(local, n, args.get(i).cloned().unwrap_or(Value::Undefined))?;
         }
+        self.start_program(local, program, cap)
+    }
+    pub(super) fn start_program(
+        &mut self,
+        local: Id,
+        program: Arc<Program>,
+        cap: super::promises::Capability,
+    ) -> Result<Value> {
         let id = self.new_object(None)?;
         self.protect(&Value::Object(id))?;
         let mut data = self.data(id)?.clone();
