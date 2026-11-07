@@ -470,6 +470,9 @@ fn self_test(cx: &mut JSContext, doc: &Document) -> Result<()> {
 }
 // Trusted DOM roots must go before Servo tears down its JS runtime. This hook is
 // mandatory on navigation/shutdown; the registry is not a joint tracing GC.
+pub(crate) fn abort_network(cx: &mut JSContext, window: &Window) {
+    network::abort_all(cx, window);
+}
 pub(crate) fn clear(window: &Window) {
     if let Some(state) = SESSIONS.with(|s| s.borrow_mut().remove(&window.pipeline_id())) {
         for (id, node) in state.registry.borrow_mut().nodes.drain() {

@@ -155,6 +155,24 @@ fn handler(
         })),
     )
 }
+pub(super) fn abort_all(cx: &mut JSContext, window: &Window) {
+    let Some(state) = session(window) else {
+        return;
+    };
+    let controllers: Vec<_> = {
+        let registry = state.registry.borrow();
+        registry
+            .network
+            .pending
+            .values()
+            .chain(registry.network.responses.values().map(|(_, c)| c))
+            .map(|c| Trusted::new(&*c.root()))
+            .collect()
+    };
+    for controller in controllers {
+        abort(cx, controller);
+    }
+}
 fn abort(cx: &mut JSContext, controller: Trusted<AbortController>) {
     let controller = controller.root();
     let global = controller.global();

@@ -285,3 +285,15 @@ diff --git a/components/script/runtime/job_queue.rs b/components/script/runtime/
      // TODO: Step 8. Record timing info for microtask checkpoint.
  }
  
+
+diff --git a/components/script/dom/document/document.rs b/components/script/dom/document/document.rs
+--- a/components/script/dom/document/document.rs
++++ b/components/script/dom/document/document.rs
+@@ -2340,2 +2340,3 @@
+     pub(crate) fn unload(&self, cx: &mut JSContext, recursive_flag: bool) {
++        crate::mwr::abort_network(cx, self.window());
+         if self.window_detached() {
+@@ -2935,2 +2936,3 @@
+     pub(crate) fn abort(&self, cx: &mut JSContext) {
++        crate::mwr::abort_network(cx, self.window());
+         // We need to inhibit the loader before anything else.
