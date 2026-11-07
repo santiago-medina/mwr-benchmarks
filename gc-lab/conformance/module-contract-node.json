@@ -1,10 +1,10 @@
 {
   "node_version": "v24.22.1",
-  "total": 10,
-  "passed": 10,
+  "total": 13,
+  "passed": 13,
   "failures": [],
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
-  "contracts_sha256": "94e8f945164e5aaa75d4719f3f62ded8cb22fd9b8a3d1beac65dd205a46ef302",
+  "contracts_sha256": "3ccfc089b520dff30628207d71b730725d8fa6ca76e18791d613d411b6ee1955",
   "runner_sha256": "816773c3037a4206265cfbae73efb7344ee915cf86ba19d14dfcc23a9adfe975",
   "cases": [
     {
@@ -35,7 +35,7 @@
         "main": "b0c0d9e6071bd98f36ab64399ed30ee443a254bd745c7af2e4f932ed8c662ada",
         "a": "f743c35947de09e6835d14b2a344d9fd5577601f343b489221e3be12ce5003e0",
         "b": "59f6db49f98b550ae831312ffd45dc9c499b2daae4e72047758df0c54216f8c4",
-        "shared": "b8a470f66b0ad30643af6d0d281e5198650c5989ea7d171da9210ced882cf61a"
+        "shared": "2b153cd2eb2e88d51b76ec4995596d2dc5448a783a43cffde469b1d395a5fb75"
       }
     },
     {
@@ -80,6 +80,29 @@
       "sources": {
         "main": "9428e81cceea78ef5333eb40e05fd83c74b2d5d1004558921cdb1464942a37a2",
         "dep": "d8207417ea189d6bdcda48fee66675955e8b05357e69479559f41c19bd1ba98b"
+      }
+    },
+    {
+      "name": "self_import_does_not_wait_for_its_own_completion",
+      "sources": {
+        "main": "49a55090fa31cc7a3fc2ee5b3b103295af019accab9e2297ceda86e616c85ec3"
+      }
+    },
+    {
+      "name": "syntactic_top_level_await_remains_asynchronous_when_not_reached",
+      "sources": {
+        "main": "827e9e4ce23cb7b397ee64f5ed9f910ae75ae9e28dfe0c0c6ecacb5810787a9d",
+        "trace": "d8270edf48f551ac6ec292f3268dd77ebd09e981abea0f4ccfe8e87fc171d3c2",
+        "a": "5297d46ca9a59bb9d2775b977f738b398b72dabfafbfef197c1e9cb00e9be848"
+      }
+    },
+    {
+      "name": "rejection_before_await_does_not_skip_independent_siblings",
+      "sources": {
+        "main": "f9a319b833b759fd2cef2cbc36e800569ed41083035026e649e74250e7a6acb0",
+        "trace": "d8270edf48f551ac6ec292f3268dd77ebd09e981abea0f4ccfe8e87fc171d3c2",
+        "a": "9517a4b9d87d896fa09c9fb636a1c55ef8dc5c82fcf2ed1a7f94ed052d6bc988",
+        "b": "13de604cca81348f3ccf944afab2eb6e400b0ff0a157ece394bb73f55fe7d43f"
       }
     }
   ]

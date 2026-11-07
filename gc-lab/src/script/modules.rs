@@ -294,7 +294,7 @@ impl Engine<'_> {
                         && r.deps.iter().all(|&j| {
                             let d = &self.modules.records[j];
                             if d.group == r.group {
-                                d.rank > r.rank || d.phase == Phase::Done
+                                d.rank >= r.rank || d.phase == Phase::Done
                             } else {
                                 self.modules.groups[d.group]
                                     .iter()
@@ -315,7 +315,27 @@ impl Engine<'_> {
                 let Value::Object(p) = promise else {
                     unreachable!()
                 };
-                match self.data(p)?.promise.as_ref().unwrap().state.clone() {
+                let state = self.data(p)?.promise.as_ref().unwrap().state.clone();
+                let has_await = body.iter().any(super::asynchronous::stmt_await);
+                if has_await {
+                    let yes = self.internal_function(
+                        Internal::ModuleSettled {
+                            index: i,
+                            reject: false,
+                        },
+                        1,
+                    )?;
+                    let no = self.internal_function(
+                        Internal::ModuleSettled {
+                            index: i,
+                            reject: true,
+                        },
+                        1,
+                    )?;
+                    self.attach_reaction(p, Some(yes), Some(no), None)?;
+                    continue;
+                }
+                match state {
                     State::Fulfilled(_) => self.modules.records[i].phase = Phase::Done,
                     State::Rejected(error) => {
                         self.unhandled.remove(&p);

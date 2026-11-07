@@ -67,7 +67,7 @@ fn diamond_graph_executes_dependency_once() {
             source("b", "import './shared';", &[("./shared", "shared")]),
             source(
                 "shared",
-                "globalThis.runs=1;export function count(){return globalThis.runs;}",
+                "if(globalThis.runs===undefined){globalThis.runs=0;}globalThis.runs=globalThis.runs+1;export function count(){return globalThis.runs;}",
                 &[],
             ),
         ],
@@ -106,6 +106,8 @@ fn parser_rejects_import_collisions_and_duplicate_exports() {
         "import {x} from 'a';import {y as x} from 'b';",
         "export const x=1;export {x};",
         "return 1;",
+        "import {x} from 'a';{var x=1;}",
+        "function f(){}var f;",
         "import {x} from 'a';function x(){}",
     ] {
         assert!(parse_module(s).is_err(), "{s}");
@@ -130,4 +132,24 @@ fn rejection_is_cached_and_propagated_to_the_importer() {
         ],
         ModuleStatus::Errored("Error: boom".into()),
     );
+}
+
+#[test]
+fn self_import_does_not_wait_for_its_own_completion() {
+    run(
+        vec![source(
+            "main",
+            "import {n as same} from './self';export const n=7;await 1;assert.sameValue(same,7);",
+            &[("./self", "main")],
+        )],
+        ModuleStatus::Evaluated,
+    );
+}
+#[test]
+fn syntactic_top_level_await_remains_asynchronous_when_not_reached() {
+    run(vec![source("main","import {log} from './trace';import './a';assert.sameValue(log.join(','),'q');",&[("./trace","trace"),("./a","a")]),source("trace","export const log=[];",&[]),source("a","import {log} from './trace';Promise.resolve().then(function(){log.push('q');});if(false){await 1;}",&[("./trace","trace")])],ModuleStatus::Evaluated);
+}
+#[test]
+fn rejection_before_await_does_not_skip_independent_siblings() {
+    run(vec![source("main","import './a';import './b';assert(false);",&[("./a","a"),("./b","b")]),source("trace","export const log=[];",&[]),source("a","import {log} from './trace';Promise.resolve().then(function(){assert.sameValue(log.join(','),'b');});throw new Error('boom');await 1;",&[("./trace","trace")]),source("b","import {log} from './trace';log.push('b');",&[("./trace","trace")])],ModuleStatus::Errored("Error: boom".into()));
 }

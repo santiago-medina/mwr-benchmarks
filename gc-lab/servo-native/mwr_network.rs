@@ -361,6 +361,7 @@ fn poll_navigation(doc: &Document) {
     doc.global().task_manager().dom_manipulation_task_source().queue(task!(MwrFetchNavigationPoll: move |cx| {
         let doc=document.root();
         let mut realm=crate::realms::enter_auto_realm(cx,doc.window());let mut cx=realm.current_realm();
+        doc.window().reflow(&mut cx,layout_api::ReflowGoal::LayoutQuery(layout_api::QueryMsg::FlushForUpdateTheRenderingQuery));
         if let Err(error)=collect_joint(&mut cx,doc.window()){eprintln!("MWR_NATIVE_ERROR fetch navigation GC: {error}");return;}
         let Some(mut probe)=NAVIGATION.lock().unwrap().take()else{return;};
         if !(probe.session.load(Ordering::Acquire)&&probe.document.load(Ordering::Acquire)){

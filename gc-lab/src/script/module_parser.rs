@@ -208,6 +208,11 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
             }
         }
     }
+    let mut vars = vec![];
+    super::var_names(&module.body, &mut vars);
+    if vars.iter().any(|n| lexical.contains(n)) {
+        return Err(p.error("var conflicts with module binding"));
+    }
     let params = imports.into_iter().collect::<Vec<_>>();
     validate_loop(&module.body, &params, false, 0, false, true)?;
     let mut exports = HashSet::new();

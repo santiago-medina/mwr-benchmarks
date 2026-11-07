@@ -1047,3 +1047,40 @@ fn validate_loop(
 #[path = "module_parser.rs"]
 mod module_syntax;
 pub use module_syntax::{parse_module, Export, Import, Module};
+
+pub(super) fn var_names(body: &[Stmt], out: &mut Vec<String>) {
+    for s in body {
+        match s {
+            Stmt::Var(n, _) => out.push(n.clone()),
+            Stmt::ForOf {
+                kind, name, body, ..
+            } => {
+                if kind == "var" {
+                    out.push(name.clone());
+                }
+                var_names(std::slice::from_ref(body), out);
+            }
+            Stmt::Block(b) => var_names(b, out),
+            Stmt::If(_, a, b) => {
+                var_names(std::slice::from_ref(a), out);
+                if let Some(b) = b {
+                    var_names(std::slice::from_ref(b), out);
+                }
+            }
+            Stmt::Try {
+                body,
+                catch,
+                finally,
+            } => {
+                var_names(body, out);
+                if let Some((_, b)) = catch {
+                    var_names(b, out);
+                }
+                if let Some(b) = finally {
+                    var_names(b, out);
+                }
+            }
+            _ => {}
+        }
+    }
+}

@@ -436,45 +436,9 @@ impl<'host> Engine<'host> {
                 _ => {}
             }
         }
-        fn vars(body: &[Stmt], out: &mut Vec<String>) {
-            for s in body {
-                match s {
-                    Stmt::Var(n, _) => out.push(n.clone()),
-                    Stmt::ForOf {
-                        kind, name, body, ..
-                    } => {
-                        if kind == "var" {
-                            out.push(name.clone());
-                        }
-                        vars(std::slice::from_ref(body), out);
-                    }
-                    Stmt::Block(b) => vars(b, out),
-                    Stmt::If(_, a, b) => {
-                        vars(std::slice::from_ref(a), out);
-                        if let Some(b) = b {
-                            vars(std::slice::from_ref(b), out);
-                        }
-                    }
-                    Stmt::Try {
-                        body,
-                        catch,
-                        finally,
-                    } => {
-                        vars(body, out);
-                        if let Some((_, b)) = catch {
-                            vars(b, out);
-                        }
-                        if let Some(b) = finally {
-                            vars(b, out);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
         if function_scope {
             let mut names = vec![];
-            vars(body, &mut names);
+            parser::var_names(body, &mut names);
             for n in names {
                 if bindings.get(&n) == Some(&None) {
                     return Err(ScriptError::Runtime("var conflicts with lexical binding"));
@@ -486,7 +450,7 @@ impl<'host> Engine<'host> {
         let mut object_bindings = HashSet::new();
         if parent.is_none() {
             let mut names = vec![];
-            vars(body, &mut names);
+            parser::var_names(body, &mut names);
             object_bindings.extend(names);
             for s in body {
                 if let Stmt::Function(n, ..) | Stmt::AsyncFunction(n, ..) = s {
