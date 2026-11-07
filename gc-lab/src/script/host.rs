@@ -83,7 +83,7 @@ impl Engine<'_> {
             Value::Object(id) => {
                 self.runtime.value(id)?;
                 let Some(Object::Node { tag, .. }) = self.objects.get(&id) else {
-                    return Err(ScriptError::Runtime("unsupported object property"));
+                    return self.ordinary_get(id, property, Value::Object(id));
                 };
                 match property {
                     "textContent" => Ok(Value::String(self.node_text(id)?)),
@@ -95,7 +95,8 @@ impl Engine<'_> {
                     _ => Err(ScriptError::Runtime("unsupported node property")),
                 }
             }
-            _ => Err(ScriptError::Runtime("unsupported property receiver")),
+            Value::Null | Value::Undefined => self.throw_error("TypeError", "null or undefined"),
+            value => { let id = self.box_value(value.clone())?; self.protect(&Value::Object(id))?; self.ordinary_get(id, property, value) },
         }
     }
     pub(super) fn set_member(
@@ -107,16 +108,12 @@ impl Engine<'_> {
         let Value::Object(id) = receiver else {
             return Err(ScriptError::Runtime("not a node"));
         };
-        let Value::String(value) = value else {
-            return Err(ScriptError::Runtime(
-                "textContent requires a string in this subset",
-            ));
-        };
         self.runtime.value(id)?;
-        if property != "textContent" || !matches!(self.objects.get(&id), Some(Object::Node { .. }))
-        {
-            return Err(ScriptError::Runtime("unsupported assignment"));
+        if !matches!(self.objects.get(&id), Some(Object::Node { .. })) {
+            return if self.ordinary_set(id,property,value,Value::Object(id))? {Ok(())} else {self.throw_error("TypeError","assignment refused")};
         }
+        if property != "textContent" {return Err(ScriptError::Unsupported("host property assignment"));}
+        let value = if value == Value::Null {String::new()}else{self.to_string(value)?};
         if let Some(remote) = self.remote_nodes.get(&id).copied() {
             self.adapter
                 .as_mut()
@@ -161,7 +158,7 @@ impl Engine<'_> {
                     unreachable!()
                 };
                 if listeners.contains(&callback) {
-                    e.invoke(Value::Object(callback), vec![])?;
+                    e.invoke_this(Value::Object(callback), Value::Object(node), vec![])?;
                 }
             }
             Ok(Value::Undefined)
@@ -222,7 +219,7 @@ impl Engine<'_> {
                     return Err(ScriptError::Runtime("listener requires event and closure"));
                 };
                 if event != "click"
-                    || !matches!(self.objects.get(callback), Some(Object::Closure { .. }))
+                    || !self.callable(&Value::Object(*callback))
                 {
                     return Err(ScriptError::Runtime("only click closures are supported"));
                 }
