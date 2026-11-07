@@ -17,15 +17,10 @@ fn parses_parameters_returns_grouping_and_unicode_strings() {
 #[test]
 fn rejects_unsupported_or_malformed_input_with_an_offset() {
     for source in [
-        "let x = 'a';",
-        "const x = 1;",
         "const x = () => {",
         "const x = (a,a)=>{};",
         "const x = 'oops",
         "/*oops",
-        "const x = 'a'",
-        "x = 'a';",
-        "const x = '\\u1234';",
     ] {
         let error = parse(source).unwrap_err();
         assert!(error.offset <= source.len());
@@ -39,14 +34,34 @@ fn parser_enforces_source_token_and_recursion_limits() {
 }
 
 #[test]
-fn rejects_early_errors_even_in_uncalled_functions_and_unsupported_asi() {
+fn rejects_early_errors_even_in_uncalled_functions_and_strict_grammar() {
     for source in [
         "const class = 'x';",
         "const f = (x) => { const x = 'y'; };",
         "const f = () => { const x = 'a'; const x = 'b'; };",
         "return 'x';",
         "const f = ()\n=> {};",
-        "const f = () => { return\n'x'; };",
+    ] {
+        assert!(parse(source).is_err(), "{source}");
+    }
+}
+
+#[test]
+fn parses_objects_functions_numbers_and_asi() {
+    for source in [
+        "let x = 1\nx = 2",
+        "const x = '\\u1234'",
+        "function f(){return\n'x';}",
+        "const x={get a(){return 1;},set a(v){this.x=v;},method(){}};",
+        "try {throw 1;} catch(e){} finally{}",
+    ] {
+        parse(source).unwrap();
+    }
+    for source in [
+        "throw\n1",
+        "const x={__proto__:null,__proto__:null};",
+        "delete x;",
+        "const x={get a(v){}};",
     ] {
         assert!(parse(source).is_err(), "{source}");
     }

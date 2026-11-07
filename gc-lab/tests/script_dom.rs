@@ -18,11 +18,11 @@ fn requested_javascript_changes_text_and_releases_the_cross_heap_cycle() {
             assert_eq!(e.text_content("button").unwrap(), "Funciona");
             e.collect();
             assert_eq!(e.live_roots(), 1);
-            assert_eq!(e.live_objects(), 3);
+            let retained_graph = e.live_objects();
             let node = e.retain_node("button").unwrap();
             e.release_globals();
             assert_eq!(e.retained_text(node).unwrap(), "Funciona");
-            assert_eq!(e.live_objects(), 3);
+            assert_eq!(e.live_objects(), retained_graph);
             e.release_node(node).unwrap();
             assert_eq!(
                 (

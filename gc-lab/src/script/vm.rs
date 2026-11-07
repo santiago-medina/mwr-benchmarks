@@ -1,12 +1,12 @@
 //! Tree-walking interpreter. Environments and closures are JS arena objects;
 //! metadata alone is never a GC root. Temporary values are rooted by frames.
 use super::parser::{self, Stmt, SyntaxError};
+use super::{builtins::Intrinsics, objects::Data};
 use crate::{
     dual::{Domain, ExternalRoot, Id, Runtime},
     Error, Model,
 };
 use std::collections::{HashMap, HashSet};
-use super::{objects::Data, builtins::Intrinsics};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ScriptError {
@@ -23,7 +23,11 @@ impl From<Error> for ScriptError {
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Exception { pub name: Option<String>, pub message: String, pub(super) value: Value }
+pub struct Exception {
+    pub name: Option<String>,
+    pub message: String,
+    pub(super) value: Value,
+}
 type Result<T> = std::result::Result<T, ScriptError>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,12 +53,24 @@ impl Value {
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum FunctionKind { Ordinary, Arrow, Method }
+pub(super) enum FunctionKind {
+    Ordinary,
+    Arrow,
+    Method,
+}
 #[derive(Clone)]
 pub(super) enum Object {
     Ordinary(Data),
-    Builtin { name: String, data: Data },
-    Bound { target: Value, receiver: Value, args: Vec<Value>, data: Data },
+    Builtin {
+        name: String,
+        data: Data,
+    },
+    Bound {
+        target: Value,
+        receiver: Value,
+        args: Vec<Value>,
+        data: Data,
+    },
     Node {
         tag: String,
         text: String,
@@ -102,7 +118,10 @@ impl<'host> Engine<'host> {
             objects: HashMap::new(),
             roots: vec![],
             global: None,
-            intrinsics: None, test_harness: false, assertions: 0, evaluation_depth: 0,
+            intrinsics: None,
+            test_harness: false,
+            assertions: 0,
+            evaluation_depth: 0,
             stress: true,
             steps: 0,
             step_limit: 10_000,
@@ -124,7 +143,10 @@ impl<'host> Engine<'host> {
             objects: self.objects,
             roots: self.roots,
             global: self.global,
-            intrinsics: self.intrinsics, test_harness: self.test_harness, assertions: self.assertions, evaluation_depth: self.evaluation_depth,
+            intrinsics: self.intrinsics,
+            test_harness: self.test_harness,
+            assertions: self.assertions,
+            evaluation_depth: self.evaluation_depth,
             stress: self.stress,
             steps: self.steps,
             step_limit: self.step_limit,
@@ -142,8 +164,12 @@ impl<'host> Engine<'host> {
     pub fn suspend(self) -> SuspendedEngine {
         SuspendedEngine(self.rebind(None))
     }
-    pub fn enable_test_harness(&mut self) { self.test_harness = true; }
-    pub fn assertion_count(&self) -> usize { self.assertions }
+    pub fn enable_test_harness(&mut self) {
+        self.test_harness = true;
+    }
+    pub fn assertion_count(&self) -> usize {
+        self.assertions
+    }
     pub fn set_stress(&mut self, enabled: bool) {
         self.stress = enabled;
     }
@@ -179,7 +205,13 @@ impl<'host> Engine<'host> {
         self.remote_nodes
             .retain(|id, _| self.runtime.value(*id).is_ok());
         self.objects.retain(|id, _| self.runtime.value(*id).is_ok());
-        if self.intrinsics.as_ref().is_some_and(|i| self.runtime.value(i.object).is_err()) { self.intrinsics = None; }
+        if self
+            .intrinsics
+            .as_ref()
+            .is_some_and(|i| self.runtime.value(i.object).is_err())
+        {
+            self.intrinsics = None;
+        }
         self.pending_release.extend(dead);
         self.flush_remote_releases();
     }
@@ -265,7 +297,10 @@ impl<'host> Engine<'host> {
         self.assertions = 0;
         let global = self.new_environment(None, &program, true)?;
         self.global = Some(self.runtime.root(global)?);
-        let result = self.frame(|e| { e.bootstrap(global)?; e.block(&program, global, false).map(|_| ()) });
+        let result = self.frame(|e| {
+            e.bootstrap(global)?;
+            e.block(&program, global, false).map(|_| ())
+        });
         if result.is_err() {
             self.release_globals();
         } else {
@@ -303,44 +338,198 @@ impl<'host> Engine<'host> {
         let mut frame = Frame { engine: self, mark };
         f(&mut frame.engine)
     }
-    pub(super) fn new_environment(&mut self, parent: Option<Id>, body: &[Stmt], function_scope: bool) -> Result<Id> {
-        let mut bindings = HashMap::new(); let mut mutable = HashSet::new();
-        for stmt in body { match stmt {
-            Stmt::Const(n, _) | Stmt::Let(n, _) => { bindings.insert(n.clone(), None); if matches!(stmt, Stmt::Let(..)) { mutable.insert(n.clone()); } },
-            Stmt::Function(n, ..) => { bindings.insert(n.clone(), Some(Value::Undefined)); mutable.insert(n.clone()); }, _ => {}
-        }}
-        fn vars(body: &[Stmt], out: &mut Vec<String>) { for s in body { match s {
-            Stmt::Var(n, _) => out.push(n.clone()), Stmt::Block(b) => vars(b,out),
-            Stmt::If(_,a,b) => { vars(std::slice::from_ref(a),out); if let Some(b)=b { vars(std::slice::from_ref(b),out); } },
-            Stmt::Try{body,catch,finally} => {vars(body,out);if let Some((_,b))=catch{vars(b,out);}if let Some(b)=finally{vars(b,out);}}, _=>{}
-        }}}
-        if function_scope { let mut names=vec![];vars(body,&mut names);for n in names { if bindings.get(&n)==Some(&None) {return Err(ScriptError::Runtime("var conflicts with lexical binding"));}bindings.entry(n.clone()).or_insert(Some(Value::Undefined));mutable.insert(n); } }
-        if parent.is_none() { bindings.entry("document".into()).or_insert(Some(Value::Document)); }
-        let id=self.allocate(Domain::Js,-300)?;if let Some(p)=parent{self.runtime.link(id,p)?;}
-        self.objects.insert(id,Object::Environment{parent,bindings,mutable,function_scope});Ok(id)
+    pub(super) fn new_environment(
+        &mut self,
+        parent: Option<Id>,
+        body: &[Stmt],
+        function_scope: bool,
+    ) -> Result<Id> {
+        let mut bindings = HashMap::new();
+        let mut mutable = HashSet::new();
+        for stmt in body {
+            match stmt {
+                Stmt::Const(n, _) | Stmt::Let(n, _) => {
+                    bindings.insert(n.clone(), None);
+                    if matches!(stmt, Stmt::Let(..)) {
+                        mutable.insert(n.clone());
+                    }
+                }
+                Stmt::Function(n, ..) => {
+                    bindings.insert(n.clone(), Some(Value::Undefined));
+                    mutable.insert(n.clone());
+                }
+                _ => {}
+            }
+        }
+        fn vars(body: &[Stmt], out: &mut Vec<String>) {
+            for s in body {
+                match s {
+                    Stmt::Var(n, _) => out.push(n.clone()),
+                    Stmt::Block(b) => vars(b, out),
+                    Stmt::If(_, a, b) => {
+                        vars(std::slice::from_ref(a), out);
+                        if let Some(b) = b {
+                            vars(std::slice::from_ref(b), out);
+                        }
+                    }
+                    Stmt::Try {
+                        body,
+                        catch,
+                        finally,
+                    } => {
+                        vars(body, out);
+                        if let Some((_, b)) = catch {
+                            vars(b, out);
+                        }
+                        if let Some(b) = finally {
+                            vars(b, out);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if function_scope {
+            let mut names = vec![];
+            vars(body, &mut names);
+            for n in names {
+                if bindings.get(&n) == Some(&None) {
+                    return Err(ScriptError::Runtime("var conflicts with lexical binding"));
+                }
+                bindings.entry(n.clone()).or_insert(Some(Value::Undefined));
+                mutable.insert(n);
+            }
+        }
+        if parent.is_none() {
+            bindings
+                .entry("document".into())
+                .or_insert(Some(Value::Document));
+        }
+        let id = self.allocate(Domain::Js, -300)?;
+        if let Some(p) = parent {
+            self.runtime.link(id, p)?;
+        }
+        self.objects.insert(
+            id,
+            Object::Environment {
+                parent,
+                bindings,
+                mutable,
+                function_scope,
+            },
+        );
+        Ok(id)
     }
     pub(super) fn lookup(&mut self, mut env: Id, name: &str) -> Result<Value> {
-        loop { let Some(Object::Environment{parent,bindings,..})=self.objects.get(&env) else{return Err(ScriptError::Runtime("invalid environment"))};
-            if let Some(v)=bindings.get(name) { return match v.clone() {Some(v)=>Ok(v),None=>self.throw_error("ReferenceError","binding used before initialization")}; }
-            if let Some(p)=parent {env=*p;} else {break;}
+        loop {
+            let Some(Object::Environment {
+                parent, bindings, ..
+            }) = self.objects.get(&env)
+            else {
+                return Err(ScriptError::Runtime("invalid environment"));
+            };
+            if let Some(v) = bindings.get(name) {
+                return match v.clone() {
+                    Some(v) => Ok(v),
+                    None => {
+                        self.throw_error("ReferenceError", "binding used before initialization")
+                    }
+                };
+            }
+            if let Some(p) = parent {
+                env = *p;
+            } else {
+                break;
+            }
         }
-        if matches!(name,"Array"|"Symbol"|"BigInt"|"Proxy"|"Date"|"RegExp"|"Promise"|"Map"|"Set"|"WeakMap"|"WeakSet"|"Math"|"JSON"|"eval"|"Uint8Array"|"$262") {return Err(ScriptError::Unsupported("standard intrinsic not implemented"));}
-        self.throw_error("ReferenceError","unknown identifier")
+        if matches!(
+            name,
+            "Array"
+                | "Symbol"
+                | "BigInt"
+                | "Proxy"
+                | "Date"
+                | "RegExp"
+                | "Promise"
+                | "Map"
+                | "Set"
+                | "WeakMap"
+                | "WeakSet"
+                | "Math"
+                | "JSON"
+                | "eval"
+                | "Uint8Array"
+                | "$262"
+        ) {
+            return Err(ScriptError::Unsupported(
+                "standard intrinsic not implemented",
+            ));
+        }
+        self.throw_error("ReferenceError", "unknown identifier")
     }
     pub(super) fn initialize(&mut self, env: Id, name: &str, value: Value) -> Result<()> {
-        let old=match self.objects.get(&env){Some(Object::Environment{bindings,..})=>bindings.get(name).cloned().flatten(),_=>return Err(ScriptError::Runtime("invalid environment"))};
-        if let Some(id)=value.id(){self.runtime.link(env,id)?;}if let Some(id)=old.and_then(|v|v.id()){self.runtime.unlink(env,id)?;}
-        if let Some(Object::Environment{bindings,..})=self.objects.get_mut(&env){bindings.insert(name.into(),Some(value));}Ok(())
+        let old = match self.objects.get(&env) {
+            Some(Object::Environment { bindings, .. }) => bindings.get(name).cloned().flatten(),
+            _ => return Err(ScriptError::Runtime("invalid environment")),
+        };
+        if let Some(id) = value.id() {
+            self.runtime.link(env, id)?;
+        }
+        if let Some(id) = old.and_then(|v| v.id()) {
+            self.runtime.unlink(env, id)?;
+        }
+        if let Some(Object::Environment { bindings, .. }) = self.objects.get_mut(&env) {
+            bindings.insert(name.into(), Some(value));
+        }
+        Ok(())
     }
-    pub(super) fn mutable_binding(&mut self, env:Id, name:&str,value:Value)->Result<()> { if let Some(Object::Environment{mutable,..})=self.objects.get_mut(&env){mutable.insert(name.into());}self.initialize(env,name,value) }
-    pub(super) fn assign_binding(&mut self,mut env:Id,name:&str,value:Value)->Result<()> {
-        loop {let Some(Object::Environment{parent,bindings,mutable,..})=self.objects.get(&env) else{return Err(ScriptError::Runtime("invalid environment"))};
-            if let Some(v)=bindings.get(name){if v.is_none(){return self.throw_error("ReferenceError","binding used before initialization");}if !mutable.contains(name){return self.throw_error("TypeError","assignment to constant");}return self.initialize(env,name,value);}
-            match parent{Some(p)=>env=*p,None=>return self.throw_error("ReferenceError","unknown identifier")}
+    pub(super) fn mutable_binding(&mut self, env: Id, name: &str, value: Value) -> Result<()> {
+        if let Some(Object::Environment { mutable, .. }) = self.objects.get_mut(&env) {
+            mutable.insert(name.into());
+        }
+        self.initialize(env, name, value)
+    }
+    pub(super) fn assign_binding(&mut self, mut env: Id, name: &str, value: Value) -> Result<()> {
+        loop {
+            let Some(Object::Environment {
+                parent,
+                bindings,
+                mutable,
+                ..
+            }) = self.objects.get(&env)
+            else {
+                return Err(ScriptError::Runtime("invalid environment"));
+            };
+            if let Some(v) = bindings.get(name) {
+                if v.is_none() {
+                    return self
+                        .throw_error("ReferenceError", "binding used before initialization");
+                }
+                if !mutable.contains(name) {
+                    return self.throw_error("TypeError", "assignment to constant");
+                }
+                return self.initialize(env, name, value);
+            }
+            match parent {
+                Some(p) => env = *p,
+                None => return self.throw_error("ReferenceError", "unknown identifier"),
+            }
         }
     }
-    pub(super) fn var_environment(&self,mut env:Id)->Result<Id>{loop{match self.objects.get(&env){Some(Object::Environment{function_scope:true,..})=>return Ok(env),Some(Object::Environment{parent:Some(p),..})=>env=*p,_=>return Err(ScriptError::Runtime("missing function environment"))}}}
-
+    pub(super) fn var_environment(&self, mut env: Id) -> Result<Id> {
+        loop {
+            match self.objects.get(&env) {
+                Some(Object::Environment {
+                    function_scope: true,
+                    ..
+                }) => return Ok(env),
+                Some(Object::Environment {
+                    parent: Some(p), ..
+                }) => env = *p,
+                _ => return Err(ScriptError::Runtime("missing function environment")),
+            }
+        }
+    }
 }
 struct Frame<'a, 'host> {
     engine: &'a mut Engine<'host>,

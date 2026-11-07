@@ -96,7 +96,11 @@ impl Engine<'_> {
                 }
             }
             Value::Null | Value::Undefined => self.throw_error("TypeError", "null or undefined"),
-            value => { let id = self.box_value(value.clone())?; self.protect(&Value::Object(id))?; self.ordinary_get(id, property, value) },
+            value => {
+                let id = self.box_value(value.clone())?;
+                self.protect(&Value::Object(id))?;
+                self.ordinary_get(id, property, value)
+            }
         }
     }
     pub(super) fn set_member(
@@ -110,10 +114,20 @@ impl Engine<'_> {
         };
         self.runtime.value(id)?;
         if !matches!(self.objects.get(&id), Some(Object::Node { .. })) {
-            return if self.ordinary_set(id,property,value,Value::Object(id))? {Ok(())} else {self.throw_error("TypeError","assignment refused")};
+            return if self.ordinary_set(id, property, value, Value::Object(id))? {
+                Ok(())
+            } else {
+                self.throw_error("TypeError", "assignment refused")
+            };
         }
-        if property != "textContent" {return Err(ScriptError::Unsupported("host property assignment"));}
-        let value = if value == Value::Null {String::new()}else{self.to_string(value)?};
+        if property != "textContent" {
+            return Err(ScriptError::Unsupported("host property assignment"));
+        }
+        let value = if value == Value::Null {
+            String::new()
+        } else {
+            self.to_string(value)?
+        };
         if let Some(remote) = self.remote_nodes.get(&id).copied() {
             self.adapter
                 .as_mut()
@@ -218,9 +232,7 @@ impl Engine<'_> {
                 let [Value::String(event), Value::Object(callback)] = args.as_slice() else {
                     return Err(ScriptError::Runtime("listener requires event and closure"));
                 };
-                if event != "click"
-                    || !self.callable(&Value::Object(*callback))
-                {
+                if event != "click" || !self.callable(&Value::Object(*callback)) {
                     return Err(ScriptError::Runtime("only click closures are supported"));
                 }
                 self.runtime.value(node)?;
