@@ -78,6 +78,9 @@ jobs:
           path: gc-lab/.servo-native/target
           key: servo-native-gc-v1-0.7.0-rust-1.97.1-${{ hashFiles('gc-lab/servo-native/**', 'gc-lab/src/**') }}
           restore-keys: servo-native-gc-v1-0.7.0-rust-1.97.1-
+      - name: Clear integration crates after restoring dependency cache
+        working-directory: gc-lab/.servo-native
+        run: cargo +1.97.1 clean -p servo-script -p servo-layout -p servo -p servoshell --offline
       - name: Compile Servo with our interpreter linked inside script
         working-directory: gc-lab/.servo-native
         run: cargo +1.97.1 build -p servoshell --no-default-features --features bundled,js_jit --offline

@@ -1,5 +1,13 @@
 # Dos experimentos de integración con Servo
 
+## GC conjunto validado
+
+El [protocolo de marcado conjunto](servo-native/JOINT_GC.md) ya verifica 1.500
+ciclos, 3.000 botones nativos finalizados y dos navegaciones reales manteniendo
+vivo el realm durante los ciclos. Incluye 89 errores recuperados y conserva un
+nodo desconectado que sigue siendo alcanzable desde JS. El resultado está en
+`native-gc-proof.json`; no usa release_globals para recoger los ciclos.
+
 ## Integración nativa actual
 
 El fork de Servo 0.7.0 se ha compilado localmente con nuestro intérprete enlazado
@@ -52,8 +60,8 @@ Chrome ni una imagen generada: button.png sale del endpoint screenshot de Servo.
 Los ceros del registro remoto NO demuestran que todo el DOM nativo haya sido
 recogido por SpiderMonkey. El botón sigue insertado en document y WebDriver aún
 puede tener referencias. Demuestran la retirada de NUESTROS handles y hooks.
-Al terminar se cierra la sesión y el proceso. La colección conjunta de dos heaps
-reales dentro de Servo sigue sin estar validada.
+Al terminar se cierra la sesión y el proceso. El puente externo no valida la colección conjunta: esa prueba pertenece al
+experimento nativo posterior descrito al principio de este documento.
 
 ## Reproducir en Ubuntu 24.04 x86_64
 
@@ -131,6 +139,6 @@ y callbacks extranjeros identificados. Conserva SpiderMonkey para el DOM y
 reutiliza DomAdapter con un préstamo temporal del contexto durante cada llamada.
 
 Solo después abordaríamos un backend completamente independiente: selección del
-ejecutor de scripts, representación de listeners, rooting/tracing entre heaps,
+ejecutor de scripts, representación completa de listeners, tracing incremental entre heaps,
 conversión de valores WebIDL y contexto de ejecución/excepciones. La integración del subconjunto está compilada y probada; esa refactorización
 completa aún no está hecha.

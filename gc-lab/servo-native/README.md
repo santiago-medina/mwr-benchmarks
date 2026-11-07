@@ -1,7 +1,8 @@
 # Integración nativa y marcado conjunto en Servo 0.7.0
 
 El [protocolo de GC conjunto](JOINT_GC.md) ya se ha probado sobre ambos heaps
-reales: 1.500 ciclos y 3.000 finalizaciones nativas sin release_globals.
+reales: 1.500 ciclos, 3.000 finalizaciones nativas y dos navegaciones sin
+release_globals.
 
 Este directorio contiene el adaptador dentro del hilo de script y un parche
 mínimo sobre Servo fijado a `aac43a3f31a259f04a574f5ec4e959c943ad7cc7`.
@@ -32,7 +33,9 @@ WebDriver, proceso de intérprete separado, RPC, eval de transporte ni serializa
 de closures. El listener extranjero forma parte del dispatcher DOM de Servo.
 Se conservan los controles previos de scripting y CSP de la ruta de preparación.
 El estado de VM se suspende entre invocaciones y toma prestado el contexto DOM
-solo durante la llamada; el adaptador no fabrica contextos ni usa unsafe.
+solo durante la llamada; el adaptador no fabrica contextos. La VM mantiene
+forbid(unsafe_code); los hooks nativos de trazado aíslan el unsafe necesario para
+la API de Servo y sus invariantes se documentan en JOINT_GC.md.
 
 `MWR_NATIVE_SELF_TEST=1` encola una tarea DOM para un turno posterior del
 bucle de eventos. Esa tarea comprueba el texto inicial y pulsa con

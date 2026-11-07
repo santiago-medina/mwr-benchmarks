@@ -1,6 +1,8 @@
 //! Native GC stress harness; separate from the embedding's tracing protocol.
 use super::*;
 use crate::event_loop::document_loader::LoadType;
+use servo_constellation_traits::NavigationHistoryBehavior;
+use std::sync::Mutex;
 
 pub(super) struct Progress {
     completed: usize,
@@ -41,7 +43,12 @@ fn counts(cx: &mut JSContext, state: &Session) -> Result<(usize, usize, usize)> 
     })
 }
 pub(super) fn start(doc: &Document) {
-    doc.loader_mut().add_blocking_load(LoadType::Script(doc.url()));
+    doc.loader_mut()
+        .add_blocking_load(LoadType::Script(doc.url()));
+    if NAVIGATION.lock().unwrap().is_some() {
+        queue_navigation_poll(doc);
+        return;
+    }
     let Some(state) = session(doc.window()) else {
         return;
     };
@@ -118,8 +125,10 @@ fn install(
         .nodes
         .values()
         .find(|weak| {
-            weak.root()
-                .is_some_and(|node| node.GetTextContent().is_some_and(|s| s.to_string() == "Captured"))
+            weak.root().is_some_and(|node| {
+                node.GetTextContent()
+                    .is_some_and(|s| s.to_string() == "Captured")
+            })
         })
         .cloned()
         .ok_or("captured native companion missing")?;
@@ -134,8 +143,12 @@ fn click_and_remove(cx: &mut JSContext, target: &WeakNode, companion: &WeakNode)
         .downcast::<HTMLElement>()
         .ok_or("not HTML")?
         .Click(cx);
-    if target.GetTextContent().is_none_or(|s| s.to_string() != "Funciona")
-        || companion.GetTextContent().is_none_or(|s| s.to_string() != "Callback")
+    if target
+        .GetTextContent()
+        .is_none_or(|s| s.to_string() != "Funciona")
+        || companion
+            .GetTextContent()
+            .is_none_or(|s| s.to_string() != "Callback")
     {
         return Err("closure did not mutate both real native nodes".into());
     }
@@ -155,18 +168,30 @@ fn step(cx: &mut JSContext, doc: &Document) -> Result<()> {
     if let Some((target, companion, stale)) = progress.pending.take() {
         // Attribute/restyle queues are legitimate native roots until layout
         // consumes them. Flush normal layout work before asking about garbage.
-        doc.window().reflow(cx, layout_api::ReflowGoal::LayoutQuery(
-            layout_api::QueryMsg::FlushForUpdateTheRenderingQuery));
+        doc.window().reflow(
+            cx,
+            layout_api::ReflowGoal::LayoutQuery(
+                layout_api::QueryMsg::FlushForUpdateTheRenderingQuery,
+            ),
+        );
         collect_joint(cx, doc.window())?;
         // Weak token expiration is caused by Servo's native finalizer, not by
         // removing our registry entry, checking is_connected or dropping the VM.
         if target.alive.upgrade().is_some() || companion.alive.upgrade().is_some() {
             progress.drain_attempts += 1;
             if progress.drain_attempts >= 5 {
-                return Err(format!("native cycle survived {} collections at iteration {}; roots={:?}, native_marks={:?}",
-                    progress.drain_attempts, progress.completed,
-                    state.engine.borrow().as_ref().unwrap().trace_native_edges(None),
-                    *state.marked.borrow()));
+                return Err(format!(
+                    "native cycle survived {} collections at iteration {}; roots={:?}, native_marks={:?}",
+                    progress.drain_attempts,
+                    progress.completed,
+                    state
+                        .engine
+                        .borrow()
+                        .as_ref()
+                        .unwrap()
+                        .trace_native_edges(None),
+                    *state.marked.borrow()
+                ));
             }
             progress.pending = Some((target, companion, stale));
             *state.stress.borrow_mut() = Some(progress);
@@ -191,30 +216,21 @@ fn step(cx: &mut JSContext, doc: &Document) -> Result<()> {
             eprintln!("MWR_GC_PROGRESS {}", progress.completed);
         }
         if progress.completed == progress.limit {
-            eprintln!(
-                "MWR_GC_PROOF {}",
-                serde_json::json!({
-                    "iterations": progress.completed,
-                    "native_buttons_finalized": progress.completed * 2,
-                    "callbacks": state.callbacks.get(),
-                    "recovered_errors": progress.errors,
-                    "baseline_vm_objects": progress.baseline.0,
-                    "final_vm_objects": progress.baseline.0,
-                    "persistent_native_handles": 1,
-                    "escaped_invocation_pins": 0,
-                    "manual_global_release": false,
-                    "native_to_vm_to_native_survival": true,
-                    "disconnected_js_root_survival": true,
-                    "stale_ids_rejected": true,
-                })
-            );
-            doc.QuerySelector(cx, DOMString::from("#result"))
-                .map_err(|e| format!("{e:?}"))?
-                .ok_or("result element missing")?
-                .upcast::<Node>()
-                .SetTextContent(cx, Some(DOMString::from("Ciclos recogidos")))
-                .map_err(|e| format!("{e:?}"))?;
-            doc.finish_load(LoadType::Script(doc.url()), cx);
+            let proof = serde_json::json!({
+                "iterations": progress.completed,
+                "native_buttons_finalized": progress.completed * 2,
+                "callbacks": state.callbacks.get(),
+                "recovered_errors": progress.errors,
+                "baseline_vm_objects": progress.baseline.0,
+                "final_vm_objects": progress.baseline.0,
+                "persistent_native_handles": 1,
+                "escaped_invocation_pins": 0,
+                "manual_global_release": false,
+                "native_to_vm_to_native_survival": true,
+                "disconnected_js_root_survival": true,
+                "stale_ids_rejected": true,
+            });
+            begin_navigation(cx, doc, proof, 1)?;
             return Ok(());
         }
     }
@@ -237,5 +253,129 @@ fn step(cx: &mut JSContext, doc: &Document) -> Result<()> {
     progress.pending = Some(probes);
     *state.stress.borrow_mut() = Some(progress);
     queue_step(doc);
+    Ok(())
+}
+
+// Plain atomic flags can cross script threads. Neither this static nor its
+// observers retain an old Window, Node, Session, VM or JS reflector.
+struct NavigationProbe {
+    session_dead: Arc<AtomicBool>,
+    document_dead: Arc<AtomicBool>,
+    detached_dead: Arc<AtomicBool>,
+    proof: serde_json::Value,
+    round: usize,
+    waits: usize,
+}
+static NAVIGATION: Mutex<Option<NavigationProbe>> = Mutex::new(None);
+
+fn begin_navigation(
+    cx: &mut JSContext,
+    doc: &Document,
+    proof: serde_json::Value,
+    round: usize,
+) -> Result<()> {
+    let state = session(doc.window()).ok_or("navigation session missing")?;
+    let registry = state.registry.borrow();
+    if registry.nodes.len() != 1 {
+        return Err("navigation has unexpected wrappers".into());
+    }
+    let detached = registry
+        .nodes
+        .values()
+        .next()
+        .unwrap()
+        .alive
+        .upgrade()
+        .ok_or("rooted native node missing before navigation")?
+        .dead
+        .clone();
+    let document = registry
+        .document
+        .alive
+        .upgrade()
+        .ok_or("document token missing")?
+        .dead
+        .clone();
+    drop(registry);
+    let url = doc
+        .url()
+        .join(&format!("?navigation={round}"))
+        .map_err(|e| format!("{e:?}"))?;
+    *NAVIGATION.lock().unwrap() = Some(NavigationProbe {
+        session_dead: state.lifetime.dead.clone(),
+        document_dead: document,
+        detached_dead: detached,
+        proof,
+        round,
+        waits: 0,
+    });
+    let window = doc.window();
+    let data = window.load_data_for_document(url, window.pipeline_id());
+    crate::navigation::navigate(cx, window, NavigationHistoryBehavior::Replace, false, data);
+    // The old load blocker is abandoned with its document on navigation. Do not
+    // publish a stable image of the old page while the new navigation is pending.
+    Ok(())
+}
+fn queue_navigation_poll(doc: &Document) {
+    let document = Trusted::new(doc);
+    doc.global()
+        .task_manager()
+        .dom_manipulation_task_source()
+        .queue(task!(MwrNavigationProbe: move |cx| {
+            let document = document.root();
+            let mut realm = crate::realms::enter_auto_realm(cx, document.window());
+            if let Err(error) = navigation_poll(&mut realm.current_realm(), &document) {
+                eprintln!("MWR_NATIVE_ERROR navigation: {error}");
+                document.finish_load(LoadType::Script(document.url()), &mut realm.current_realm());
+            }
+        }));
+}
+fn navigation_poll(cx: &mut JSContext, doc: &Document) -> Result<()> {
+    let mut probe = NAVIGATION
+        .lock()
+        .unwrap()
+        .take()
+        .ok_or("navigation probe missing")?;
+    doc.window().reflow(
+        cx,
+        layout_api::ReflowGoal::LayoutQuery(layout_api::QueryMsg::FlushForUpdateTheRenderingQuery),
+    );
+    collect_joint(cx, doc.window())?;
+    let destroyed = probe.session_dead.load(Ordering::Acquire)
+        && probe.document_dead.load(Ordering::Acquire)
+        && probe.detached_dead.load(Ordering::Acquire);
+    if !destroyed {
+        probe.waits += 1;
+        if probe.waits > 200 {
+            return Err(format!(
+                "old realm retained: session={}, document={}, node={}",
+                probe.session_dead.load(Ordering::Acquire),
+                probe.document_dead.load(Ordering::Acquire),
+                probe.detached_dead.load(Ordering::Acquire)
+            ));
+        }
+        *NAVIGATION.lock().unwrap() = Some(probe);
+        queue_navigation_poll(doc);
+        return Ok(());
+    }
+    eprintln!("MWR_GC_NAVIGATION {}", probe.round);
+    if probe.round < 2 {
+        return begin_navigation(cx, doc, probe.proof, probe.round + 1);
+    }
+    probe.proof["navigation_rounds"] = serde_json::json!(probe.round);
+    probe.proof["old_sessions_destroyed"] = serde_json::json!(true);
+    probe.proof["old_documents_finalized"] = serde_json::json!(true);
+    probe.proof["old_global_native_nodes_finalized"] = serde_json::json!(true);
+    eprintln!("MWR_GC_PROOF {}", probe.proof);
+    doc.QuerySelector(cx, DOMString::from("#result"))
+        .map_err(|e| format!("{e:?}"))?
+        .ok_or("result element missing")?
+        .upcast::<Node>()
+        .SetTextContent(
+            cx,
+            Some(DOMString::from("Ciclos recogidos y navegación verificada")),
+        )
+        .map_err(|e| format!("{e:?}"))?;
+    doc.finish_load(LoadType::Script(doc.url()), cx);
     Ok(())
 }

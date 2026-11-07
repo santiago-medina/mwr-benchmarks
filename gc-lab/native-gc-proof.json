@@ -1,8 +1,10 @@
 {
   "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
-  "binary_sha256": "783b1c6c90ecda70634e0ebecf2bc4a4237f5fc64adf6f0557bc67921e1a9414",
-  "patch_sha256": "5e52872b24ad0cfbc225c82988c3ca88cb3437e4dae5904fe772c5047e36c353",
-  "module_sha256": "92d7f62932e381b4c4dbfc6930e2b558424a583b0fa0e5755d1f2dd4699eb53d",
+  "binary_sha256": "2a06dcb26ce3384712260232eaca064287fdc5bcf16534620e5081c78001886b",
+  "patch_sha256": "440edf088407336ee84a0d415768a910dd87c2765e44d79c399348bcb9db2fcb",
+  "harness_sha256": "de674b00be540f080414b94636d30b4cb0d6217e7f3813909062c144857da77a",
+  "module_sha256": "efbd15ba353422d1bfd6f549eb060c4a9132fecdcd1c31d7a047807b28c7809a",
+  "vm_sources_sha256": "7254d779378f26e63c3eea5f0782a1a572e97536fa94adb8ada9e0e235ea71c9",
   "native_finalization_observed": true,
   "in_process": true,
   "webdriver": false,
@@ -19,6 +21,10 @@
     "manual_global_release": false,
     "native_to_vm_to_native_survival": true,
     "disconnected_js_root_survival": true,
-    "stale_ids_rejected": true
+    "stale_ids_rejected": true,
+    "navigation_rounds": 2,
+    "old_sessions_destroyed": true,
+    "old_documents_finalized": true,
+    "old_global_native_nodes_finalized": true
   }
 }

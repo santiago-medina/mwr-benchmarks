@@ -5,7 +5,9 @@ Incluye experimentos de GC y un intérprete de un subconjunto explícito de JS;
 no es un motor compatible con ECMAScript ni una réplica de Boa/Nova. La
 [integración nativa en Servo](servo-native/README.md) enlaza el intérprete dentro
 del navegador manteniendo SpiderMonkey para el DOM. Los contratos de memoria
-siguen siendo el núcleo del laboratorio.
+siguen siendo el núcleo del laboratorio. El [GC conjunto con Servo](servo-native/JOINT_GC.md)
+comprueba la supervivencia y recogida de ciclos reales sin retirar las raíces
+globales de la VM.
 
 ## Reproducir
 

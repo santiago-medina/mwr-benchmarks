@@ -3,6 +3,10 @@
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use crate::JSTraceable;
 use gc_lab::Model;
@@ -42,6 +46,7 @@ struct Session {
     collection_queued: Cell<bool>,
     stress: RefCell<Option<gc_test::Progress>>,
     callbacks: Cell<usize>,
+    lifetime: Life,
 }
 struct Registry {
     document: WeakNode,
@@ -74,10 +79,27 @@ impl Registry {
 // This token does not own the node. Servo's native finalizer drops its last
 // strong token; a dead handle is then rejected BEFORE touching the Dom pointer.
 // Rust DOM allocations do not move; tracing their reflectors updates JS pointers.
+// Cross-thread test observers receive only the atomic death flag, never a DOM
+// pointer or an Rc. Keeping the flag alive does not retain its native owner.
+#[derive(Default)]
+pub(crate) struct Life {
+    dead: Arc<AtomicBool>,
+}
+impl Drop for Life {
+    fn drop(&mut self) {
+        self.dead.store(true, Ordering::Release);
+    }
+}
+#[expect(unsafe_code)]
+unsafe impl JSTraceable for Life {
+    // Life contains only an atomic flag; it cannot hide any managed edge.
+    unsafe fn trace(&self, _: *mut JSTracer) {}
+}
+
 #[derive(Clone)]
 struct WeakNode {
     node: Dom<Node>,
-    alive: Weak<()>,
+    alive: Weak<Life>,
 }
 impl WeakNode {
     fn new(node: &Node) -> Self {
@@ -287,6 +309,7 @@ fn execute_inner(cx: &mut JSContext, doc: &Document, source: &str) -> Result<()>
         collection_queued: Cell::new(false),
         stress: RefCell::new(None),
         callbacks: Cell::new(0),
+        lifetime: Life::default(),
     });
     let mut engine = Engine::new(Model::Indirect, Model::Indirect).map_err(|e| format!("{e:?}"))?;
     engine
@@ -331,12 +354,11 @@ pub(crate) fn dispatch(cx: &mut JSContext, target: &EventTarget, id: u64) -> Res
         .dispatch_remote_click(id)
         .map_err(|e| format!("{e:?}"));
     *state.engine.borrow_mut() = Some(engine.suspend());
+    // A failed callback must also reach a coordinated GC safepoint.
+    let doc = state.registry.borrow().document()?;
+    queue_collection(&doc);
     result?;
     state.callbacks.set(state.callbacks.get() + 1);
-    if let Some(state) = session(window) {
-        let doc = state.registry.borrow().document()?;
-        queue_collection(&doc);
-    }
     eprintln!("MWR_NATIVE_CALLBACK");
     Ok(())
 }
