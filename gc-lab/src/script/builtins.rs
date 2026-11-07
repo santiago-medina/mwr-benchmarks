@@ -641,7 +641,7 @@ impl Engine<'_> {
                 return Ok(Value::String(format!("[object {brand}]")));
             }
             "Object.prototype.hasOwnProperty" | "Object.prototype.propertyIsEnumerable" => {
-                let k = self.to_string(arg(0))?;
+                let k = self.to_key(arg(0))?;
                 let id = self.object_coercible(receiver)?;
                 let p = self.own(id, &k)?;
                 return Ok(Value::Bool(if name.ends_with("hasOwnProperty") {
@@ -740,7 +740,7 @@ impl Engine<'_> {
         self.protect(&Value::Object(id))?;
         match method {
             "defineProperty" => {
-                let key = self.to_string(arg(1))?;
+                let key = self.to_key(arg(1))?;
                 let d = self.descriptor(arg(2))?;
                 let ok = self.define(id, &key, d)?;
                 if reflect {
@@ -756,7 +756,7 @@ impl Engine<'_> {
                 Ok(Value::Object(id))
             }
             "getOwnPropertyDescriptor" => {
-                let key = self.to_string(arg(1))?;
+                let key = self.to_key(arg(1))?;
                 match self.own(id, &key)? {
                     None => Ok(Value::Undefined),
                     Some(p) => self.descriptor_object(p),
@@ -818,7 +818,7 @@ impl Engine<'_> {
                 ))
             }
             "get" => {
-                let key = self.to_string(arg(1))?;
+                let key = self.to_key(arg(1))?;
                 self.ordinary_get(
                     id,
                     &key,
@@ -830,7 +830,7 @@ impl Engine<'_> {
                 )
             }
             "set" => {
-                let key = self.to_string(arg(1))?;
+                let key = self.to_key(arg(1))?;
                 self.ordinary_set(
                     id,
                     &key,
@@ -844,11 +844,11 @@ impl Engine<'_> {
                 .map(Value::Bool)
             }
             "has" => {
-                let key = self.to_string(arg(1))?;
+                let key = self.to_key(arg(1))?;
                 self.has(id, &key).map(Value::Bool)
             }
             "deleteProperty" => {
-                let key = self.to_string(arg(1))?;
+                let key = self.to_key(arg(1))?;
                 self.delete(id, &key).map(Value::Bool)
             }
             "assign" => {

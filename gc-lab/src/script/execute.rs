@@ -1,6 +1,6 @@
 //! Evaluation and completion propagation. Every allocating operation runs under a root frame.
 use super::{
-    objects::{Data, Descriptor, Kind},
+    objects::{Data, Descriptor, Kind, Key},
     parser::{Expr, Property as Literal, Stmt},
     vm::{Engine, Exception, FunctionKind, Object, ScriptError, Value},
 };
@@ -315,7 +315,7 @@ impl Engine<'_> {
                 self.protect(&a)?;
                 let k = self.eval(k, env)?;
                 self.protect(&k)?;
-                let k = self.to_string(k)?;
+                let k = self.to_key(k)?;
                 self.get_member(a, &k)
             }
             Expr::Call(f, args) => self.eval_call(f, args, env, false),
@@ -341,7 +341,7 @@ impl Engine<'_> {
                     self.protect(&r)?;
                     let k = self.eval(k, env)?;
                     self.protect(&k)?;
-                    let k = self.to_string(k)?;
+                    let k = self.to_key(k)?;
                     let v = self.eval(b, env)?;
                     self.protect(&v)?;
                     self.set_member(r, &k, v.clone())?;
@@ -425,7 +425,7 @@ impl Engine<'_> {
                     self.protect(&r)?;
                     let k = self.eval(k, env)?;
                     self.protect(&k)?;
-                    let k = self.to_string(k)?;
+                    let k = self.to_key(k)?;
                     let f = self.get_member(r.clone(), &k)?;
                     (r, f)
                 }
@@ -574,13 +574,13 @@ impl Engine<'_> {
     fn eval_unary(&mut self, op: &str, x: &Expr, env: Id) -> Result<Value> {
         if op == "delete" {
             let target = match x {
-                Expr::Member(r, k) => Some((self.eval(r, env)?, k.clone())),
+                Expr::Member(r, k) => Some((self.eval(r, env)?, Key::from(k))),
                 Expr::Computed(r, k) => {
                     let r = self.eval(r, env)?;
                     self.protect(&r)?;
                     let k = self.eval(k, env)?;
                     self.protect(&k)?;
-                    Some((r, self.to_string(k)?))
+                    Some((r, self.to_key(k)?))
                 }
                 _ => {
                     self.eval(x, env)?;
@@ -620,6 +620,7 @@ impl Engine<'_> {
                     Value::Bool(_) => "boolean",
                     Value::Number(_) => "number",
                     Value::String(_) => "string",
+                    Value::Symbol(_) => "symbol",
                     _ if self.callable(&v) => "function",
                     _ => "object",
                 }
@@ -662,7 +663,7 @@ impl Engine<'_> {
                 let Value::Object(id) = b else {
                     return self.throw_error("TypeError", "in requires object");
                 };
-                let k = self.to_string(a)?;
+                let k = self.to_key(a)?;
                 Ok(Value::Bool(self.has(id, &k)?))
             }
             "instanceof" => self.instanceof(a, b).map(Value::Bool),
@@ -748,6 +749,7 @@ impl Engine<'_> {
         }
         self.throw_error("TypeError", "cannot convert object to primitive")
     }
+    pub(super) fn to_key(&mut self,value:Value)->Result<Key>{let value=self.to_primitive(value,true)?;if let Value::Symbol(id)=value{Ok(Key::Symbol(id))}else{self.to_string(value).map(Key::String)}}
     pub(super) fn to_string(&mut self, v: Value) -> Result<String> {
         let v = self.to_primitive(v, true)?;
         Ok(match v {
@@ -756,6 +758,7 @@ impl Engine<'_> {
             Value::Bool(b) => b.to_string(),
             Value::Number(n) => number_string(f64::from_bits(n)),
             Value::String(s) => s,
+            Value::Symbol(_)=>return self.throw_error("TypeError","cannot convert symbol to string"),
             _ => return Err(ScriptError::Unsupported("host primitive conversion")),
         })
     }
@@ -772,6 +775,7 @@ impl Engine<'_> {
                 }
             }
             Value::Number(n) => f64::from_bits(n),
+            Value::Symbol(_)=>return self.throw_error("TypeError","cannot convert symbol to number"),
             Value::String(s) => {
                 let s =
                     s.trim_matches(|c: char| c == '\u{feff}' || c != '\u{85}' && c.is_whitespace());

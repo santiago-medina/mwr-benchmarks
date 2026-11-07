@@ -2,6 +2,13 @@
 use super::vm::{Engine, Object, ScriptError, Value};
 use crate::dual::{Domain, Id};
 type Result<T> = std::result::Result<T, ScriptError>;
+#[derive(Clone,Debug,PartialEq,Eq,Hash)]
+pub(super) enum Key { String(String), Symbol(u64) }
+impl From<&str> for Key {fn from(v:&str)->Self{Self::String(v.into())}}
+impl From<String> for Key {fn from(v:String)->Self{Self::String(v)}}
+impl From<&String> for Key {fn from(v:&String)->Self{Self::String(v.clone())}}
+impl From<&Key> for Key {fn from(v:&Key)->Self{v.clone()}}
+impl Key {pub fn index(&self)->Option<u32>{if let Self::String(s)=self {s.parse::<u32>().ok().filter(|n|*n<u32::MAX && n.to_string()==*s)}else{None}}}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Kind {
     Data { value: Value, writable: bool },
@@ -48,11 +55,13 @@ impl Descriptor {
 #[derive(Clone)]
 pub(super) struct Data {
     pub prototype: Option<Id>,
-    pub properties: Vec<(String, Property)>,
+    pub properties: Vec<(Key, Property)>,
     pub extensible: bool,
     pub error_class: Option<String>,
     pub boxed: Option<Value>,
     pub arguments: bool,
+    pub array: bool,
+    pub iterator: Option<super::arrays::IteratorState>,
 }
 impl Data {
     pub fn new(prototype: Option<Id>) -> Self {
@@ -63,22 +72,111 @@ impl Data {
             error_class: None,
             boxed: None,
             arguments: false,
+            array: false,
+            iterator: None,
         }
     }
     fn edges(&self) -> Vec<Id> {
         self.prototype
             .into_iter()
             .chain(self.boxed.as_ref().and_then(Value::id))
+            .chain(self.iterator.as_ref().and_then(|i|i.target))
             .chain(self.properties.iter().flat_map(|(_, p)| p.edges()))
             .collect()
     }
-    pub fn own(&self, key: &str) -> Option<&Property> {
+    pub fn own(&self, key: impl Into<Key>) -> Option<&Property> {
+        let key=key.into();
+        let key=key.into();
         self.properties
             .iter()
-            .find(|(k, _)| k == key)
+            .find(|(k, _)| *k == key)
             .map(|(_, p)| p)
     }
 }
+impl Data {
+ pub(super) fn apply(&mut self,key:Key,d:Descriptor)->bool {
+        let old = self.own(&key).cloned();
+        if old.is_none() && !self.extensible {
+            return false;
+        }
+        if let Some(old) = &old {
+            if !old.configurable {
+                if d.configurable == Some(true) || d.enumerable.is_some_and(|v| v != old.enumerable)
+                {
+                    return false;
+                }
+                let accessor = matches!(old.kind, Kind::Accessor { .. });
+                if d.data() && accessor || d.accessor() && !accessor {
+                    return false;
+                }
+                match &old.kind {
+                    Kind::Data {
+                        value,
+                        writable: false,
+                    } => {
+                        if d.writable == Some(true)
+                            || d.value.as_ref().is_some_and(|v| !v.same_value(value))
+                        {
+                            return false;
+                        }
+                    }
+                    Kind::Accessor { get, set } => {
+                        if d.get.as_ref().is_some_and(|v| !v.same_value(get))
+                            || d.set.as_ref().is_some_and(|v| !v.same_value(set))
+                        {
+                            return false;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut p = old.unwrap_or_else(|| Property::data(Value::Undefined, false, false, false));
+        if d.accessor() && !matches!(p.kind, Kind::Accessor { .. }) {
+            p.kind = Kind::Accessor {
+                get: Value::Undefined,
+                set: Value::Undefined,
+            };
+        }
+        if d.data() && !matches!(p.kind, Kind::Data { .. }) {
+            p.kind = Kind::Data {
+                value: Value::Undefined,
+                writable: false,
+            };
+        }
+        match &mut p.kind {
+            Kind::Data { value, writable } => {
+                if let Some(v) = d.value {
+                    *value = v;
+                }
+                if let Some(v) = d.writable {
+                    *writable = v;
+                }
+            }
+            Kind::Accessor { get, set } => {
+                if let Some(v) = d.get {
+                    *get = v;
+                }
+                if let Some(v) = d.set {
+                    *set = v;
+                }
+            }
+        }
+        if let Some(v) = d.enumerable {
+            p.enumerable = v;
+        }
+        if let Some(v) = d.configurable {
+            p.configurable = v;
+        }
+        if let Some((_, v)) = self.properties.iter_mut().find(|(k, _)| *k == key) {
+            *v = p;
+        } else {
+            self.properties.push((key, p));
+        }
+        true
+ }
+}
+
 impl Engine<'_> {
     pub(super) fn data(&self, id: Id) -> Result<&Data> {
         self.runtime.value(id)?;
@@ -126,12 +224,14 @@ impl Engine<'_> {
         self.replace_data(id, Data::new(prototype))?;
         Ok(id)
     }
-    pub(super) fn own(&self, id: Id, key: &str) -> Result<Option<Property>> {
-        Ok(self.data(id)?.own(key).cloned())
+    pub(super) fn own(&self, id: Id, key: impl Into<Key>) -> Result<Option<Property>> {
+        let key=key.into();
+        Ok(self.data(id)?.own(&key).cloned())
     }
-    pub(super) fn has(&self, mut id: Id, key: &str) -> Result<bool> {
+    pub(super) fn has(&self, mut id: Id, key: impl Into<Key>) -> Result<bool> {
+        let key=key.into();
         for _ in 0..10_000 {
-            if self.own(id, key)?.is_some() {
+            if self.own(id, &key)?.is_some() {
                 return Ok(true);
             }
             match self.data(id)?.prototype {
@@ -141,13 +241,14 @@ impl Engine<'_> {
         }
         Err(ScriptError::Runtime("prototype traversal limit"))
     }
-    pub(super) fn ordinary_get(&mut self, id: Id, key: &str, receiver: Value) -> Result<Value> {
+    pub(super) fn ordinary_get(&mut self, id: Id, key: impl Into<Key>, receiver: Value) -> Result<Value> {
+        let key=key.into();
         let mut at = Some(id);
         for _ in 0..10_000 {
             let Some(id) = at else {
                 return Ok(Value::Undefined);
             };
-            if let Some(p) = self.own(id, key)? {
+            if let Some(p) = self.own(id, &key)? {
                 return match p.kind {
                     Kind::Data { value, .. } => Ok(value),
                     Kind::Accessor { get, .. } => {
@@ -163,96 +264,22 @@ impl Engine<'_> {
         }
         Err(ScriptError::Runtime("prototype traversal limit"))
     }
-    pub(super) fn define(&mut self, id: Id, key: &str, d: Descriptor) -> Result<bool> {
+    pub(super) fn define(&mut self, id: Id, key: impl Into<Key>, d: Descriptor) -> Result<bool> {
+        let key=key.into();
         if d.data() && d.accessor() {
             return self.throw_error("TypeError", "mixed descriptor");
         }
         let mut data = self.data(id)?.clone();
-        let old = data.own(key).cloned();
-        if old.is_none() && !data.extensible {
-            return Ok(false);
-        }
-        if let Some(old) = &old {
-            if !old.configurable {
-                if d.configurable == Some(true) || d.enumerable.is_some_and(|v| v != old.enumerable)
-                {
-                    return Ok(false);
-                }
-                let accessor = matches!(old.kind, Kind::Accessor { .. });
-                if d.data() && accessor || d.accessor() && !accessor {
-                    return Ok(false);
-                }
-                match &old.kind {
-                    Kind::Data {
-                        value,
-                        writable: false,
-                    } => {
-                        if d.writable == Some(true)
-                            || d.value.as_ref().is_some_and(|v| !v.same_value(value))
-                        {
-                            return Ok(false);
-                        }
-                    }
-                    Kind::Accessor { get, set } => {
-                        if d.get.as_ref().is_some_and(|v| !v.same_value(get))
-                            || d.set.as_ref().is_some_and(|v| !v.same_value(set))
-                        {
-                            return Ok(false);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-        let mut p = old.unwrap_or_else(|| Property::data(Value::Undefined, false, false, false));
-        if d.accessor() && !matches!(p.kind, Kind::Accessor { .. }) {
-            p.kind = Kind::Accessor {
-                get: Value::Undefined,
-                set: Value::Undefined,
-            };
-        }
-        if d.data() && !matches!(p.kind, Kind::Data { .. }) {
-            p.kind = Kind::Data {
-                value: Value::Undefined,
-                writable: false,
-            };
-        }
-        match &mut p.kind {
-            Kind::Data { value, writable } => {
-                if let Some(v) = d.value {
-                    *value = v;
-                }
-                if let Some(v) = d.writable {
-                    *writable = v;
-                }
-            }
-            Kind::Accessor { get, set } => {
-                if let Some(v) = d.get {
-                    *get = v;
-                }
-                if let Some(v) = d.set {
-                    *set = v;
-                }
-            }
-        }
-        if let Some(v) = d.enumerable {
-            p.enumerable = v;
-        }
-        if let Some(v) = d.configurable {
-            p.configurable = v;
-        }
-        if let Some((_, v)) = data.properties.iter_mut().find(|(k, _)| k == key) {
-            *v = p;
-        } else {
-            data.properties.push((key.into(), p));
-        }
-        self.replace_data(id, data)?;
-        Ok(true)
+        let accepted=data.apply(key,d);
+        if accepted {self.replace_data(id,data)?;}
+        Ok(accepted)
     }
-    pub(super) fn put_data(&mut self, id: Id, key: &str, value: Value) -> Result<()> {
+
+    pub(super) fn put_data(&mut self, id: Id, key: impl Into<Key>, value: Value) -> Result<()> {
+        let key=key.into();
         if self.define(
             id,
-            key,
+            &key,
             Descriptor {
                 value: Some(value),
                 writable: Some(true),
@@ -269,15 +296,16 @@ impl Engine<'_> {
     pub(super) fn ordinary_set(
         &mut self,
         id: Id,
-        key: &str,
+        key: impl Into<Key>,
         value: Value,
         receiver: Value,
     ) -> Result<bool> {
+        let key=key.into();
         let mut at = Some(id);
         let mut found = None;
         for _ in 0..10_000 {
             let Some(id) = at else { break };
-            if let Some(p) = self.own(id, key)? {
+            if let Some(p) = self.own(id, &key)? {
                 found = Some(p);
                 break;
             }
@@ -305,13 +333,13 @@ impl Engine<'_> {
                 let Value::Object(target) = receiver else {
                     return Ok(false);
                 };
-                if let Some(p) = self.own(target, key)? {
+                if let Some(p) = self.own(target, &key)? {
                     if !matches!(p.kind, Kind::Data { writable: true, .. }) {
                         return Ok(false);
                     }
                     self.define(
                         target,
-                        key,
+                        &key,
                         Descriptor {
                             value: Some(value),
                             ..Descriptor::default()
@@ -320,7 +348,7 @@ impl Engine<'_> {
                 } else {
                     self.define(
                         target,
-                        key,
+                        &key,
                         Descriptor {
                             value: Some(value),
                             writable: Some(true),
@@ -333,12 +361,13 @@ impl Engine<'_> {
             }
         }
     }
-    pub(super) fn delete(&mut self, id: Id, key: &str) -> Result<bool> {
-        if self.own(id, key)?.is_some_and(|p| !p.configurable) {
+    pub(super) fn delete(&mut self, id: Id, key: impl Into<Key>) -> Result<bool> {
+        let key=key.into();
+        if self.own(id, &key)?.is_some_and(|p| !p.configurable) {
             return Ok(false);
         }
         let mut d = self.data(id)?.clone();
-        d.properties.retain(|(k, _)| k != key);
+        d.properties.retain(|(k, _)| *k != key);
         self.replace_data(id, d)?;
         Ok(true)
     }
@@ -421,19 +450,10 @@ impl Engine<'_> {
         self.put_data(id, "configurable", Value::Bool(p.configurable))?;
         Ok(Value::Object(id))
     }
-    pub(super) fn own_keys(&self, id: Id) -> Result<Vec<String>> {
-        let mut numbers = vec![];
-        let mut names = vec![];
-        for (k, _) in &self.data(id)?.properties {
-            if let Ok(n) = k.parse::<u32>() {
-                if n < u32::MAX && n.to_string() == *k {
-                    numbers.push((n, k.clone()));
-                    continue;
-                }
-            }
-            names.push(k.clone());
-        }
-        numbers.sort_by_key(|(n, _)| *n);
-        Ok(numbers.into_iter().map(|(_, k)| k).chain(names).collect())
+    pub(super) fn own_keys(&self,id:Id)->Result<Vec<Key>> {
+        let mut indices=vec![];let mut strings=vec![];let mut symbols=vec![];
+        for (k,_) in &self.data(id)?.properties {if let Some(n)=k.index(){indices.push((n,k.clone()));}else{match k{Key::String(_)=>strings.push(k.clone()),Key::Symbol(_)=>symbols.push(k.clone())}}}
+        indices.sort_by_key(|(n,_)|*n);
+        Ok(indices.into_iter().map(|(_,k)|k).chain(strings).chain(symbols).collect())
     }
 }

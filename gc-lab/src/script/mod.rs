@@ -11,3 +11,5 @@ mod adapter;
 pub use adapter::DomAdapter;
 
 pub mod wire;
+
+mod arrays;

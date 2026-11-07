@@ -1,5 +1,6 @@
 //! Mock DOM by default; an optional typed adapter connects real foreign nodes.
 //! Source and closure bodies stay in the interpreter, never in the adapter.
+use super::objects::Key;
 use super::vm::{Engine, Object, ScriptError, Value};
 use crate::dual::{Domain, ExternalRoot, Id};
 type Result<T> = std::result::Result<T, ScriptError>;
@@ -72,8 +73,11 @@ impl Engine<'_> {
         }
         Ok(Value::Object(id))
     }
-    pub(super) fn get_member(&mut self, receiver: Value, property: &str) -> Result<Value> {
-        match self.get_member_inner(receiver, property) {
+    pub(super) fn get_member(&mut self, receiver: Value, property: impl Into<Key>) -> Result<Value> {
+        let property=property.into();
+        if let Key::Symbol(_)=property {return if let Value::Object(id)=receiver.clone(){self.ordinary_get(id,&property,receiver)}else{self.throw_error("TypeError","symbol property on primitive not implemented")};}
+        let Key::String(property)=property else{unreachable!()};
+        match self.get_member_inner(receiver, &property) {
             Err(ScriptError::Host(s)) if self.adapter_error.is_none() => {
                 self.throw_error("Error", &s)
             }
@@ -114,10 +118,13 @@ impl Engine<'_> {
     pub(super) fn set_member(
         &mut self,
         receiver: Value,
-        property: &str,
+        property: impl Into<Key>,
         value: Value,
     ) -> Result<()> {
-        match self.set_member_inner(receiver, property, value) {
+        let property=property.into();
+        if let Key::Symbol(_)=property {return if let Value::Object(id)=receiver.clone(){if self.ordinary_set(id,&property,value,receiver)?{Ok(())}else{self.throw_error("TypeError","assignment refused")}}else{self.throw_error("TypeError","invalid property receiver")};}
+        let Key::String(property)=property else{unreachable!()};
+        match self.set_member_inner(receiver, &property, value) {
             Err(ScriptError::Host(s)) if self.adapter_error.is_none() => {
                 self.throw_error("Error", &s)
             }
