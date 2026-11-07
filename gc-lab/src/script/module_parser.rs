@@ -1,0 +1,177 @@
+//! Module syntax shares tokenization, expressions and strict validation with scripts.
+use super::{tokenize, validate_loop, Parser, Stmt, SyntaxError, Token};
+use std::collections::HashSet;
+#[derive(Clone, Debug)]
+pub struct Import {
+    pub specifier: String,
+    pub bindings: Vec<(String, String)>,
+}
+#[derive(Clone, Debug)]
+pub struct Export {
+    pub exported: String,
+    pub local: String,
+    pub from: Option<String>,
+}
+#[derive(Clone, Debug)]
+pub struct Module {
+    pub body: Vec<Stmt>,
+    pub imports: Vec<Import>,
+    pub exports: Vec<Export>,
+}
+impl Module {
+    pub fn dependencies(&self) -> Vec<&str> {
+        self.imports
+            .iter()
+            .map(|i| i.specifier.as_str())
+            .chain(self.exports.iter().filter_map(|e| e.from.as_deref()))
+            .fold(Vec::new(), |mut list, s| {
+                if !list.contains(&s) {
+                    list.push(s);
+                }
+                list
+            })
+    }
+}
+fn specifier(p: &mut Parser<'_>) -> Result<String, SyntaxError> {
+    match p.take() {
+        Token::String(s) => Ok(s),
+        _ => Err(p.error("module requires string specifier")),
+    }
+}
+fn pairs(p: &mut Parser<'_>, import: bool) -> Result<Vec<(String, String)>, SyntaxError> {
+    p.expect('{')?;
+    let mut bindings = vec![];
+    while !p.punct('}') {
+        let name = p.key()?;
+        let alias = if p.word("as") {
+            if import {
+                p.name()?
+            } else {
+                p.key()?
+            }
+        } else {
+            name.clone()
+        };
+        bindings.push((name, alias));
+        if p.punct('}') {
+            break;
+        }
+        p.expect(',')?;
+    }
+    Ok(bindings)
+}
+pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
+    let mut p = Parser {
+        tokens: tokenize(source)?,
+        cursor: 0,
+        depth: 0,
+        source,
+    };
+    let mut module = Module {
+        body: vec![],
+        imports: vec![],
+        exports: vec![],
+    };
+    while p.current() != &Token::End {
+        if p.punct(';') {
+            continue;
+        }
+        if p.word("import") {
+            if matches!(p.current(), Token::String(_)) {
+                let specifier = specifier(&mut p)?;
+                p.semi()?;
+                module.imports.push(Import {
+                    specifier,
+                    bindings: vec![],
+                });
+                continue;
+            }
+            let mut bindings = vec![];
+            if matches!(p.current(), Token::Name(_)) {
+                bindings.push(("default".into(), p.name()?));
+                if !p.word("from") {
+                    p.expect(',')?;
+                    bindings.extend(pairs(&mut p, true)?);
+                    if !p.word("from") {
+                        return Err(p.error("expected from"));
+                    }
+                }
+            } else {
+                bindings.extend(pairs(&mut p, true)?);
+                if !p.word("from") {
+                    return Err(p.error("expected from"));
+                }
+            }
+            let specifier = specifier(&mut p)?;
+            p.semi()?;
+            module.imports.push(Import {
+                specifier,
+                bindings,
+            });
+            continue;
+        }
+        if p.word("export") {
+            if p.word("default") {
+                let local = "\0default".to_string();
+                let expression = p.expression()?;
+                p.semi()?;
+                module.body.push(Stmt::Const(local.clone(), expression));
+                module.exports.push(Export {
+                    exported: "default".into(),
+                    local,
+                    from: None,
+                });
+            } else if p.current() == &Token::Punct('{') {
+                let entries = pairs(&mut p, false)?;
+                let from = if p.word("from") {
+                    Some(specifier(&mut p)?)
+                } else {
+                    None
+                };
+                p.semi()?;
+                module
+                    .exports
+                    .extend(entries.into_iter().map(|(local, exported)| Export {
+                        local,
+                        exported,
+                        from: from.clone(),
+                    }));
+            } else {
+                let statement = p.statement()?;
+                let name = match &statement {
+                    Stmt::Const(n, _)
+                    | Stmt::Let(n, _)
+                    | Stmt::Var(n, _)
+                    | Stmt::Function(n, ..)
+                    | Stmt::AsyncFunction(n, ..) => n.clone(),
+                    _ => return Err(p.error("unsupported export declaration")),
+                };
+                module.exports.push(Export {
+                    exported: name.clone(),
+                    local: name,
+                    from: None,
+                });
+                module.body.push(statement);
+            }
+        } else {
+            module.body.push(p.statement()?);
+        }
+    }
+    let mut imports = HashSet::new();
+    for import in &module.imports {
+        for (_, local) in &import.bindings {
+            if !imports.insert(local.clone()) {
+                return Err(p.error("duplicate imported binding"));
+            }
+        }
+    }
+    let params = imports.into_iter().collect::<Vec<_>>();
+    validate_loop(&module.body, &params, false, 0, false, true)?;
+    let mut exports = HashSet::new();
+    for export in &module.exports {
+        if !exports.insert(&export.exported) {
+            return Err(p.error("duplicate export"));
+        }
+    }
+    Ok(module)
+}

@@ -93,7 +93,7 @@ struct Parser<'a> {
     depth: usize,
     source: &'a str,
 }
-pub fn parse(source: &str) -> Result<Vec<Stmt>, SyntaxError> {
+fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
     if source.len() > 65536 {
         return Err(SyntaxError {
             offset: 0,
@@ -232,6 +232,10 @@ pub fn parse(source: &str) -> Result<Vec<Stmt>, SyntaxError> {
         }
     }
     tokens.push((Token::End, source.len()));
+    Ok(tokens)
+}
+pub fn parse(source: &str) -> Result<Vec<Stmt>, SyntaxError> {
+    let tokens = tokenize(source)?;
     let mut p = Parser {
         tokens,
         cursor: 0,
@@ -1039,3 +1043,7 @@ fn validate_loop(
     }
     Ok(())
 }
+
+#[path = "module_parser.rs"]
+mod module_syntax;
+pub use module_syntax::{parse_module, Export, Import, Module};

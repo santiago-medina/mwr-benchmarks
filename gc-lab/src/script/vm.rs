@@ -100,6 +100,7 @@ pub(super) enum Object {
         mutable: HashSet<String>,
         function_scope: bool,
         object_bindings: HashSet<String>,
+        aliases: HashMap<String, (Id, String)>,
     },
     Closure {
         kind: FunctionKind,
@@ -504,12 +505,18 @@ impl<'host> Engine<'host> {
                 mutable,
                 function_scope,
                 object_bindings,
+                aliases: HashMap::new(),
             },
         );
         Ok(id)
     }
     pub(super) fn lookup(&mut self, mut env: Id, name: &str) -> Result<Value> {
         loop {
+            if let Some(Object::Environment { aliases, .. }) = self.objects.get(&env) {
+                if let Some((target, name)) = aliases.get(name).cloned() {
+                    return self.lookup(target, &name);
+                }
+            }
             let Some(Object::Environment {
                 parent,
                 bindings,
@@ -623,6 +630,10 @@ impl<'host> Engine<'host> {
     }
     pub(super) fn assign_binding(&mut self, mut env: Id, name: &str, value: Value) -> Result<()> {
         loop {
+            if matches!(self.objects.get(&env),Some(Object::Environment{aliases,..})if aliases.contains_key(name))
+            {
+                return self.throw_error("TypeError", "assignment to imported binding");
+            }
             let Some(Object::Environment {
                 parent,
                 bindings,
