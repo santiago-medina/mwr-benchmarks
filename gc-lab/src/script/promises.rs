@@ -49,7 +49,7 @@ impl PromiseState {
         for r in &self.reactions {
             values.extend(r.fulfilled.clone());
             values.extend(r.rejected.clone());
-            for cap in &r.capability{values.extend(cap.values());}
+            if let Some(cap) = &r.capability{values.extend(cap.values());}
         }
         values.iter().filter_map(Value::id).collect()
     }
@@ -134,7 +134,7 @@ impl Job {
             } => {
                 let mut values = vec![argument.clone()];
                 values.extend(handler.clone());
-                for cap in capability{values.extend(cap.values());}
+                if let Some(cap) = capability{values.extend(cap.values());}
                 values
             }
             Self::Thenable {

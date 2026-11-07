@@ -665,6 +665,11 @@ impl Parser<'_> {
                 if !self.punct('}') {
                     loop {
                         let key = self.key()?;
+                        if key=="async" && matches!(self.current(),Token::Name(_)|Token::String(_)|Token::Number(_)) {
+                            let key=self.key()?;let params=self.params()?;let body=self.block()?;
+                            props.push((key,Property::Value(Expr::AsyncFunction{name:None,params,body,method:true})));
+                            if self.punct('}'){break;}self.expect(',')?;if self.punct('}'){break;}continue;
+                        }
                         let (key, p) = if self.punct(':') {
                             let e = self.expression()?;
                             if key == "__proto__" {

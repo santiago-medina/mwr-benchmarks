@@ -118,7 +118,7 @@ impl Engine<'_> {
         self.protect(&Value::Object(id))?;
         self.replace_data(
             id,
-            Data::new(Some(self.intrinsics.as_ref().unwrap().function)),
+            Data::new(Some(if matches!(kind,FunctionKind::Async|FunctionKind::AsyncArrow|FunctionKind::AsyncMethod){self.intrinsics.as_ref().unwrap().async_function}else{self.intrinsics.as_ref().unwrap().function})),
         )?;
         self.define(
             id,
