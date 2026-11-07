@@ -18,6 +18,8 @@ def main():
     parser.add_argument('--fixture', type=Path, default=HERE.parent / 'servo-fixture/index.html')
     parser.add_argument('--before', default='Pulsar')
     parser.add_argument('--after', default='Funciona')
+    parser.add_argument('--target', default='#button')
+    parser.add_argument('--steps', type=json.loads, help='JSON list of [click selector, expected target text]')
     args = parser.parse_args()
     binary = args.servo.resolve()
     output = args.output.resolve()
@@ -47,7 +49,11 @@ def main():
                 path.mkdir(mode=0o700)
                 env[key] = str(path)
             env.update(LIBGL_ALWAYS_SOFTWARE='1', EGL_PLATFORM='surfaceless',
-                       MWR_NATIVE_EXPECT_BEFORE=args.before, MWR_NATIVE_EXPECT_AFTER=args.after)
+                       MWR_NATIVE_EXPECT_BEFORE=args.before, MWR_NATIVE_EXPECT_AFTER=args.after,
+                       MWR_NATIVE_TEST_TARGET=args.target)
+            env.pop('MWR_NATIVE_TEST_STEPS', None)
+            if args.steps is not None:
+                env['MWR_NATIVE_TEST_STEPS'] = json.dumps(args.steps)
             if enabled:
                 env['MWR_NATIVE_JS'] = '1'
             if self_test:
@@ -68,12 +74,15 @@ def main():
             proofs = [json.loads(line.removeprefix('MWR_NATIVE_PROOF '))
                       for line in log.splitlines() if line.startswith('MWR_NATIVE_PROOF ')]
             expected = {'disabled': (0, 0, 0), 'waiting': (1, 0, 0),
-                        'callback': (1, 1, 0), 'syntax-error': (0, 0, 1), 'csp-blocked': (0, 0, 0)}[name]
+                        'callback': (1, len(args.steps) if args.steps is not None else 1, 0), 'syntax-error': (0, 0, 1), 'csp-blocked': (0, 0, 0)}[name]
             assert (executed, callbacks, len(errors)) == expected, (name, log)
             assert log.count('MWR_NATIVE_TEST_TASK') == (1 if name == 'callback' else 0)
             assert len(proofs) == (1 if name == 'callback' else 0), (name, log)
             if proofs:
-                assert proofs[0] == dict(before=args.before, after=args.after, click='rust-dom-synthetic')
+                expected_proof = dict(before=args.before, after=args.after, click='rust-dom-synthetic')
+                if args.steps is not None:
+                    expected_proof['steps'] = args.steps
+                assert proofs[0] == expected_proof
             results[name] = dict(executions=executed, callbacks=callbacks,
                                  errors=errors, proofs=proofs)
     report = dict(

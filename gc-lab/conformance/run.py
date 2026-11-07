@@ -24,7 +24,7 @@ def main():
     p.add_argument('--check-baseline',action='store_true',help='gate on lost passes and newly failing cases; known failures stay reported')
     args=p.parse_args(); binary=args.binary.resolve(); root=args.source.resolve()/'test'
     assert (args.source/'.revision').read_text().strip()==REVISION, 'Use the pinned verified source from fetch.py'
-    profile=args.profile,scopes=scopes if args.profile=='objects' else ARRAY_SCOPES
+    scopes=SCOPES if args.profile=='objects' else ARRAY_SCOPES
     suffix='' if args.profile=='objects' else '-arrays'
     args.output=args.output or HERE/('results'+suffix)
     cases=sorted({path for scope in scopes for path in (root.glob(scope) if '*' in scope else (root/scope).rglob('*.js')) if not path.name.endswith('_FIXTURE.js')})

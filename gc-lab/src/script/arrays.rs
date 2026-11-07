@@ -185,6 +185,26 @@ impl Engine<'_> {
         };
         Ok(id)
     }
+    fn next_present_index(&self, mut id: Id, start: u64, end: u64) -> Result<Option<u64>> {
+        let mut found = None;
+        for _ in 0..10000 {
+            let data = self.data(id)?;
+            for (key, _) in &data.properties {
+                if let Key::String(s) = key {
+                    if let Ok(index) = s.parse::<u64>() {
+                        if index >= start && index < end && index.to_string() == *s {
+                            found = Some(found.map_or(index, |old: u64| old.min(index)));
+                        }
+                    }
+                }
+            }
+            match data.prototype {
+                Some(p) => id = p,
+                None => return Ok(found),
+            }
+        }
+        Err(ScriptError::Runtime("prototype traversal limit"))
+    }
     pub(super) fn array_builtin(
         &mut self,
         name: &str,
@@ -374,12 +394,11 @@ impl Engine<'_> {
                     None
                 };
                 let mut to = 0;
-                for index in 0..length {
+                let mut next_index = 0;
+                while let Some(index) = self.next_present_index(id, next_index, length)? {
+                    next_index = index + 1;
                     self.tick()?;
                     let key = index.to_string();
-                    if !self.has(id, &key)? {
-                        continue;
-                    }
                     let value = self.get_member(Value::Object(id), &key)?;
                     self.protect(&value)?;
                     let selected = self.invoke_this(

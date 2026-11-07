@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Arrays e iteración en Rust dentro de Servo</title>
+<style>body{font:22px sans-serif;background:#edf4f2;color:#18362d;padding:48px}main{max-width:760px}h1{font-size:38px}button{font:19px sans-serif;background:#17634c;color:white;border:0;border-radius:8px;padding:14px 18px;margin-right:8px}li{background:white;border-radius:8px;padding:16px;margin:12px 0}ul{list-style:none;padding:0}</style>
+<main><h1>Una lista con nuestro motor JS</h1><p>Arrays, objetos e iteradores en Rust. Nodos y eventos reales de Servo.</p>
+<button id="button">Añadir tarea</button><button id="complete">Completar primera</button><button id="remove">Eliminar última</button>
+<ul id="list"></ul></main>
+<script type="application/x-mwr-js">
+const tasks = [];
+let nextId = 1;
+const list = document.querySelector('#list');
+const button = document.querySelector('#button');
+const complete = document.querySelector('#complete');
+const remove = document.querySelector('#remove');
+function render() {
+  for (const task of tasks) {
+    let prefix = '';
+    if (task.done) { prefix = '[hecha] '; }
+    task.node.textContent = prefix + 'Tarea ' + String(task.id);
+  }
+}
+button.addEventListener('click', function () {
+  const task = {id: nextId, done: false, node: document.createElement('li')};
+  nextId = nextId + 1;
+  tasks.push(task);
+  list.appendChild(task.node);
+  render();
+});
+complete.addEventListener('click', function () {
+  if (tasks.length > 0) { tasks[0].done = true; }
+  render();
+});
+remove.addEventListener('click', function () {
+  if (tasks.length > 0) {
+    const task = tasks.pop();
+    list.removeChild(task.node);
+  }
+});
+</script>

@@ -46,17 +46,23 @@ jobs:
         run: python3 gc-lab/conformance/fetch.py
       - name: Preserve approved cases and reject new failures
         run: python3 gc-lab/conformance/run.py --source gc-lab/.test262-source --check-baseline
+      - name: Preserve approved array and iterator cases
+        run: python3 gc-lab/conformance/run.py --source gc-lab/.test262-source --profile arrays --check-baseline
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
       - name: Validate passing cases with the official harness in Node
         run: python3 gc-lab/conformance/compare_node.py --source gc-lab/.test262-source --output gc-lab/conformance/results/node-report.json
+      - name: Validate array cases with official Node harness
+        run: python3 gc-lab/conformance/compare_node.py --source gc-lab/.test262-source --profile arrays --output gc-lab/conformance/results-arrays/node-report.json
       - name: Preserve every case including known failures
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test262-ordinary-objects
-          path: gc-lab/conformance/results/
+          path: |
+            gc-lab/conformance/results/
+            gc-lab/conformance/results-arrays/
   servo-integration:
     runs-on: ubuntu-24.04
     needs: contracts
@@ -121,6 +127,12 @@ jobs:
           python3 gc-lab/servo-native/run.py --servo gc-lab/.servo-native/target/debug/servoshell
           --fixture gc-lab/servo-native/object-fixture.html --before 'Cuenta: 0' --after 'Cuenta: 1'
           --output gc-lab/native-object-results
+      - name: Add complete and remove real task nodes
+        run: >-
+          python3 gc-lab/servo-native/run.py --servo gc-lab/.servo-native/target/debug/servoshell
+          --fixture gc-lab/servo-native/task-fixture.html --target '#list' --before '' --after 'Tarea 2'
+          --steps '[["#button","Tarea 1"],["#complete","[hecha] Tarea 1"],["#remove",""],["#button","Tarea 2"]]'
+          --output gc-lab/native-task-results
       - name: Collect real cross-heap cycles with the realm still alive
         run: python3 gc-lab/servo-native/run_gc.py --servo gc-lab/.servo-native/target/debug/servoshell
       - name: Preserve native integration evidence
@@ -132,3 +144,4 @@ jobs:
             gc-lab/native-results/
             gc-lab/native-gc-results/
             gc-lab/native-object-results/
+            gc-lab/native-task-results/

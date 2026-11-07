@@ -21,6 +21,7 @@ struct State {
     fail_listener: bool,
     fail_set: bool,
     traced: bool,
+    children: HashMap<u64, Vec<u64>>,
 }
 struct Host(Rc<RefCell<State>>);
 impl DomAdapter for Host {
@@ -36,14 +37,23 @@ impl DomAdapter for Host {
         Ok(id)
     }
     fn query_selector(&mut self, selector: &str) -> Result<u64, String> {
-        if selector != "#button" {
-            return Err("not found".into());
-        }
+        let id = match selector {
+            "#button" => 1,
+            "#complete" => 2,
+            "#remove" => 3,
+            "#list" => 4,
+            _ => return Err("not found".into()),
+        };
         let mut s = self.0.borrow_mut();
-        s.leases.insert(1);
-        s.text.entry(1).or_insert("Pulsar".into());
-        Ok(1)
+        s.leases.insert(id);
+        s.text.entry(id).or_insert(if id == 1 {
+            "Pulsar".into()
+        } else {
+            String::new()
+        });
+        Ok(id)
     }
+
     fn tag_name(&mut self, _: u64) -> Result<String, String> {
         if self.0.borrow().fail_tag {
             Err("tag failed".into())
@@ -52,19 +62,43 @@ impl DomAdapter for Host {
         }
     }
     fn text_content(&mut self, node: u64) -> Result<String, String> {
-        self.0
-            .borrow()
-            .text
-            .get(&node)
-            .cloned()
-            .ok_or("missing".into())
+        fn read(s: &State, node: u64) -> String {
+            let mut text = s.text.get(&node).cloned().unwrap_or_default();
+            if let Some(children) = s.children.get(&node) {
+                for child in children {
+                    text.push_str(&read(s, *child));
+                }
+            }
+            text
+        }
+        Ok(read(&self.0.borrow(), node))
     }
+
     fn set_text_content(&mut self, node: u64, text: &str) -> Result<(), String> {
         let mut s = self.0.borrow_mut();
         if s.fail_set {
             return Err("set failed".into());
         }
         s.text.insert(node, text.into());
+        Ok(())
+    }
+    fn append_child(&mut self, parent: u64, child: u64) -> Result<(), String> {
+        self.0
+            .borrow_mut()
+            .children
+            .entry(parent)
+            .or_default()
+            .push(child);
+        Ok(())
+    }
+    fn remove_child(&mut self, parent: u64, child: u64) -> Result<(), String> {
+        let mut s = self.0.borrow_mut();
+        let children = s.children.entry(parent).or_default();
+        let index = children
+            .iter()
+            .position(|id| *id == child)
+            .ok_or("not a child")?;
+        children.remove(index);
         Ok(())
     }
     fn set_click_listener(&mut self, node: u64, enabled: bool) -> Result<(), String> {
@@ -359,4 +393,30 @@ fn host_mutation_error_is_catchable_and_does_not_corrupt_dom() {
     assert_eq!(e.text_content("button").unwrap(), "set failed");
     e.release_globals();
     assert_eq!(e.live_objects(), 0);
+}
+#[test]
+fn task_list_adds_completes_removes_nodes_and_releases_array_captures() {
+    for model in [Model::Stable, Model::Indirect] {
+        let state = Rc::new(RefCell::new(State::default()));
+        let mut e = Engine::new(model, model).unwrap();
+        e.set_dom_adapter(Box::new(Host(state.clone()))).unwrap();
+        e.execute(include_str!("../examples/task-list.js")).unwrap();
+        e.dispatch_remote_click(1).unwrap();
+        assert_eq!(e.text_content("list").unwrap(), "Tarea 1");
+        e.dispatch_remote_click(2).unwrap();
+        assert_eq!(e.text_content("list").unwrap(), "[hecha] Tarea 1");
+        e.dispatch_remote_click(3).unwrap();
+        assert_eq!(e.text_content("list").unwrap(), "");
+        e.collect();
+        assert!(!state.borrow().leases.contains(&11));
+        e.dispatch_remote_click(1).unwrap();
+        assert_eq!(e.text_content("list").unwrap(), "Tarea 2");
+        e.release_globals();
+        assert_eq!(
+            (e.live_objects(), e.metadata_objects(), e.live_roots()),
+            (0, 0, 0)
+        );
+        assert!(state.borrow().leases.is_empty());
+        assert!(state.borrow().hooks.is_empty());
+    }
 }

@@ -112,7 +112,11 @@ impl Engine<'_> {
                 match property {
                     "textContent" => Ok(Value::String(self.node_text(id)?)),
                     "tagName" => Ok(Value::String(tag.to_ascii_uppercase())),
-                    "addEventListener" | "removeEventListener" | "click" => Ok(Value::Native {
+                    "addEventListener"
+                    | "removeEventListener"
+                    | "click"
+                    | "appendChild"
+                    | "removeChild" => Ok(Value::Native {
                         receiver: Some(id),
                         name: property.into(),
                     }),
@@ -274,6 +278,27 @@ impl Engine<'_> {
                     };
                     self.wrap_node(remote, argument.clone())
                 }
+            }
+            (Some(parent), "appendChild" | "removeChild") => {
+                let [Value::Object(child)] = args.as_slice() else {
+                    return self.throw_error("TypeError", "tree operation requires one node");
+                };
+                let (Some(parent), Some(child_id)) = (
+                    self.remote_nodes.get(&parent).copied(),
+                    self.remote_nodes.get(child).copied(),
+                ) else {
+                    return Err(ScriptError::Unsupported(
+                        "tree operations require an external DOM adapter",
+                    ));
+                };
+                let adapter = self.adapter.as_mut().unwrap();
+                if name == "appendChild" {
+                    adapter.append_child(parent, child_id)
+                } else {
+                    adapter.remove_child(parent, child_id)
+                }
+                .map_err(ScriptError::Host)?;
+                Ok(Value::Object(*child))
             }
             (Some(node), "addEventListener" | "removeEventListener") => {
                 let [Value::String(event), Value::Object(callback)] = args.as_slice() else {

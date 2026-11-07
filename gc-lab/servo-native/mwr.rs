@@ -257,6 +257,16 @@ impl DomAdapter for NativeAdapter<'_> {
         node.SetTextContent(self.cx, Some(DOMString::from(text)))
             .map_err(|e| format!("SetTextContent: {e:?}"))
     }
+    fn append_child(&mut self,parent:u64,child:u64)->Result<()> {
+        let parent=self.registry.borrow().node(parent)?;
+        let child=self.registry.borrow().node(child)?;
+        parent.AppendChild(self.cx,&child).map(|_|()).map_err(|e|format!("AppendChild: {e:?}"))
+    }
+    fn remove_child(&mut self,parent:u64,child:u64)->Result<()> {
+        let parent=self.registry.borrow().node(parent)?;
+        let child=self.registry.borrow().node(child)?;
+        parent.RemoveChild(self.cx,&child).map(|_|()).map_err(|e|format!("RemoveChild: {e:?}"))
+    }
     fn set_click_listener(&mut self, id: u64, enabled: bool) -> Result<()> {
         let node = self.registry.borrow().node(id)?;
         node.upcast::<EventTarget>().set_mwr_listener(id, enabled);
@@ -365,27 +375,25 @@ pub(crate) fn dispatch(cx: &mut JSContext, target: &EventTarget, id: u64) -> Res
 // This exercises Servo's real DOM event dispatcher in Rust, not a hardware input
 // event. Ordinary human clicks use the same foreign-listener branch.
 fn self_test(cx: &mut JSContext, doc: &Document) -> Result<()> {
-    let button = doc
-        .QuerySelector(cx, DOMString::from("#button"))
-        .map_err(|e| format!("{e:?}"))?
-        .ok_or("test button missing")?;
-    let node = button.upcast::<Node>();
-    let before = node.GetTextContent().unwrap_or_default().to_string();
-    if before != std::env::var("MWR_NATIVE_EXPECT_BEFORE").unwrap_or_else(|_| "Pulsar".into()) {
-        return Err(format!("unexpected initial text: {before}"));
+    let selector=std::env::var("MWR_NATIVE_TEST_TARGET").unwrap_or_else(|_|"#button".into());
+    let target=doc.QuerySelector(cx,DOMString::from(selector)).map_err(|e|format!("{e:?}"))?.ok_or("test target missing")?;
+    let node=target.upcast::<Node>();
+    let before=node.GetTextContent().unwrap_or_default().to_string();
+    if before!=std::env::var("MWR_NATIVE_EXPECT_BEFORE").unwrap_or_else(|_|"Pulsar".into()){return Err(format!("unexpected initial text: {before}"));}
+    let configured=std::env::var("MWR_NATIVE_TEST_STEPS").ok();
+    let steps:Vec<(String,String)>=if let Some(json)=&configured {serde_json::from_str(json).map_err(|e|format!("test steps: {e}"))?}else{vec![("#button".into(),std::env::var("MWR_NATIVE_EXPECT_AFTER").unwrap_or_else(|_|"Funciona".into()))]};
+    let mut observed=vec![];
+    for (selector,expected)in steps {
+        let button=doc.QuerySelector(cx,DOMString::from(selector.clone())).map_err(|e|format!("{e:?}"))?.ok_or("test control missing")?;
+        button.downcast::<HTMLElement>().ok_or("test control not HTML")?.Click(cx);
+        let actual=node.GetTextContent().unwrap_or_default().to_string();
+        if actual!=expected{return Err(format!("native callback failed: {actual}, expected {expected}"));}
+        observed.push((selector,actual));
     }
-    button
-        .downcast::<HTMLElement>()
-        .ok_or("test target not HTML")?
-        .Click(cx);
-    let after = node.GetTextContent().unwrap_or_default().to_string();
-    if after != std::env::var("MWR_NATIVE_EXPECT_AFTER").unwrap_or_else(|_| "Funciona".into()) {
-        return Err(format!("native callback failed: {after}"));
-    }
-    // This is only the rendering smoke test. The separate GC experiment keeps
-    // the realm alive and proves actual native finalization without dropping it.
-    eprintln!("MWR_NATIVE_PROOF {}", serde_json::json!({"before":before,"after":after,"click":"rust-dom-synthetic"}));
-    Ok(())
+    let after=node.GetTextContent().unwrap_or_default().to_string();
+    let mut proof=serde_json::json!({"before":before,"after":after,"click":"rust-dom-synthetic"});
+    if configured.is_some(){proof["steps"]=serde_json::json!(observed);}
+    eprintln!("MWR_NATIVE_PROOF {proof}");Ok(())
 }
 // Trusted DOM roots must go before Servo tears down its JS runtime. This hook is
 // mandatory on navigation/shutdown; the registry is not a joint tracing GC.

@@ -496,6 +496,7 @@ impl<'host> Engine<'host> {
                 | "Math"
                 | "JSON"
                 | "eval"
+                | "AggregateError"
                 | "ArrayBuffer"
                 | "SharedArrayBuffer"
                 | "DataView"

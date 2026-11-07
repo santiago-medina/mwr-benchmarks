@@ -9,11 +9,11 @@ const detached = document.createElement('button');
 detached.textContent = 'Rooted';
 const make = () => {
   const button = document.querySelector('#cycle');
-  const companion = document.createElement('button');
-  companion.textContent = 'Captured';
-  button.addEventListener('click', () => {
-    button.textContent = 'Funciona';
-    companion.textContent = 'Callback';
+  const captures = [{node: document.createElement('button')}];
+  captures[0].node.textContent = 'Captured';
+  button.addEventListener('click', function () {
+    this.textContent = 'Funciona';
+    for (const capture of captures) { capture.node.textContent = 'Callback'; }
   });
 };
 const makeError = () => {

@@ -124,7 +124,8 @@ impl Engine<'_> {
             name.rsplit('.').next().unwrap()
         };
         let arity = match name {
-            "Object.create"
+            "parseInt"
+            | "Object.create"
             | "Object.defineProperties"
             | "Object.getOwnPropertyDescriptor"
             | "Object.setPrototypeOf"
@@ -208,6 +209,7 @@ impl Engine<'_> {
             "Object",
             "Array",
             "Symbol",
+            "parseInt",
             "Function",
             "String",
             "Number",
@@ -472,6 +474,7 @@ impl Engine<'_> {
             Value::Number(_) => "Number",
             Value::Bool(_) => "Boolean",
             Value::Object(id) => return Ok(*id),
+            Value::Symbol(_) => return Err(ScriptError::Unsupported("symbol boxing")),
             _ => return self.throw_error("TypeError", "cannot box value"),
         };
         let ctor = self.intrinsics.as_ref().unwrap().functions[name];
@@ -642,6 +645,50 @@ impl Engine<'_> {
             return self.assert_builtin(name, args);
         }
         match name {
+            "parseInt" => {
+                let text = self.to_string(arg(0))?;
+                let mut s = text.trim_start_matches(|c: char| {
+                    c == '\u{feff}' || c != '\u{85}' && c.is_whitespace()
+                });
+                let sign = if let Some(t) = s.strip_prefix('-') {
+                    s = t;
+                    -1.0
+                } else {
+                    if let Some(t) = s.strip_prefix('+') {
+                        s = t;
+                    }
+                    1.0
+                };
+                let radix = self.to_number(arg(1))?;
+                let radix = if !radix.is_finite() {
+                    0
+                } else {
+                    radix.trunc().rem_euclid(4294967296.0) as u32 as i32
+                };
+                if radix != 0 && !(2..=36).contains(&radix) {
+                    return Ok(Value::number(f64::NAN));
+                }
+                let strip = radix == 0 || radix == 16;
+                let mut radix = if radix == 0 { 10 } else { radix as u32 };
+                if strip && (s.starts_with("0x") || s.starts_with("0X")) {
+                    s = &s[2..];
+                    radix = 16;
+                }
+                let mut number = 0.0;
+                let mut count = 0;
+                for ch in s.chars() {
+                    let Some(digit) = ch.to_digit(radix) else {
+                        break;
+                    };
+                    count += 1;
+                    number = number * radix as f64 + digit as f64;
+                }
+                return Ok(Value::number(if count == 0 {
+                    f64::NAN
+                } else {
+                    sign * number
+                }));
+            }
             "Function.prototype" => return Ok(Value::Undefined),
             "%ThrowTypeError%" => {
                 return self.throw_error("TypeError", "restricted function property")
