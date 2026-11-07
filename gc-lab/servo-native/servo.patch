@@ -297,3 +297,82 @@ diff --git a/components/script/dom/document/document.rs b/components/script/dom/
      pub(crate) fn abort(&self, cx: &mut JSContext) {
 +        crate::mwr::abort_network(cx, self.window());
          // We need to inhibit the loader before anything else.
+
+diff --git a/components/script/fetch/network_listener.rs b/components/script/fetch/network_listener.rs
+--- a/components/script/fetch/network_listener.rs
++++ b/components/script/fetch/network_listener.rs
+@@ -133,7 +133,7 @@
+     pub(crate) context: Arc<Mutex<Option<Listener>>>,
+     pub(crate) task_source: SendableTaskSource,
+     /// The [`GlobalScope`] this [`NetworkListener`] was created for.
+-    pub(crate) global_scope: Trusted<GlobalScope>,
++    pub(crate) global_scope: Arc<Mutex<Option<Trusted<GlobalScope>>>>,
+ }
+ 
+ impl<Listener: FetchResponseListener> NetworkListener<Listener> {
+@@ -145,13 +145,13 @@
+         Self {
+             context: Arc::new(Mutex::new(Some(context))),
+             task_source,
+-            global_scope: Trusted::new(global_scope),
++            global_scope: Arc::new(Mutex::new(Some(Trusted::new(global_scope)))),
+         }
+     }
+ 
+     pub(crate) fn notify(&mut self, message: FetchResponseMsg) {
+         let context = self.context.clone();
+-        let global_scope = self.global_scope.clone();
++        let Some(global_scope) = self.global_scope.lock().unwrap().clone() else { return; };
+         self.task_source
+             .queue(task!(network_listener_response: move |cx| {
+                 if let FetchResponseMsg::ProcessResponseEOF(request_id, ..) = &message {
+diff --git a/components/script/fetch/fetch.rs b/components/script/fetch/fetch.rs
+--- a/components/script/fetch/fetch.rs
++++ b/components/script/fetch/fetch.rs
+@@ -361,13 +361,34 @@
+     }
+ }
+ 
++/// Owned cancellation anchor. Detach after signaling abort so queued/canceled
++/// networking notifications cannot keep a retired global alive until server EOF.
++#[derive(Clone)]
++pub(crate) struct FetchCancellation {
++    context: std::sync::Arc<std::sync::Mutex<Option<FetchContext>>>,
++    global: std::sync::Arc<std::sync::Mutex<Option<Trusted<GlobalScope>>>>,
++}
++impl FetchCancellation {
++    pub(crate) fn detach(&self) {
++        let context = self.context.lock().unwrap().take();
++        let global = self.global.lock().unwrap().take();
++        drop(context);
++        drop(global);
++    }
++}
+ /// <https://fetch.spec.whatwg.org/#dom-global-fetch>
+ #[expect(non_snake_case)]
+-pub(crate) fn Fetch(
++pub(crate) fn Fetch(global: &GlobalScope, input: RequestInfo, init: &RequestInit, cx: &mut CurrentRealm) -> RootedPromise {
++    Fetch_with_cancellation(global, input, init, cx, &mut None)
++}
++/// The same Fetch algorithm, optionally exposing a native lifetime anchor.
++#[expect(non_snake_case)]
++pub(crate) fn Fetch_with_cancellation(
+     global: &GlobalScope,
+     input: RequestInfo,
+     init: &RequestInit,
+     cx: &mut CurrentRealm,
++    cancellation: &mut Option<FetchCancellation>,
+ ) -> RootedPromise {
+     // Step 1. Let p be a new promise.
+     let promise = Promise::new_in_realm(cx);
+@@ -437,6 +458,10 @@
+         global.task_manager().networking_task_source().to_sendable(),
+         global,
+     );
++    *cancellation = Some(FetchCancellation {
++        context: network_listener.context.clone(),
++        global: network_listener.global_scope.clone(),
++    });
+     let fetch_context = network_listener.context.clone();
+ 
+     // Step 11. Add the following abort steps to requestObject’s signal:

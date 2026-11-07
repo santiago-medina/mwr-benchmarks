@@ -3,7 +3,6 @@ use super::*;
 use crate::dom::abortcontroller::AbortController;
 use crate::dom::bindings::codegen::Bindings::RequestBinding::RequestInit;
 use crate::dom::bindings::codegen::Bindings::ResponseBinding::ResponseMethods;
-use crate::dom::bindings::codegen::Bindings::WindowBinding::WindowMethods;
 use crate::dom::bindings::codegen::UnionTypes::RequestOrUSVString;
 use crate::dom::bindings::conversions::root_from_object;
 use crate::dom::bindings::str::USVString;
@@ -18,10 +17,22 @@ use js::{
     rust::HandleValue,
 };
 
+struct FetchOwner {
+    controller: Trusted<AbortController>,
+    cancellation: Option<crate::fetch::FetchCancellation>,
+}
+impl FetchOwner {
+    fn cancel(&self, cx: &mut JSContext) {
+        abort(cx, &self.controller);
+        if let Some(cancellation) = &self.cancellation {
+            cancellation.detach();
+        }
+    }
+}
 #[derive(Default)]
 pub(super) struct Network {
-    pending: HashMap<u64, Trusted<AbortController>>,
-    responses: HashMap<u64, (Trusted<Response>, Trusted<AbortController>)>,
+    pending: HashMap<u64, Rc<FetchOwner>>,
+    responses: HashMap<u64, (Trusted<Response>, Rc<FetchOwner>)>,
 }
 #[derive(MallocSizeOf)]
 struct Completion {
@@ -49,7 +60,7 @@ impl Completion {
             eprintln!("MWR_NATIVE_STALE_FETCH");
             return Ok(());
         };
-        let Some(controller) = state
+        let Some(owner) = state
             .registry
             .borrow_mut()
             .network
@@ -100,7 +111,7 @@ impl Completion {
                             .borrow_mut()
                             .network
                             .responses
-                            .insert(self.serial, (Trusted::new(&*response), controller));
+                            .insert(self.serial, (Trusted::new(&*response), owner.clone()));
                         Ok(result)
                     }
                     Err(_) => Err("native fetch result is not a Response".into()),
@@ -108,6 +119,9 @@ impl Completion {
             };
             Input::Headers(headers)
         };
+        if matches!(&input, Input::Headers(Err(_))) {
+            owner.cancel(cx);
+        }
         let dormant = state
             .engine
             .borrow_mut()
@@ -172,14 +186,14 @@ pub(super) fn abort_state(cx: &mut JSContext, state: &Session) {
             .pending
             .values()
             .chain(registry.network.responses.values().map(|(_, c)| c))
-            .map(|c| Trusted::new(&*c.root()))
+            .cloned()
             .collect()
     };
     for controller in controllers {
-        abort(cx, controller);
+        controller.cancel(cx);
     }
 }
-fn abort(cx: &mut JSContext, controller: Trusted<AbortController>) {
+fn abort(cx: &mut JSContext, controller: &Trusted<AbortController>) {
     let controller = controller.root();
     let global = controller.global();
     let mut realm = crate::realms::enter_auto_realm(cx, &*global);
@@ -196,16 +210,21 @@ impl NativeAdapter<'_> {
         let controller = AbortController::new_with_proto(&mut cx, &global, None);
         let mut init = RequestInit::empty();
         init.signal = Some(Some(controller.signal()));
-        let promise = doc.window().Fetch(
-            &mut cx,
+        let mut cancellation = None;
+        let promise = crate::fetch::Fetch_with_cancellation(
+            &global,
             RequestOrUSVString::USVString(USVString(url.into())),
             &init,
+            &mut cx,
+            &mut cancellation,
         );
-        self.registry
-            .borrow_mut()
-            .network
-            .pending
-            .insert(serial, Trusted::new(&*controller));
+        self.registry.borrow_mut().network.pending.insert(
+            serial,
+            Rc::new(FetchOwner {
+                controller: Trusted::new(&*controller),
+                cancellation,
+            }),
+        );
         let callback = handler(&mut cx, &doc, serial, false);
         promise.append_native_handler(&mut cx, &callback);
         Ok(())
@@ -219,7 +238,7 @@ impl NativeAdapter<'_> {
                 .responses
                 .get(&handle)
                 .ok_or("released native response")?;
-            (r.root(), Trusted::new(&*c.root()))
+            (r.root(), c.clone())
         };
         let global = doc.global();
         let mut realm = crate::realms::enter_auto_realm(self.cx, &*global);
@@ -237,7 +256,7 @@ impl NativeAdapter<'_> {
     pub(super) fn cancel_network(&mut self, serial: u64) {
         let controller = self.registry.borrow_mut().network.pending.remove(&serial);
         if let Some(controller) = controller {
-            abort(self.cx, controller);
+            controller.cancel(self.cx);
         }
     }
     pub(super) fn release_network(&mut self, handles: &[u64]) {
@@ -249,7 +268,7 @@ impl NativeAdapter<'_> {
                 .collect()
         };
         for controller in controllers {
-            abort(self.cx, controller);
+            controller.cancel(self.cx);
         }
     }
 }
