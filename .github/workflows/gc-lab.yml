@@ -157,6 +157,8 @@ jobs:
           --before 'Listo para comenzar' --after 'RSU'
           --require-microtasks --gc-between-microtasks --observer-probe
           --output gc-lab/native-microtask-interop-results
+      - name: Await native HTTP Fetch headers and Response text under joint GC
+        run: python3 gc-lab/servo-native/run_fetch.py --servo gc-lab/.servo-native/target/debug/servoshell
       - name: Collect real cross-heap cycles with the realm still alive
         run: python3 gc-lab/servo-native/run_gc.py --servo gc-lab/.servo-native/target/debug/servoshell
       - name: Preserve native integration evidence
@@ -171,3 +173,4 @@ jobs:
             gc-lab/native-task-results/
             gc-lab/native-promise-results/
             gc-lab/native-microtask-interop-results/
+            gc-lab/native-fetch-results/

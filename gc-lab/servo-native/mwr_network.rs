@@ -60,13 +60,11 @@ impl Completion {
             return Ok(());
         };
         let doc = state.registry.borrow().document()?;
-        let dormant = state
-            .engine
-            .borrow_mut()
-            .take()
-            .ok_or("fetch completion during active VM")?;
-        let mut engine = dormant.resume(Box::new(NativeAdapter::new(cx, state.registry.clone())));
-        let result = if self.body {
+        enum Input {
+            Body(std::result::Result<String, String>),
+            Headers(std::result::Result<FetchResponse, String>),
+        }
+        let input = if self.body {
             let body = if self.reject {
                 Err("native response body failed".into())
             } else {
@@ -75,7 +73,7 @@ impl Completion {
                     _ => Err("native response text conversion failed".into()),
                 }
             };
-            engine.complete_response_text(self.serial, body)
+            Input::Body(body)
         } else {
             let headers = if self.reject {
                 Err("native fetch rejected (network, origin or policy)".into())
@@ -100,7 +98,17 @@ impl Completion {
                     Err(_) => Err("native fetch result is not a Response".into()),
                 }
             };
-            engine.complete_fetch(self.serial, headers)
+            Input::Headers(headers)
+        };
+        let dormant = state
+            .engine
+            .borrow_mut()
+            .take()
+            .ok_or("fetch completion during active VM")?;
+        let mut engine = dormant.resume(Box::new(NativeAdapter::new(cx, state.registry.clone())));
+        let result = match input {
+            Input::Body(body) => engine.complete_response_text(self.serial, body),
+            Input::Headers(headers) => engine.complete_fetch(self.serial, headers),
         };
         let host_error = engine.host_error().map(str::to_owned);
         *state.engine.borrow_mut() = Some(engine.suspend());
@@ -114,6 +122,7 @@ impl Completion {
             if self.body { "body" } else { "headers" }
         );
         queue_collection(&doc);
+        queue_check(&doc);
         Ok(())
     }
 }
@@ -211,4 +220,21 @@ impl NativeAdapter<'_> {
             abort(self.cx, controller);
         }
     }
+}
+
+// Observe after the native Promise callback and VM microtask checkpoint finish.
+fn queue_check(doc: &Document) {
+    if std::env::var_os("MWR_NATIVE_FETCH_TEST").is_none() {
+        return;
+    }
+    let document = Trusted::new(doc);
+    doc.global().task_manager().dom_manipulation_task_source().queue(task!(MwrFetchCheck: move |cx| {
+        let doc=document.root();
+        let expected=std::env::var("MWR_NATIVE_FETCH_EXPECT").unwrap_or_default();
+        let result=doc.QuerySelector(cx,DOMString::from("#result")).ok().flatten();
+        if let Some(result)=result {
+            let text=result.upcast::<Node>().GetTextContent().map(|s|s.to_string()).unwrap_or_default();
+            if text==expected { eprintln!("MWR_NATIVE_FETCH_PROOF {}",serde_json::json!({"after":text,"native_fetch":true})); }
+        }
+    }));
 }
