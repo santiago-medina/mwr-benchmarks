@@ -1,0 +1,8 @@
+{
+  "node_version": "v24.22.1",
+  "harness": "official sta.js + assert.js, unchanged",
+  "total": 40,
+  "passed": 40,
+  "failures": [],
+  "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812"
+}

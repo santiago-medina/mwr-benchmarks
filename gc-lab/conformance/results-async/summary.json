@@ -1,0 +1,40 @@
+{
+  "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
+  "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
+  "implementation_sha256": "e2871b31c9a49bb756920ee874ae5febb6fe34bb2ce205075f829cf2572fee27",
+  "runner_sha256": "4e19323baffedc44b60085eb31f0d09cfabe0fbfce8cbed12697ca0a0f6fa08c",
+  "new_failures": [],
+  "variant": "strict script only; standard strict prefix; original test body",
+  "profile": "async",
+  "scopes": [
+    "language/expressions/async-function",
+    "language/expressions/async-arrow-function",
+    "language/expressions/await",
+    "language/statements/async-function"
+  ],
+  "total": 249,
+  "counts": {
+    "unsupported": 209,
+    "passed": 40
+  },
+  "assertions": 39,
+  "regressions": [],
+  "unsupported_reasons": {
+    "negative parse/resolution test outside runtime profile": 94,
+    "syntax: expected semicolon": 6,
+    "syntax: expected punctuation": 32,
+    "syntax: unsupported or missing expression": 7,
+    "syntax: unsupported character": 1,
+    "unsupported execution flags: generated,async,noStrict": 7,
+    "unsupported execution flags: generated,noStrict,async": 28,
+    "unsupported harness includes: propertyHelper.js": 2,
+    "unsupported harness includes: wellKnownIntrinsicObjects.js": 1,
+    "syntax: expected identifier": 7,
+    "unsupported harness includes: asyncHelpers.js": 10,
+    "unsupported harness includes: compareArray.js": 6,
+    "syntax: reserved binding identifier": 5,
+    "standard intrinsic not implemented": 1,
+    "unsupported execution flags: noStrict,async": 2
+  },
+  "failures": []
+}

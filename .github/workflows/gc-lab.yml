@@ -48,17 +48,21 @@ jobs:
         run: python3 gc-lab/conformance/run.py --source gc-lab/.test262-source --check-baseline
       - name: Preserve approved array and iterator cases
         run: python3 gc-lab/conformance/run.py --source gc-lab/.test262-source --profile arrays --check-baseline
-      - name: Preserve approved Promise and async cases
+      - name: Preserve approved Promise cases
         run: python3 gc-lab/conformance/run.py --source gc-lab/.test262-source --profile promises --check-baseline
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - name: Preserve approved async function and await cases
+        run: python3 gc-lab/conformance/run.py --source gc-lab/.test262-source --profile async --check-baseline
       - name: Validate passing cases with the official harness in Node
         run: python3 gc-lab/conformance/compare_node.py --source gc-lab/.test262-source --output gc-lab/conformance/results/node-report.json
       - name: Validate array cases with official Node harness
         run: python3 gc-lab/conformance/compare_node.py --source gc-lab/.test262-source --profile arrays --output gc-lab/conformance/results-arrays/node-report.json
       - name: Validate Promise cases with the official async Node harness
         run: python3 gc-lab/conformance/compare_node.py --source gc-lab/.test262-source --profile promises --output gc-lab/conformance/results-promises/node-report.json
+      - name: Validate async cases with official Node harness
+        run: python3 gc-lab/conformance/compare_node.py --source gc-lab/.test262-source --profile async --output gc-lab/conformance/results-async/node-report.json
       - name: Preserve every case including known failures
         if: always()
         uses: actions/upload-artifact@v4
@@ -68,6 +72,7 @@ jobs:
             gc-lab/conformance/results/
             gc-lab/conformance/results-arrays/
             gc-lab/conformance/results-promises/
+            gc-lab/conformance/results-async/
   servo-integration:
     runs-on: ubuntu-24.04
     needs: contracts

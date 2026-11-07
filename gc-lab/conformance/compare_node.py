@@ -34,7 +34,7 @@ console.log(JSON.stringify({node_version:process.version,harness:'official sta.j
 })().catch(e=>{console.error(e);process.exitCode=1;});
 '''
 def main():
-    p=argparse.ArgumentParser(__doc__);p.add_argument('--profile',choices=['objects','arrays','promises'],default='objects');p.add_argument('--source',type=Path,required=True);p.add_argument('--output',type=Path,default=None);a=p.parse_args()
+    p=argparse.ArgumentParser(__doc__);p.add_argument('--profile',choices=['objects','arrays','promises','async'],default='objects');p.add_argument('--source',type=Path,required=True);p.add_argument('--output',type=Path,default=None);a=p.parse_args()
     assert (a.source/'.revision').read_text().strip()==REVISION
     suffix='' if a.profile=='objects' else '-'+a.profile
     a.output=a.output or HERE/('node-report'+suffix+'.json')

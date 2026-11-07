@@ -1,0 +1,1844 @@
+[
+  {
+    "path": "language/expressions/async-arrow-function/array-destructuring-param-strict-body.js",
+    "source_sha256": "fa4561a8a8ff6abd65d387c59cd6eddcc7d54d861ae7756ecf8283320a57e0b9",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/arrow-returns-promise.js",
+    "source_sha256": "f4fbfc77977bfcfd30247cd127ccbb3f46d432c396f86546d07159cce8f298e8",
+    "status": "passed",
+    "reason": "",
+    "assertions": 2,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/async-lineterminator-identifier-throws.js",
+    "source_sha256": "6ce06caba5b72d878734023a1610c9f843aa4ed7c4a982a59a1beec06bc55849",
+    "status": "unsupported",
+    "reason": "syntax: expected semicolon",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/await-as-binding-identifier-escaped.js",
+    "source_sha256": "5de48d9f2d42010c5ea00be9c2109776bd8330cd81835af79163322f03d516f3",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/await-as-binding-identifier.js",
+    "source_sha256": "9700d4c2915c2b755057c30848bf4e46465e52abb97604824a0de964e954b334",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/await-as-identifier-reference-escaped.js",
+    "source_sha256": "a07e6c766c0b0a6b342053b7fb3b41660d01f9c41bcdc66be91ecaf45e91f432",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/await-as-identifier-reference.js",
+    "source_sha256": "f09310cd6c55f9ae129db1919cdd7c6042efafae149d9fec854abdc6ce31de6e",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/await-as-label-identifier-escaped.js",
+    "source_sha256": "7fa1053fdfd865628a6be184cbff7b9f17d438c7ab76c9d9af1d0b1327234a1a",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/await-as-label-identifier.js",
+    "source_sha256": "070b729c46fef1eb2973a35363ef2bc33d088ec7fea2cb28c7bf0615ee06482e",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/await-as-param-ident-nested-arrow-parameter-position.js",
+    "source_sha256": "ed40c2dba4cfe30c76e3ff8903b4bc1bfc801c750aebf0d9810bc0c3f3c32124",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/await-as-param-nested-arrow-body-position.js",
+    "source_sha256": "23a9bce070813829f1f160d532396c84767004fd722f053c8abdfd79d92fa88b",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/await-as-param-nested-arrow-parameter-position.js",
+    "source_sha256": "e7e97cfd3ec8e517d3958450bae37fdb334bab5491d69828e8dfa124e85dfe19",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/await-as-param-rest-nested-arrow-parameter-position.js",
+    "source_sha256": "003466bd155db2830175b1b8b496fb4a8ad0e05d8ff2810db4adfb05dd566a1f",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/dflt-params-abrupt.js",
+    "source_sha256": "db5ef981af8f25f096b31a6a8eb3f0988d2ada872985b4dc6c726f75a8abaf1b",
+    "status": "unsupported",
+    "reason": "syntax: expected semicolon",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/dflt-params-arg-val-not-undefined.js",
+    "source_sha256": "55667c75faed2a997164328978c1559157dc7a5649444f014a91d12107e1fb90",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/dflt-params-arg-val-undefined.js",
+    "source_sha256": "a1c769abac930618e788a9673f5a8c8e79c34d944f6c87c6a974ca2d39fd5318",
+    "status": "unsupported",
+    "reason": "syntax: expected semicolon",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/dflt-params-duplicates.js",
+    "source_sha256": "194f3fac38b528c6942096151903a4d0c9a0b1d1271ce479eac7ae6830a16193",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/dflt-params-ref-later.js",
+    "source_sha256": "6e1d2bc6f6f4d77351a6f194f554e11b3bf51941ed179005048a188928184e6e",
+    "status": "unsupported",
+    "reason": "syntax: expected semicolon",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/dflt-params-ref-prior.js",
+    "source_sha256": "08e475e12ec19a7ce9e038a398899200e9eda84293623c3649569b9fa60c19dd",
+    "status": "unsupported",
+    "reason": "syntax: expected semicolon",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/dflt-params-ref-self.js",
+    "source_sha256": "a0db9fbdb44a72a8363123c4debe456ac65d339b1f62b4636070ddee848537fe",
+    "status": "unsupported",
+    "reason": "syntax: expected semicolon",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/dflt-params-rest.js",
+    "source_sha256": "c4b73c0cec1336390bc6b8c7d4e3c3a8b524659029fdcf674c83fed9751a69e6",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/dflt-params-trailing-comma.js",
+    "source_sha256": "16ad002a76be5d2f57973cc53bbee014b430310eeb5ee8884a1a0725d1865516",
+    "status": "unsupported",
+    "reason": "syntax: unsupported or missing expression",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/early-errors-arrow-NSPL-with-USD.js",
+    "source_sha256": "0b81ad9165c4f0e8c1e0f8ee9cb78aa4a418377c608b75322742fe63322e6f3b",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/early-errors-arrow-arguments-in-formal-parameters.js",
+    "source_sha256": "dbe1c24dc553719a4fe6e808ab1b52dc9d2832d76994f0264824b5bf3862bef3",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/early-errors-arrow-await-in-formals-default.js",
+    "source_sha256": "d294b0e16fb822c3aace43dee3cf9975c0721499a62d4a5d01210aaa2ac5476f",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/early-errors-arrow-await-in-formals.js",
+    "source_sha256": "2b9151cac9f2fa1d9eec531814b29ded598edf8eead085f0adbbb92480928730",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/early-errors-arrow-body-contains-super-call.js",
+    "source_sha256": "7fc28dd72d4bbd71e68190fec9b77d6b3c78d966eefa6822cacca56c4c5c5873",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/early-errors-arrow-body-contains-super-property.js",
+    "source_sha256": "0bdd09d7443daf8c633efd7192e21eae6625df17e02d754f81233a2e21b25ac6",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/early-errors-arrow-duplicate-parameters.js",
+    "source_sha256": "b8e0e80f37594461c4978ee1980330d67bc2430e1dfd4196ddcf8448ad4acbb2",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/early-errors-arrow-eval-in-formal-parameters.js",
+    "source_sha256": "e2c113a6facf3ffe2593fb538150c1de1295a28897c8a9c7f011003aad7b2784",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/early-errors-arrow-formals-body-duplicate.js",
+    "source_sha256": "a5d4fa5d1a2f315e48f4cc980b7763b4845acfa39c3ef8788385072abd00786a",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/early-errors-arrow-formals-contains-super-call.js",
+    "source_sha256": "af1e92e31763a33a3e62c15cfcca4f54db32e8f3998aab5cfc91e1a6c55e81c5",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/early-errors-arrow-formals-contains-super-property.js",
+    "source_sha256": "f35c5f279bf75181f078bd6f3f6086ad3473e436a368f43797fd59df680fdd48",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/early-errors-arrow-formals-lineterminator.js",
+    "source_sha256": "3ac5c0889b15ded05b395eb7d389433be4a0d5245b1b043ace2261b38982ad7e",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/escaped-async-line-terminator.js",
+    "source_sha256": "e6809c4fae6e6083363f13ade87e7a84166c6fd98d61af49d7e8363a268a0e9b",
+    "status": "unsupported",
+    "reason": "syntax: unsupported character",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/escaped-async.js",
+    "source_sha256": "fe3c136764f6829953d4f165e6828d482011a18ed619a6d3b09d7864929a0a71",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/eval-var-scope-syntax-err.js",
+    "source_sha256": "aac0e7ff33d8e98ae4d24a24876c92b477aa07e704246580080f3af5f143c3c8",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,async,noStrict",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/forbidden-ext/b1/async-arrow-function-forbidden-ext-direct-access-prop-arguments.js",
+    "source_sha256": "54c686b09f92cb57ee368c9aa81e798af7e6c557cc54222336849acb59e59496",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/forbidden-ext/b1/async-arrow-function-forbidden-ext-direct-access-prop-caller.js",
+    "source_sha256": "12baf0a6e63e58f5769f8c4b5ffcab3965b18ba0561bea55678af6a8fd91775c",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/forbidden-ext/b2/async-arrow-function-forbidden-ext-indirect-access-own-prop-caller-get.js",
+    "source_sha256": "21a566523dc0ca963bdc50f4da51887c48d22d8ee2701da330df28ce2455c322",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/forbidden-ext/b2/async-arrow-function-forbidden-ext-indirect-access-own-prop-caller-value.js",
+    "source_sha256": "db110f72f64ecdc8d94bed988b546a8193f10b4ce3fe25a891c7ac399faef439",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/forbidden-ext/b2/async-arrow-function-forbidden-ext-indirect-access-prop-caller.js",
+    "source_sha256": "8dffb75097cef36fc3bf77fc5a6c69196495bdce4ce8008d999c9d29a9ab1d54",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/name.js",
+    "source_sha256": "0e724f679603c540d279fbaec18ea452afb05c7edf82d50a2e36453ebf67ef6f",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: propertyHelper.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/object-destructuring-param-strict-body.js",
+    "source_sha256": "410882ce8ab5e0e54bd14266026a4faa89250bbfcdd376b521aabcb299e5f0c6",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/params-trailing-comma-multiple.js",
+    "source_sha256": "ef913c3e7c137988866a45c32764074fc65f1a16d43961611dddd6c6e763f7ce",
+    "status": "unsupported",
+    "reason": "syntax: unsupported or missing expression",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/params-trailing-comma-single.js",
+    "source_sha256": "d7662c92b97246fe0f7cda5b29037327cb56075d682637246ef878badf24a3c0",
+    "status": "unsupported",
+    "reason": "syntax: unsupported or missing expression",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/prototype.js",
+    "source_sha256": "c5c6a130be9b96181a8961d4304f8c349b9682f0472a11fc2bf69712ad66183e",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: wellKnownIntrinsicObjects.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/rest-param-strict-body.js",
+    "source_sha256": "413ab6d49671bd1bdb467845d7322e91cb9bb5102005ad760f8ebdfc8c2ecc86",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/rest-params-trailing-comma-early-error.js",
+    "source_sha256": "476e041694b139d42143a1ffd590799954ffcfa1e1f1d19a4e31e06db63c7985",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/try-reject-finally-reject.js",
+    "source_sha256": "2427df1a1f1e954af3b107fc98f4af3798267d8c848a92ea6a52e9206873d6a0",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/try-reject-finally-return.js",
+    "source_sha256": "c325c4cb8e52952371d7af293083da972629da015dc596a2dbf95cb870df3a2f",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/try-reject-finally-throw.js",
+    "source_sha256": "b54d4c4dcedece134442e90403ec124efdc8a5b825752d97aa142410491a3e40",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/try-return-finally-reject.js",
+    "source_sha256": "392830fa5d21f3ca8fca6383a526fc04930e990e595abbecda894a0faba37d13",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/try-return-finally-return.js",
+    "source_sha256": "37a0a57b4001df1603f0810d4c23447e7f802719ac15d8ef83e050ecc13ea2ef",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/try-return-finally-throw.js",
+    "source_sha256": "83bb2440f838b70d1f6cb445c86e869d52bf2b3e3c0882b1e59ede4f89ff60af",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/try-throw-finally-reject.js",
+    "source_sha256": "acb50e69e90f39a32729650981beb7a1154f805821f710a0ae4a28c14f5dd555",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/try-throw-finally-return.js",
+    "source_sha256": "7fbb9abb27b6f835e979d6a5f53de8ca715851bebb645be5da5a820b47d650eb",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/try-throw-finally-throw.js",
+    "source_sha256": "680412f78e373feea288d206f8fd2d4b6c7cc05e3bb4c1002deb5b1d71b7d9b2",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-arrow-function/unscopables-with-in-nested-fn.js",
+    "source_sha256": "f26be9cd91409d7b0f68f9851aa533f6af722495126a5be1c9f2e3e474024adf",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-arrow-function/unscopables-with.js",
+    "source_sha256": "55b6aca97717862d76e2cd4f8a11d05dc568623737f6817809e38d7abac54315",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/await-as-binding-identifier-escaped.js",
+    "source_sha256": "9725d7b490fe9b4cd8b6dbc931e4dbfff197dcf3c272df79e2cf135c29917cba",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/await-as-binding-identifier.js",
+    "source_sha256": "5f0a1e8bb1e663b922c5c20711ec8bee9e77ad4c430dcb257c5fc992366cbbc1",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/await-as-identifier-reference-escaped.js",
+    "source_sha256": "10f80b4142a79da2ecfd574e0da51ed18fbd0528c35685552ffbe62d82ada82b",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/await-as-identifier-reference.js",
+    "source_sha256": "5692aa7be33ae5c46f515369d35a748100942b2d5a71eceaf14d825ffd05cae5",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/await-as-label-identifier-escaped.js",
+    "source_sha256": "3dff91fd4f3c50d248cf9b08c53dadce0049f4c7534fe124d995766f5e07c8e3",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/await-as-label-identifier.js",
+    "source_sha256": "defa68d58152536a381ee4408a0ee5897c2a0df3718fb7d26376aaf1d081c080",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/early-errors-expression-NSPL-with-USD.js",
+    "source_sha256": "ba4c36e511fb34c03b8e010195dd5ab5bc910eb880b089cb7169913c7451d030",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/early-errors-expression-binding-identifier-arguments.js",
+    "source_sha256": "d188ca6d64e9dc3698d35c02601a2ef54aa2753481a948274a6f4a7c53eb6a87",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/early-errors-expression-binding-identifier-eval.js",
+    "source_sha256": "955acc5cc13e6fe10b57ab3e9d7e22e03883bc9351dcdf3910869e4d44e50d80",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/early-errors-expression-body-contains-super-call.js",
+    "source_sha256": "f48045a9b8b53def83972df04c45b3868f8dda1f7d9c4724d9df2ef6123b5d9f",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/early-errors-expression-body-contains-super-property.js",
+    "source_sha256": "716012e02cd7699f5aad15494b7e5b3238c5e46a04c5136bd07db6907947b9b0",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/early-errors-expression-eval-in-formal-parameters.js",
+    "source_sha256": "6be1a212f90b6779f9319551c21830b5bccae6d76ef702fec8776478306a5caf",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/early-errors-expression-formals-body-duplicate.js",
+    "source_sha256": "1d78ad8a116130999d5f0f9207c442c4b924ae0e0eefd748168b8ac1f7643675",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/early-errors-expression-formals-contains-super-call.js",
+    "source_sha256": "b3ea512e4d7380a51a47a377f805ad7cb72d17acc91f8750e020cedb66cfe8ea",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/early-errors-expression-formals-contains-super-property.js",
+    "source_sha256": "1da9399ea46a5c45733b8db06002bbff24100ae682c26a575b5116e9fb757cc1",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/early-errors-expression-not-simple-assignment-target.js",
+    "source_sha256": "7a7b0c749e6dd88df2d66373818e5addfc768d750f769866a32cf38581d6d136",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/escaped-async.js",
+    "source_sha256": "fd3dc3590c5ea7bc3121f0372cbd8be6d63ac55a2adac084c519abdde7b1464f",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/expression-returns-promise.js",
+    "source_sha256": "dc25606ba498f839af9b840f3914cd6467faa33870ad0639b611dee1fc0b22fc",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/forbidden-ext/b1/async-func-expr-named-forbidden-ext-direct-access-prop-arguments.js",
+    "source_sha256": "f1af6a0a51dac5245d262140eebf7454f3d7ce1a15ea274cafe4dc441e4f4406",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/forbidden-ext/b1/async-func-expr-named-forbidden-ext-direct-access-prop-caller.js",
+    "source_sha256": "b4ef193666d771f0d57d25c469609e6e833507fc0faf818b512ea231c16866ac",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/forbidden-ext/b1/async-func-expr-nameless-forbidden-ext-direct-access-prop-arguments.js",
+    "source_sha256": "8a39763dc12832ea5546409c90c72eb1fa6ac282a151b62abcb43ca4541808b0",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/forbidden-ext/b1/async-func-expr-nameless-forbidden-ext-direct-access-prop-caller.js",
+    "source_sha256": "16f66344dbe46c666f4f0d50273487f88b34c115dbcab25bfe6e658125af879b",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/forbidden-ext/b2/async-func-expr-named-forbidden-ext-indirect-access-own-prop-caller-get.js",
+    "source_sha256": "63f1a83d774b864290123448eaff1ea6399f0fc02b50dbe7b7c21b115f33f341",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/forbidden-ext/b2/async-func-expr-named-forbidden-ext-indirect-access-own-prop-caller-value.js",
+    "source_sha256": "10995fed5d7ac1649f8058dc9199646ad475410627eff1a1e7b08b39adc42e5f",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/forbidden-ext/b2/async-func-expr-named-forbidden-ext-indirect-access-prop-caller.js",
+    "source_sha256": "dec0c8ee497d58192db5bec497c94ef21a4949ed852da511664ec379fd7067b7",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/forbidden-ext/b2/async-func-expr-nameless-forbidden-ext-indirect-access-own-prop-caller-get.js",
+    "source_sha256": "e14721ffeddd8e735a4c0b4106c37e65acb650d0d47de5e3b1b7a9732347432f",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/forbidden-ext/b2/async-func-expr-nameless-forbidden-ext-indirect-access-own-prop-caller-value.js",
+    "source_sha256": "9fa95f875e27695ae0c659004e921820a43d5d8ef1e20d69bf8f46530d1e6784",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/forbidden-ext/b2/async-func-expr-nameless-forbidden-ext-indirect-access-prop-caller.js",
+    "source_sha256": "8fb1cce778e80b6b3bcf14efda68960ee839dd5bc44ae2b63a75ae0bc3697143",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/name.js",
+    "source_sha256": "4fb6691a423c9c1ce5edf1f782cb0e321b8df07144037391cd9792879a698180",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: propertyHelper.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-array-destructuring-param-strict-body.js",
+    "source_sha256": "9c72d8ea20db50ee7e09180c837836d3e6ba000f72411484542182416cd723b0",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-await-as-binding-identifier-escaped.js",
+    "source_sha256": "4f967c3aa174d7e2fbf7b2da83cd01ea9c648ad78f2227e7a132638cd2d70fea",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-await-as-binding-identifier.js",
+    "source_sha256": "9babd3ad992136e63786871fddafb9fc705e3adc67f05cbee26d1f89eb713e21",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-await-as-identifier-reference-escaped.js",
+    "source_sha256": "e06c94d0afb87c8141832c87373304fd6aa05bfc8b190e00b4ec475e40812927",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-await-as-identifier-reference.js",
+    "source_sha256": "3860f081b6285bb74ed684bd0781d61b8a22feeabf19f543baaefbfa6819aac7",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-await-as-label-identifier-escaped.js",
+    "source_sha256": "419b0e1e68f41136dd4c269403cda1c3385ad4ce69be62e6bf33242e844c74f3",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-await-as-label-identifier.js",
+    "source_sha256": "61fca7b2f86edabd61acac3cf771e9f718dc09c57c06d555626691dc58db70e4",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-dflt-params-abrupt.js",
+    "source_sha256": "83cfc0760bebaa15404347cfca39bed18beec417bcc3f25deb8e00ff21b3bc0b",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-dflt-params-arg-val-not-undefined.js",
+    "source_sha256": "1419bcb5be0e9af006dbce4f374d35cad14417a3907b56a14e1148deff103ed7",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-dflt-params-arg-val-undefined.js",
+    "source_sha256": "c0c5fac162083c79a202183a0b32a1cfaa0d5c6542fa655f7fd13be9bef0acd4",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-dflt-params-duplicates.js",
+    "source_sha256": "bc55d222fdf7b6553f8b4cf870fd8fb2b88e47a47e48a50556f7f6433cd0b873",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-dflt-params-ref-later.js",
+    "source_sha256": "caa662dd6d27bc44a5bb2862521e553b284f3dd8e0b0edb5c37c3ab758da5bcd",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-dflt-params-ref-prior.js",
+    "source_sha256": "10a10d6f2d04188630ab308299a16d393d443f55564dc5b7a439412d9837161c",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-dflt-params-ref-self.js",
+    "source_sha256": "79fd060913f88f870154b1dc98a7cd8093ce19d664432dd89ab194c824ca1f00",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-dflt-params-rest.js",
+    "source_sha256": "5c0f7445ee82cd08e6ff8c700ff663f49d08df2023c8c1462b528895f6ddd37b",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-dflt-params-trailing-comma.js",
+    "source_sha256": "6e01d4ec7dd49649a808190f04b25c16c7656bfc27ab284ab1dca15bf88d68b3",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-eval-var-scope-syntax-err.js",
+    "source_sha256": "b29ee610b6c6742f7a3800d62e0bb80a760b69d2b7d5fab432390259f88949ef",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,async,noStrict",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-object-destructuring-param-strict-body.js",
+    "source_sha256": "1d4e1afdb03511f20ae75a3b9f29cdcf485bf00c66c29c5f7a62748df3547193",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-params-trailing-comma-multiple.js",
+    "source_sha256": "3fd912f5acad4f7c41031895d95929c248c7de87f3d2f241b7c3ec58b5ea1fed",
+    "status": "unsupported",
+    "reason": "syntax: expected identifier",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-params-trailing-comma-single.js",
+    "source_sha256": "b770bf7a5054399d4f0d3fd0dd3414d50bb4a9043ac2df84deea4e0e68865435",
+    "status": "unsupported",
+    "reason": "syntax: expected identifier",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-reassign-fn-name-in-body-in-arrow.js",
+    "source_sha256": "2f3e0d0c10b2c2eda03b3ac7d048f0f392dbb119319f1c069de3a1840cb2d213",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,async,noStrict",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-reassign-fn-name-in-body-in-eval.js",
+    "source_sha256": "8c172e3d95288d69374ccd94e2290ef2df70d6e321ce443a8b72710dbb54e5b3",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,async,noStrict",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-reassign-fn-name-in-body.js",
+    "source_sha256": "a18fad459b284dee2c11e6a3e17b9f6eaa3b03c2531b3b6e0837e926dd3217df",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,async,noStrict",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-rest-param-strict-body.js",
+    "source_sha256": "b01784c31b69e962176fa888bc7130907c68b82a34bd29a8681dfdb9b2265188",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-rest-params-trailing-comma-early-error.js",
+    "source_sha256": "cd9d9da17283e7c8a4203bc5fe1c0e75d0a7fa5f8ac926134d1160c6537184df",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-returns-async-arrow-returns-arguments-from-parent-function.js",
+    "source_sha256": "cf9d9e959a5e5a7fe05f99992b5ec442e00482fbb83bb655a12fbf2c96726be1",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-returns-async-arrow-returns-newtarget.js",
+    "source_sha256": "a6d41a071c149f78537b7df028a5a33645a4c4af913d1fffc98d833e7e1a27f3",
+    "status": "unsupported",
+    "reason": "syntax: unsupported or missing expression",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-returns-async-arrow.js",
+    "source_sha256": "7817a6b2b2d16a77614779cf0263d7a185c2e3a8b1baa12ad6f62f4ebd7e8f8f",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-returns-async-function-returns-arguments-from-own-function.js",
+    "source_sha256": "abc9a16b2e70fb78fc301825ab03735de51ab041d836ad15cba3222f2b9bd865",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-returns-async-function-returns-newtarget.js",
+    "source_sha256": "fddd7d576bcfc0360f14f0e46e810b574beee4d5e89f0543609f8964b99efb66",
+    "status": "unsupported",
+    "reason": "syntax: unsupported or missing expression",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-returns-async-function.js",
+    "source_sha256": "33b58ffd514c235be338f655d40d834d303691a61e3474de11e5027630b092b4",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/named-strict-error-reassign-fn-name-in-body-in-arrow.js",
+    "source_sha256": "4e44649195dad893c6d7f63ee253a4c2b724235102b265a4694f5a989a29d4af",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: asyncHelpers.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-strict-error-reassign-fn-name-in-body-in-eval.js",
+    "source_sha256": "870d8f132c3cb4419fa47e26464f9457d8fb8b5b210a557c8704862d93fbeff5",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: asyncHelpers.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-strict-error-reassign-fn-name-in-body.js",
+    "source_sha256": "d49292e5a5e2e588f483033a91adbf7c98c3cbbbe913d4fc77bf75c1f0be162f",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: asyncHelpers.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-unscopables-with-in-nested-fn.js",
+    "source_sha256": "d933abb2741b957558135297dd2d99b96bb140dfa564e18cf940a16d507847cd",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/named-unscopables-with.js",
+    "source_sha256": "14bfe0d3019394ace6a59496810b66e4369007372243ef5e50cb027fdbec6101",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/nameless-array-destructuring-param-strict-body.js",
+    "source_sha256": "54f545e188d64f59180af4ae316c5f5c7ca8997e9ba985b4c331d3a104bae07d",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/nameless-dflt-params-abrupt.js",
+    "source_sha256": "ddf4b00a33ee88b5594c1f67c16cd57d077ce0f3ca97ae24394db18c7729fda0",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/nameless-dflt-params-arg-val-not-undefined.js",
+    "source_sha256": "359a51a1a2e3f2e98cbbd09b69408c5fdf82a40ee3c0a8ac4565b53af5f95f68",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/nameless-dflt-params-arg-val-undefined.js",
+    "source_sha256": "ecb2bb309a2fb1e3f8a3e589a490fcdeac86869a378ddc381df75884eb1160e1",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/nameless-dflt-params-duplicates.js",
+    "source_sha256": "a16a4dd50ef5688e6ceb202f68152f1ecebc6f7c51b8cf00575fba134d21571d",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/nameless-dflt-params-ref-later.js",
+    "source_sha256": "bb91358ad5da5b923d2bce5801c0745cbe1b61c86a15eec3b1ceff75a7995038",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/nameless-dflt-params-ref-prior.js",
+    "source_sha256": "7e848d2f7ba86a462df3e4e227a48f467fc858b4429e588f5ec70162af40de03",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/nameless-dflt-params-ref-self.js",
+    "source_sha256": "344f903c0c5572dccde0ce1fce80c8d80d90a5240d762e9d063660f670086926",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/nameless-dflt-params-rest.js",
+    "source_sha256": "722a22c60c85f3316929237f03e8e55ee2465d59438edb412c20e72512bc7391",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/nameless-dflt-params-trailing-comma.js",
+    "source_sha256": "4fdfaf4df86334a9c27dfbfea281fee11c8782fc3830c3e172a1d373169d23f7",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/nameless-eval-var-scope-syntax-err.js",
+    "source_sha256": "a3c941c4e4ea9d8cd05d6560ca2b95429a63f4b0f4834466da97d71d29b6e446",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,async,noStrict",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/nameless-object-destructuring-param-strict-body.js",
+    "source_sha256": "a20b2fc2060186b251880bfaf5e857db1d32388888d54287f5ce547be377d344",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/nameless-params-trailing-comma-multiple.js",
+    "source_sha256": "8fbd900f2be72fb7ff5477c2e65befa4379bfc830b07cb4abbdb1bae36528f4e",
+    "status": "unsupported",
+    "reason": "syntax: expected identifier",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/nameless-params-trailing-comma-single.js",
+    "source_sha256": "71227a54e8c1aa2f9db632baaeb386f45008fcaec2ee98bf1d09e475fc342a8a",
+    "status": "unsupported",
+    "reason": "syntax: expected identifier",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/nameless-rest-param-strict-body.js",
+    "source_sha256": "4fce173603816d3a346c308dfbadf111c9ce8cfad3afab971c35e2d3a0c42ea5",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/nameless-rest-params-trailing-comma-early-error.js",
+    "source_sha256": "ccf43c7af913a3fb37a8ab3b1f8f79e9798ab24f13a0d80285cc05e2edc3d29f",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/nameless-unscopables-with-in-nested-fn.js",
+    "source_sha256": "005e7f449f25a6e7a17f4edd3f35c763a6d6edd9190ced6dbadbfdbc8256a49f",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/nameless-unscopables-with.js",
+    "source_sha256": "aed38d31d77d4ae29d055fdd48aef3649356d8ebf7c589a3799d3b3c96d019b3",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/async-function/syntax-expression-is-PrimaryExpression.js",
+    "source_sha256": "2492bbcd1dff3cfd673d51688b486920ae82e7b17a0c0d2afb3b1105a74d9d42",
+    "status": "passed",
+    "reason": "",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/try-reject-finally-reject.js",
+    "source_sha256": "d697da21b088ff44d13ad14afcc4226df806c944fa62e4ba03a9eb6828e01541",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/try-reject-finally-return.js",
+    "source_sha256": "c01a2bc517dfd9ca640e9e45c25d327b932a0231e5908f097d32c9997b0ceb5d",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/try-reject-finally-throw.js",
+    "source_sha256": "20e410451361124e744a7df2e7dab1c3cc09208bb61c3df44cb2b115f415784c",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/try-return-finally-reject.js",
+    "source_sha256": "e7e8636e8b049d5a4a9be834081ce58a4092fe38ed99cb776e4e3afe82eaf657",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/try-return-finally-return.js",
+    "source_sha256": "0cb322b74c89b0cd3abf9b889336f4af06004322393d3ab70a3c3ac5d030b5be",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/try-return-finally-throw.js",
+    "source_sha256": "51c3a695cb84dfb5cdbcc8c430e30218a107489704f127dff4d4841fa8e9fdab",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/try-throw-finally-reject.js",
+    "source_sha256": "55fb95b21bb34ec640de76a017881a9fcbc05557f85e9b4f944f8d2d1f75907a",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/try-throw-finally-return.js",
+    "source_sha256": "68b9c74d969182f8edb46d91630431573de0d8f1e446695143a324d93f4f94ba",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/async-function/try-throw-finally-throw.js",
+    "source_sha256": "0b7f12aff21eb10f4cbd6da481646a6bd2d75a3fc2c81e454ef3ac43130bec9b",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/await/async-await-interleaved.js",
+    "source_sha256": "a5e1013628cfabafc573a1e9633621abaaeaeffc8571026d93293e430371048e",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: compareArray.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/async-generator-interleaved.js",
+    "source_sha256": "18ffbc05319c2aaed227c15fbfb881a087412bee4a85bf4abbbd9fc2828f7104",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: compareArray.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/await-BindingIdentifier-in-global.js",
+    "source_sha256": "72b401f72957c32f450c0f62e736ce06ed5295f36069815a4e1975eaaaff294b",
+    "status": "unsupported",
+    "reason": "syntax: reserved binding identifier",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/await/await-BindingIdentifier-nested.js",
+    "source_sha256": "57ba2291d9cfb3c9abcc5c2f04754e586892665d3fa65462f6d3b676adb53902",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/await-awaits-thenable-not-callable.js",
+    "source_sha256": "c9aa1f5be8853b8ff44ca41de7bd9471ad99816a7892e7b891bc7e80321eac05",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: asyncHelpers.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/await-awaits-thenables-that-throw.js",
+    "source_sha256": "cac50765ba3051210a58fd361944c0f90bc7e398d3e40cd523af81b1b3f7ee52",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: asyncHelpers.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/await-awaits-thenables.js",
+    "source_sha256": "fb33e8941badd5ddec2448a635d58a47170667b7fee585573d8b67ba3fa675af",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: asyncHelpers.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/await-in-function.js",
+    "source_sha256": "4b726fc9cbb0789ec4f40c8795df21cf2d2d358b8ef90bfb572888d9540011c0",
+    "status": "unsupported",
+    "reason": "syntax: reserved binding identifier",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/await/await-in-generator.js",
+    "source_sha256": "27524ff98f3beff4101849929c083b9a9d5560ab755f33cbe372bd7c9a214363",
+    "status": "unsupported",
+    "reason": "syntax: expected identifier",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/await/await-in-global.js",
+    "source_sha256": "2ca438078065facb2f597eea04c29d9176ad35a25688ef8f306ed4228440fc55",
+    "status": "unsupported",
+    "reason": "syntax: reserved binding identifier",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/await/await-in-nested-function.js",
+    "source_sha256": "d47da4de69ca362a341f60176be42d0f44eff79ba5994020d8b70552b0f34557",
+    "status": "unsupported",
+    "reason": "syntax: reserved binding identifier",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/await/await-in-nested-generator.js",
+    "source_sha256": "4a5cd53d8b6a8236e8515e9dcbd5942f60de911791190f5fe7aef423f1681aa4",
+    "status": "unsupported",
+    "reason": "syntax: reserved binding identifier",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/expressions/await/await-monkey-patched-promise.js",
+    "source_sha256": "7a31b5ce99755a36d7fc7cd132ee929ab31d6f7ec5b3871aecad9e995e5925c4",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: compareArray.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/await-non-promise-thenable.js",
+    "source_sha256": "b3f6151b884e95f5fe38bf000a3dcb668ef5db562df73ee09e47c54dcb76df7c",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: compareArray.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/await-non-promise.js",
+    "source_sha256": "5207e3949a5a642a05262be4f347c3fd3638a0313162c08f5c61cd80a1228448",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: compareArray.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/await-throws-rejections.js",
+    "source_sha256": "b3a9508f74ef11284cbe5a47ee73f6d6d91ffe2b6764f628ed8e4cfbb827b542",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: asyncHelpers.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/early-errors-await-not-simple-assignment-target.js",
+    "source_sha256": "20c0d3affae170b9d284f51da598fc416d68d153c59765da050fdd02738e255a",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/for-await-of-interleaved.js",
+    "source_sha256": "93c68dc3bdf1803a9e556fb35a87e1a1d7ca9ae4880a384f629e6c1de79a56bf",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: compareArray.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/no-operand.js",
+    "source_sha256": "9edfbf67244e7dac865c1c3d96b0c99dd00f8e7c9395d2cb5045c9b93d5ed904",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/syntax-await-has-UnaryExpression-with-MultiplicativeExpression.js",
+    "source_sha256": "001fbe23a49650b2a7006a91533e3d4b4b4af2b9d1165d7b766396b6c53d4149",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: asyncHelpers.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/syntax-await-has-UnaryExpression.js",
+    "source_sha256": "35ca492d222b536ec1b30d7c0b50500883ba391d92603948b2dd563b6d2afe19",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: asyncHelpers.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/expressions/await/syntax-await-in-ConditionalExpression.js",
+    "source_sha256": "5901412f06943f9898fa65ae6fc2f65f3e4357eb137502bae8d332cf321678f7",
+    "status": "unsupported",
+    "reason": "unsupported harness includes: asyncHelpers.js",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/array-destructuring-param-strict-body.js",
+    "source_sha256": "ed737e2f3dbc932c08f7a93e15eb6c64fe7e44152e3886f3c309f9cb8a774919",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/await-as-binding-identifier-escaped.js",
+    "source_sha256": "ab1cc89157190ba5aea31fd033e20ec2352755b4d593568fc9939fe1f72f42b6",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/await-as-binding-identifier.js",
+    "source_sha256": "ad3cdfe1d0c51ebe4f4690b23dd3d839144a3c40906a4e441dfc33a2d888cfaa",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/await-as-identifier-reference-escaped.js",
+    "source_sha256": "9b4aaff3e0f87e01c625618a846c778d61db6e83339e93665da2ff7343584751",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/await-as-identifier-reference.js",
+    "source_sha256": "4a424047261887e6ad858c89c074f0ddff8014d4750bda7d4552506d2d20fdfa",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/await-as-label-identifier-escaped.js",
+    "source_sha256": "e0f12150098eb3acb76ec4471a73610e99efdc83bfd59415a24cd368baa18314",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/await-as-label-identifier.js",
+    "source_sha256": "1c5df93c5deebae873e8bdd10a63669fdf0e19f3f72f1152cc1e5030fedbce15",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/cptn-decl.js",
+    "source_sha256": "24fcdf381cea49595a8d161954d303718607e7160bf64deb78b546067a0c23d9",
+    "status": "unsupported",
+    "reason": "standard intrinsic not implemented",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/declaration-returns-promise.js",
+    "source_sha256": "985e2804beec92a6a69c7ca89a8639a0c2a1845eebae9a26f861fea4cbfc41e2",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/dflt-params-abrupt.js",
+    "source_sha256": "107c7cd5fe7a1dfe467bd3cc13b8b0917f0486d7dd6acca9597b1b672e1d6c13",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/dflt-params-arg-val-not-undefined.js",
+    "source_sha256": "b47b599a77cdd1e5be9ec1d4fda0c153f8ce9c6610c6f8f7801544764a651295",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/dflt-params-arg-val-undefined.js",
+    "source_sha256": "185d0e55dc2c8932c1b368398e1305a9ec598ad09df4543085433ee7077bbc05",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/dflt-params-duplicates.js",
+    "source_sha256": "af2045b2e9b0b0ea8a1c92f6c4d358596987e08b82cd0a6571fe92b3eb511ff2",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/dflt-params-ref-later.js",
+    "source_sha256": "625a4fe6e23a37342084639d66ddfed7c30d597dcfafd8b8188a5b85cce5b99b",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/dflt-params-ref-prior.js",
+    "source_sha256": "a06a5091d7691d078ada96730e47541315cd46f9b089260c86ecb5f3728f2380",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/dflt-params-ref-self.js",
+    "source_sha256": "064a7f27c8a5ad841b52327f9e989b81075f8e959bcc18c273b1a8e00ab9641b",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/dflt-params-rest.js",
+    "source_sha256": "932424be2082bdd1bd846f451718a2322da1d30cb7d0310b6c58bd0d3f911d4b",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/dflt-params-trailing-comma.js",
+    "source_sha256": "627a3089690158705bf6770f25a058278e61145b0fe63a772b45552276884e67",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/early-errors-declaration-NSPL-with-USD.js",
+    "source_sha256": "91f48aa3b7b9444637cadc4ffb90aaff6d26666ee56aaed0b584aaeb1d6652a0",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/early-errors-declaration-arguments-in-formal-parameters.js",
+    "source_sha256": "cec78cf73ddfb3624a864ef2cc067c5b81f7a3f6755b6b7c6795060b118b3b11",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/early-errors-declaration-await-in-formals-default.js",
+    "source_sha256": "ef8562920897bd59b6af805d97f6452c9077779ae9dbddc99894a6ba66d566ee",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/early-errors-declaration-await-in-formals.js",
+    "source_sha256": "fa865441ce71ec59319db2f32c62ca905e2d9e60568727fa739285c81f4f4cd5",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/early-errors-declaration-binding-identifier-arguments.js",
+    "source_sha256": "dcff8da46d2919f7b135d5cb0a6087e2247bfbc1d8d19de7be33c5bdd8280eb5",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/early-errors-declaration-binding-identifier-eval.js",
+    "source_sha256": "c0549b7be6a8a3c17751d082ac0f245193c677d938407b625a27c62a9ec75890",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/early-errors-declaration-body-contains-super-call.js",
+    "source_sha256": "573e54d6fc580507796250072203eb315af7db17e2baacd4f0d779ccdb2e76b1",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/early-errors-declaration-body-contains-super-property.js",
+    "source_sha256": "a4be49b60be2479e11f46cc1a7857d2affa86564e6cc9c488b1ce4db122f1df0",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/early-errors-declaration-duplicate-parameters.js",
+    "source_sha256": "d228ea7dbf388350178118efdea4fdbc3fbc9552d7caf785ad6b22bc1eff583e",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/early-errors-declaration-eval-in-formal-parameters.js",
+    "source_sha256": "769cbc85c1c7b588d7702e6f41f9fd8a280a5e797d1e284afb0062975c989164",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/early-errors-declaration-formals-body-duplicate.js",
+    "source_sha256": "6f06919b20a85ddff56a94df5c9e84acae2072af16054766b170b824f9deb75e",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/early-errors-declaration-formals-contains-super-call.js",
+    "source_sha256": "cf51b8af9976833b773c8f627f5c7c5126d3c3a58f08d1adb0670b626d794295",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/early-errors-declaration-formals-contains-super-property.js",
+    "source_sha256": "238320946af46687e2f55c7c3537ce51ce765967d2674e3e3eba03582d67c142",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/escaped-async.js",
+    "source_sha256": "38e09d04d5ff49c933c7124eb8f73e6fe45269ca3b585df2e2a7ec35ba78a662",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/eval-var-scope-syntax-err.js",
+    "source_sha256": "29865a812061e66fa971002d06c78ac4500fa0e2b2751533813f4e19de81900b",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,async,noStrict",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/evaluation-body-that-returns-after-await.js",
+    "source_sha256": "24de770879561b9bb41b110328983602ecbd32ce0d639c9ac451615a5493c0b7",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/evaluation-body-that-returns.js",
+    "source_sha256": "02d16a9f1e4894790564046cd8f8a90f97436e9355047f9bc2218a0d9f5fa25b",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/evaluation-body-that-throws-after-await.js",
+    "source_sha256": "0cd7a73c74ddc693eadcad8c4460a220c4a4f7b2a5d4fbe88e92c758fa5a6102",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/evaluation-body-that-throws.js",
+    "source_sha256": "78e084ff66cdd3e74681176c92e16e9cb01215ae2915881647d481d4ca13a3c7",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/evaluation-body.js",
+    "source_sha256": "79a9bf92d132b859fc013f7ac5505058f8b36e650d1c63bb16372e164a5e6bee",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/evaluation-default-that-throws.js",
+    "source_sha256": "49542d7af003384564aec3ea72ec871766c39a8bcb75292640691d7b9091a4fc",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/evaluation-mapped-arguments.js",
+    "source_sha256": "5f8fac70a73ba83613c5cedef746d100ffd3e3bc8235484d6d9c4205d886803d",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/evaluation-this-value-global.js",
+    "source_sha256": "d720c9798edde5bab3b56598d047bfd5fb9a9f85eeec7fdfde9f22a616a19fab",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/evaluation-this-value-passed.js",
+    "source_sha256": "0d2d858aaf557c50d593a33a0e9dcfde302e526b8d60bb641ebd18c08fd79001",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/evaluation-unmapped-arguments.js",
+    "source_sha256": "6216a8667414983e927e77885b9495a751118debac6fa1f63f5d82c877ea94b7",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/forbidden-ext/b1/async-func-decl-forbidden-ext-direct-access-prop-arguments.js",
+    "source_sha256": "95e2fbe052aa3b8d6c6dfcd63b08b9bc39a50c8e82df05786236b15a43e34842",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/forbidden-ext/b1/async-func-decl-forbidden-ext-direct-access-prop-caller.js",
+    "source_sha256": "55805d5fedd346ad9e8e2dafc52f472935b988172fba393b3ff1a7f96b3a8ee6",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/forbidden-ext/b2/async-func-decl-forbidden-ext-indirect-access-own-prop-caller-get.js",
+    "source_sha256": "f7beeb282435f4595d540bfa42cc2e91f95bd911797d8c29adbac13a70d6a6e8",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/forbidden-ext/b2/async-func-decl-forbidden-ext-indirect-access-own-prop-caller-value.js",
+    "source_sha256": "715f5f1237cb47e32cef4d14f5dee8349d3fdbffe30ab7e0a8b2262b9037b833",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/forbidden-ext/b2/async-func-decl-forbidden-ext-indirect-access-prop-caller.js",
+    "source_sha256": "20f695ffc893f9c1b8315b89f8c0e6e8e41bc0ac45df3111414c269bef8d51dc",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/let-newline-await-in-async-function.js",
+    "source_sha256": "d959efa0e8c448c91cc13d6c4f178a76ef5242539f346e5c60970a4f2ab6f747",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/object-destructuring-param-strict-body.js",
+    "source_sha256": "bbed628cf1885b8ba0063d74d9b9dc1a771d7994d1d1a9e629bb91703f0fce2b",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/params-trailing-comma-multiple.js",
+    "source_sha256": "c35e730774d848a94b6dc8ebdcb98ef817e47dcc757cc8a2e58ce6ed119b9318",
+    "status": "unsupported",
+    "reason": "syntax: expected identifier",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/params-trailing-comma-single.js",
+    "source_sha256": "6b25dd4aee610f00e46123c8caed17d54c30061d2bb50f968b492ea926b89ec5",
+    "status": "unsupported",
+    "reason": "syntax: expected identifier",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/rest-param-strict-body.js",
+    "source_sha256": "bf1b98b682d34df621bc77763285fff5f94ffc77bf8abedcff4381fd66e6eb8f",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/rest-params-trailing-comma-early-error.js",
+    "source_sha256": "c79e1c0f85d05ec3822b8ac959070be2ad05862f50d0716d7346c247812702f9",
+    "status": "unsupported",
+    "reason": "negative parse/resolution test outside runtime profile",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/returns-async-arrow-returns-arguments-from-parent-function.js",
+    "source_sha256": "7dbb4448152c46f0f85d6803727017d8a7c3ac094e4e74d13a4699d37c3cc973",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/returns-async-arrow-returns-newtarget.js",
+    "source_sha256": "6dce84223a392b004a8fb4d449f8ca2c2dcd58abaa6cdbe3db186f259cadff08",
+    "status": "unsupported",
+    "reason": "syntax: unsupported or missing expression",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/returns-async-arrow.js",
+    "source_sha256": "ce5b66ac6d843ba00edef0b0bfcc2e31442e4d65f290dcfa550ea4b2c2365d7b",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/returns-async-function-returns-arguments-from-own-function.js",
+    "source_sha256": "b09ee6099afb4c799fc00544d3393789ade31157d3d49d28e287406ddd0ee704",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/returns-async-function-returns-newtarget.js",
+    "source_sha256": "3e00f126e7b319bbfc493fe2701e5a9d29491bce5d4d58d7cc910d69232f1975",
+    "status": "unsupported",
+    "reason": "syntax: unsupported or missing expression",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/returns-async-function.js",
+    "source_sha256": "164608f258161e1e2d946172f9335f3c0db2cc3ae87cbba4748dfc489cf3b977",
+    "status": "unsupported",
+    "reason": "syntax: expected punctuation",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/syntax-declaration-line-terminators-allowed.js",
+    "source_sha256": "eb1aba7cdffc80dd0ffe35eb4f7e195a48f05c2bf0db65562cef826c344e64fb",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/syntax-declaration-no-line-terminator.js",
+    "source_sha256": "aaa026d9dae3a49b41da76ba7f3b74607f7d104cf56fd3684e7613134d095869",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/syntax-declaration.js",
+    "source_sha256": "623880ded04a51453a435bc8a5974ca44c3cbe8e3bf9d39490e72070278a29ce",
+    "status": "passed",
+    "reason": "",
+    "assertions": 0,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/try-reject-finally-reject.js",
+    "source_sha256": "bd490e2240dc86d5e750a0be0316c599795743089108d2af1fd2bbccbc037083",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/try-reject-finally-return.js",
+    "source_sha256": "f132373e283662fce113362d7d02b3ae302280ad365dba91618e533fc47eafcd",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/try-reject-finally-throw.js",
+    "source_sha256": "cc8a8af320fb37358ca93e9c967303608c1bc4f3d88b5c62f002bbaa5cf3f62d",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/try-return-finally-reject.js",
+    "source_sha256": "9d59ca0eee6a4acc6a84e4fb15f740c09a25d612dd5a0f70298c793e97b74a60",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/try-return-finally-return.js",
+    "source_sha256": "e6a008647c0a3046be10ef0128b197b2b390e909a7d5de141f7c878e8fc47e6a",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/try-return-finally-throw.js",
+    "source_sha256": "80a73a68b15ba17de2c1361f9cfdf0f20ab7342cc230bb84dd1d280930483937",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/try-throw-finally-reject.js",
+    "source_sha256": "ac01ffff15fb11f8537117d6af8220537ee2f12a9c1979637c46569bf670cb4e",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/try-throw-finally-return.js",
+    "source_sha256": "36328b49bfa2abd00e474fb2170ea0462c9acf982cc2f1f15c4a58e83e25cd2f",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/try-throw-finally-throw.js",
+    "source_sha256": "6454e94b8b303257fafe334b80ed982ca9bba6b032f3ba2c32db6a4acc8d410d",
+    "status": "passed",
+    "reason": "",
+    "assertions": 1,
+    "cleanup": true
+  },
+  {
+    "path": "language/statements/async-function/unscopables-with-in-nested-fn.js",
+    "source_sha256": "868d6e71c4045b01ab59fc47fc66c2a6a81d550475e8742f4a1bc405c15c632a",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  },
+  {
+    "path": "language/statements/async-function/unscopables-with.js",
+    "source_sha256": "1b46d94e649c8f4b59ede9682880f15e02a9dc0877b817968b996f109e732099",
+    "status": "unsupported",
+    "reason": "unsupported execution flags: generated,noStrict,async",
+    "assertions": 0
+  }
+]

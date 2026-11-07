@@ -11,6 +11,8 @@ ARRAY_SCOPES = ['built-ins/Array/*.js', 'built-ins/Array/isArray'] + ['built-ins
 
 PROMISE_SCOPES=['built-ins/Promise/*.js','built-ins/Promise/resolve','built-ins/Promise/reject','built-ins/Promise/prototype/then','built-ins/Promise/prototype/catch','built-ins/Promise/prototype/finally']
 
+ASYNC_SCOPES = ['language/expressions/async-function', 'language/expressions/async-arrow-function', 'language/expressions/await', 'language/statements/async-function']
+
 def field(meta, name):
     match = re.search(r'^' + name + r':\s*([^\n]*)(?:\n((?:[ \t]+[^\n]*\n)*))?', meta, re.M)
     return (match.group(1) + '\n' + (match.group(2) or '')).strip() if match else ''
@@ -18,7 +20,7 @@ def items(value):
     return re.findall(r'[\w.$/-]+', value)
 def main():
     p=argparse.ArgumentParser(__doc__)
-    p.add_argument('--profile',choices=['objects','arrays','promises'],default='objects')
+    p.add_argument('--profile',choices=['objects','arrays','promises','async'],default='objects')
     p.add_argument('--source',type=Path,required=True)
     p.add_argument('--binary',type=Path,default=HERE.parent/'target/release/js_check')
     p.add_argument('--output',type=Path,default=None)
@@ -26,7 +28,7 @@ def main():
     p.add_argument('--check-baseline',action='store_true',help='gate on lost passes and newly failing cases; known failures stay reported')
     args=p.parse_args(); binary=args.binary.resolve(); root=args.source.resolve()/'test'
     assert (args.source/'.revision').read_text().strip()==REVISION, 'Use the pinned verified source from fetch.py'
-    scopes={'objects':SCOPES,'arrays':ARRAY_SCOPES,'promises':PROMISE_SCOPES}[args.profile]
+    scopes={'objects':SCOPES,'arrays':ARRAY_SCOPES,'promises':PROMISE_SCOPES,'async':ASYNC_SCOPES}[args.profile]
     suffix='' if args.profile=='objects' else '-'+args.profile
     args.output=args.output or HERE/('results'+suffix)
     cases=sorted({path for scope in scopes for path in (root.glob(scope) if '*' in scope else (root/scope).rglob('*.js')) if not path.name.endswith('_FIXTURE.js')})
@@ -37,7 +39,7 @@ def main():
         meta=meta.group(1); flags=items(field(meta,'flags')); includes=items(field(meta,'includes')); negative=field(meta,'negative')
         result=dict(path=path.relative_to(root).as_posix(),source_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
         reason=None
-        if any(f in flags for f in ('noStrict','module','raw')) or ('async' in flags and args.profile!='promises'): reason='unsupported execution flags: '+','.join(flags)
+        if any(f in flags for f in ('noStrict','module','raw')) or ('async' in flags and args.profile not in ('promises','async')): reason='unsupported execution flags: '+','.join(flags)
         elif includes: reason='unsupported harness includes: '+','.join(includes)
         elif negative and not re.search(r'phase:\s*runtime',negative): reason='negative parse/resolution test outside runtime profile'
         if reason: return dict(result,status='unsupported',reason=reason,assertions=0)
