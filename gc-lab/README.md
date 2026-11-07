@@ -254,6 +254,6 @@ los hitos previos del laboratorio.
 [ASYNC.md](ASYNC.md) describe las continuaciones explícitas, el trazado de activaciones
 y el perfil oficial de 249 casos (40 aprobados, 209 no soportados, cero fallos).
 [FETCH.md](FETCH.md) describe las promesas de cabeceras/cuerpo y el adaptador a
-Fetch/Response de Servo, con las pruebas HTTP y sus límites. Hay 148 contratos
+Fetch/Response de Servo, con las pruebas HTTP y sus límites. Hay 149 contratos
 debug/release; las pruebas de transporte nativo deben comprobarse en sus informes
 y en Actions, por separado de los contratos del host simulado.

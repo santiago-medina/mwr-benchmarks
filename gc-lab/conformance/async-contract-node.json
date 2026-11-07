@@ -1,0 +1,62 @@
+{
+  "node_version": "v24.22.1",
+  "harness": "official sta.js + assert.js, unchanged",
+  "total": 10,
+  "passed": 10,
+  "failures": [],
+  "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
+  "contracts_sha256": "4dc6482f4e346fa5a7e6deb645bd5415405aa72eaad46fc1e9c686c9a9c1940a",
+  "runner_sha256": "8425876211416928a2ef9c37b29be53bf831e5bea4d9c4c742ccb17120779465",
+  "sources": [
+    {
+      "path": "contract-00.js",
+      "rust_line": 35,
+      "source_sha256": "458128bf9be576ee0968a1cae91785429fee07169ec1178059f258a532d8d99d"
+    },
+    {
+      "path": "contract-01.js",
+      "rust_line": 39,
+      "source_sha256": "910d0aa2846e881c44b91362e356c5276fd3dd194b5909cb40008c0833fb70f5"
+    },
+    {
+      "path": "contract-02.js",
+      "rust_line": 43,
+      "source_sha256": "91e9fe6a6ec7b3bc9f24734b6b2b8445b68fceee96468809b88e02bb52c936ad"
+    },
+    {
+      "path": "contract-03.js",
+      "rust_line": 47,
+      "source_sha256": "9805b3abdce41f6f22d6771b627db664c34b30ec25a12e788ae2dbadf54b5b35"
+    },
+    {
+      "path": "contract-04.js",
+      "rust_line": 51,
+      "source_sha256": "7234d072544d07a032300df77fbad8cf1430e79dd651335c99a7df99cb2a09ba"
+    },
+    {
+      "path": "contract-05.js",
+      "rust_line": 55,
+      "source_sha256": "5b8827f12ae0f2f98ef8a64d233ddf4625ba7a1c871ad8b586076c2efe7f0668"
+    },
+    {
+      "path": "contract-06.js",
+      "rust_line": 59,
+      "source_sha256": "b2f02c8b70f00f785e0a106273964217e28348075c2759e559356b2178f503fb"
+    },
+    {
+      "path": "contract-07.js",
+      "rust_line": 63,
+      "source_sha256": "75094228663f1716a711aeef355a57a825959dd23f99f52940f3943ec5a9cc49"
+    },
+    {
+      "path": "contract-08.js",
+      "rust_line": 67,
+      "source_sha256": "4e3d78a5c2a6418fdbffa7f6a58fbd041c04c95bdfa06d3ccdd7012add5e4e06"
+    },
+    {
+      "path": "contract-09.js",
+      "rust_line": 83,
+      "source_sha256": "33df349679ba22f2381380aad3208958ed3a745156009dca2157fb8c8feb6677"
+    }
+  ]
+}

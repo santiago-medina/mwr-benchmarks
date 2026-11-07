@@ -1,0 +1,496 @@
+{
+  "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+  "binary_sha256": "ddfd6aab1dd1e3e77177bd89a43c01473afebf8593c0441e983470c613a194f3",
+  "module_sha256": "21ab7d9adea9da1863b9748b4b35641fa18f32215ef1fc5f72014e0d2961d717",
+  "runner_sha256": "5f4a87c2493a7b229b57a0ef1af59da50ca000f6ecd118f43c5c76a2d74c302f",
+  "patch_sha256": "f381534bb3976275aefeab7b9c27f1688dd08f6079bd6ff2870db8d051d42afe",
+  "tested_commit": "b575c96d6a2565e40387d696e8e6390862785cf2",
+  "scenarios": {
+    "success": {
+      "after": "200|true|body from native networking",
+      "completions": [
+        "MWR_NATIVE_FETCH_COMPLETION 1 headers",
+        "MWR_NATIVE_FETCH_COMPLETION 2 body"
+      ],
+      "requests": [
+        "/",
+        "/hold?old",
+        "/data"
+      ],
+      "joint_gc_before_microtasks": 2
+    },
+    "http404": {
+      "after": "404|false|body from native networking",
+      "completions": [
+        "MWR_NATIVE_FETCH_COMPLETION 1 headers",
+        "MWR_NATIVE_FETCH_COMPLETION 2 body"
+      ],
+      "requests": [
+        "/",
+        "/hold?old",
+        "/missing"
+      ],
+      "joint_gc_before_microtasks": 2
+    },
+    "empty": {
+      "after": "204|true|",
+      "completions": [
+        "MWR_NATIVE_FETCH_COMPLETION 1 headers"
+      ],
+      "requests": [
+        "/",
+        "/hold?old",
+        "/empty"
+      ],
+      "joint_gc_before_microtasks": 2
+    },
+    "network-error": {
+      "after": "TypeError",
+      "completions": [
+        "MWR_NATIVE_FETCH_COMPLETION 1 headers"
+      ],
+      "requests": [
+        "/",
+        "/hold?old",
+        "/drop"
+      ],
+      "joint_gc_before_microtasks": 1
+    },
+    "cors": {
+      "after": "TypeError",
+      "completions": [
+        "MWR_NATIVE_FETCH_COMPLETION 1 headers"
+      ],
+      "requests": [
+        "/",
+        "/hold?old",
+        "/data"
+      ],
+      "joint_gc_before_microtasks": 1
+    },
+    "csp": {
+      "after": "TypeError",
+      "completions": [
+        "MWR_NATIVE_FETCH_COMPLETION 1 headers"
+      ],
+      "requests": [
+        "/",
+        "/hold?old"
+      ],
+      "joint_gc_before_microtasks": 1
+    },
+    "navigation": {
+      "after": "navigated",
+      "completions": [
+        "MWR_NATIVE_FETCH_COMPLETION 1 headers",
+        "MWR_NATIVE_FETCH_COMPLETION 2 body"
+      ],
+      "requests": [
+        "/",
+        "/hold?old",
+        "/slow",
+        "/?after=1",
+        "/hold"
+      ],
+      "joint_gc_before_microtasks": 2
+    }
+  },
+  "native_fetch": true,
+  "javascript_transport": false,
+  "webdriver": false,
+  "workflow_run": 42416136814,
+  "workflow_url": "https://github.com/santiago-medina/mwr-benchmarks/actions/runs/42416136814",
+  "workflow_conclusion": "success",
+  "artifact_sha256": "5404decba2173f2ef55b6b412c26f74b008f10cb3c5a952e45c7803f22fb434a",
+  "native_compile_seconds": 68,
+  "source_and_dependencies_restored_from_cache": true,
+  "joint_gc_regression": {
+    "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+    "binary_sha256": "ddfd6aab1dd1e3e77177bd89a43c01473afebf8593c0441e983470c613a194f3",
+    "patch_sha256": "f381534bb3976275aefeab7b9c27f1688dd08f6079bd6ff2870db8d051d42afe",
+    "harness_sha256": "8e5c6bac7e1cca78f112fb57ff00f1a1db14b0da45bef47f32247d3b113f213f",
+    "module_sha256": "b700d0e424b22f4960e2b252ea60440c6cb4c77fb80eda76881c2ed35658abdc",
+    "vm_sources_sha256": "cc867174b87ab551ffcf8e392a14623ad6e96bac859166a6288d02452bf2918d",
+    "native_finalization_observed": true,
+    "in_process": true,
+    "webdriver": false,
+    "javascript_transport": false,
+    "proof": {
+      "iterations": 1500,
+      "native_buttons_finalized": 3000,
+      "callbacks": 1500,
+      "recovered_errors": 89,
+      "baseline_vm_objects": 120,
+      "final_vm_objects": 120,
+      "persistent_native_handles": 1,
+      "escaped_invocation_pins": 0,
+      "manual_global_release": false,
+      "native_to_vm_to_native_survival": true,
+      "disconnected_js_root_survival": true,
+      "stale_ids_rejected": true,
+      "retired_realm_microtasks_ignored": 2,
+      "navigation_rounds": 2,
+      "old_sessions_destroyed": true,
+      "old_documents_finalized": true,
+      "old_global_native_nodes_finalized": true
+    }
+  },
+  "navigation_proof": {
+    "after": "navigated",
+    "native_fetch": true,
+    "old_session_collected": true,
+    "old_document_collected": true,
+    "retired_completion_ignored": true
+  },
+  "remaining_native_regressions": {
+    "native-results": {
+      "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+      "binary_sha256": "ddfd6aab1dd1e3e77177bd89a43c01473afebf8593c0441e983470c613a194f3",
+      "patch_sha256": "f381534bb3976275aefeab7b9c27f1688dd08f6079bd6ff2870db8d051d42afe",
+      "callback_after_event_loop_turn": true,
+      "module_sha256": "b700d0e424b22f4960e2b252ea60440c6cb4c77fb80eda76881c2ed35658abdc",
+      "fixture_sha256": "97e7503f3998e88c5678f269d634dce9674fff5785ae98573d2c44682f3f5ef0",
+      "in_process": true,
+      "webdriver": false,
+      "javascript_transport": false,
+      "observation_only_spidermonkey_probe": false,
+      "input": "Rust HTMLElement::Click; synthetic, not hardware input",
+      "scenarios": {
+        "disabled": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "waiting": {
+          "executions": 1,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "callback": {
+          "executions": 1,
+          "callbacks": 1,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": [
+            {
+              "before": "Pulsar",
+              "after": "Funciona",
+              "click": "rust-dom-synthetic"
+            }
+          ]
+        },
+        "csp-blocked": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "syntax-error": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [
+            "MWR_NATIVE_ERROR Syntax(SyntaxError { offset: 7, message: \"expected identifier\" })"
+          ],
+          "proofs": []
+        }
+      }
+    },
+    "native-object-results": {
+      "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+      "binary_sha256": "ddfd6aab1dd1e3e77177bd89a43c01473afebf8593c0441e983470c613a194f3",
+      "patch_sha256": "f381534bb3976275aefeab7b9c27f1688dd08f6079bd6ff2870db8d051d42afe",
+      "callback_after_event_loop_turn": true,
+      "module_sha256": "b700d0e424b22f4960e2b252ea60440c6cb4c77fb80eda76881c2ed35658abdc",
+      "fixture_sha256": "9a7bd3bb9182bdb9804962c90b6f22b439168a55f0ad6ed29579bd052d7a095c",
+      "in_process": true,
+      "webdriver": false,
+      "javascript_transport": false,
+      "observation_only_spidermonkey_probe": false,
+      "input": "Rust HTMLElement::Click; synthetic, not hardware input",
+      "scenarios": {
+        "disabled": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "waiting": {
+          "executions": 1,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "callback": {
+          "executions": 1,
+          "callbacks": 1,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": [
+            {
+              "before": "Cuenta: 0",
+              "after": "Cuenta: 1",
+              "click": "rust-dom-synthetic"
+            }
+          ]
+        },
+        "csp-blocked": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "syntax-error": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [
+            "MWR_NATIVE_ERROR Syntax(SyntaxError { offset: 382, message: \"expected identifier\" })"
+          ],
+          "proofs": []
+        }
+      }
+    },
+    "native-task-results": {
+      "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+      "binary_sha256": "ddfd6aab1dd1e3e77177bd89a43c01473afebf8593c0441e983470c613a194f3",
+      "patch_sha256": "f381534bb3976275aefeab7b9c27f1688dd08f6079bd6ff2870db8d051d42afe",
+      "callback_after_event_loop_turn": true,
+      "module_sha256": "b700d0e424b22f4960e2b252ea60440c6cb4c77fb80eda76881c2ed35658abdc",
+      "fixture_sha256": "d23a34a18d9db2fec06035f72f7779bb7b420daac1768ef767cd97c327e5a097",
+      "in_process": true,
+      "webdriver": false,
+      "javascript_transport": false,
+      "observation_only_spidermonkey_probe": false,
+      "input": "Rust HTMLElement::Click; synthetic, not hardware input",
+      "scenarios": {
+        "disabled": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "waiting": {
+          "executions": 1,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "callback": {
+          "executions": 1,
+          "callbacks": 4,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": [
+            {
+              "before": "",
+              "after": "Tarea 2",
+              "click": "rust-dom-synthetic",
+              "steps": [
+                [
+                  "#button",
+                  "Tarea 1"
+                ],
+                [
+                  "#complete",
+                  "[hecha] Tarea 1"
+                ],
+                [
+                  "#remove",
+                  ""
+                ],
+                [
+                  "#button",
+                  "Tarea 2"
+                ]
+              ]
+            }
+          ]
+        },
+        "csp-blocked": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "syntax-error": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [
+            "MWR_NATIVE_ERROR Syntax(SyntaxError { offset: 87, message: \"expected identifier\" })"
+          ],
+          "proofs": []
+        }
+      }
+    },
+    "native-promise-results": {
+      "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+      "binary_sha256": "ddfd6aab1dd1e3e77177bd89a43c01473afebf8593c0441e983470c613a194f3",
+      "patch_sha256": "f381534bb3976275aefeab7b9c27f1688dd08f6079bd6ff2870db8d051d42afe",
+      "callback_after_event_loop_turn": true,
+      "module_sha256": "b700d0e424b22f4960e2b252ea60440c6cb4c77fb80eda76881c2ed35658abdc",
+      "fixture_sha256": "efcf9276c74c7ef68aa59195c897a262e05ac0fd820ddcd20ea71fec282b0938",
+      "in_process": true,
+      "webdriver": false,
+      "javascript_transport": false,
+      "observation_only_spidermonkey_probe": false,
+      "input": "Rust HTMLElement::Click; synthetic, not hardware input",
+      "scenarios": {
+        "disabled": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "waiting": {
+          "executions": 1,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "callback": {
+          "executions": 1,
+          "callbacks": 2,
+          "microtasks": 18,
+          "microtask_collections": 18,
+          "errors": [],
+          "proofs": [
+            {
+              "before": "Listo para comenzar",
+              "after": "Resultado 4 | adoptar > micro > then > finally",
+              "click": "rust-dom-synthetic",
+              "steps": [
+                [
+                  "#button",
+                  "Resultado 4 | adoptar > micro > then > finally"
+                ],
+                [
+                  "#button",
+                  "Resultado 4 | adoptar > micro > then > finally"
+                ]
+              ]
+            }
+          ]
+        },
+        "csp-blocked": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "syntax-error": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [
+            "MWR_NATIVE_ERROR Syntax(SyntaxError { offset: 7, message: \"expected identifier\" })"
+          ],
+          "proofs": []
+        }
+      }
+    },
+    "native-microtask-interop-results": {
+      "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+      "binary_sha256": "ddfd6aab1dd1e3e77177bd89a43c01473afebf8593c0441e983470c613a194f3",
+      "patch_sha256": "f381534bb3976275aefeab7b9c27f1688dd08f6079bd6ff2870db8d051d42afe",
+      "callback_after_event_loop_turn": true,
+      "module_sha256": "b700d0e424b22f4960e2b252ea60440c6cb4c77fb80eda76881c2ed35658abdc",
+      "fixture_sha256": "ac81d1d03019ea3274739ff98982ae57582126ae369b88dcebca07455a353796",
+      "in_process": true,
+      "webdriver": false,
+      "javascript_transport": false,
+      "observation_only_spidermonkey_probe": true,
+      "input": "Rust HTMLElement::Click; synthetic, not hardware input",
+      "scenarios": {
+        "disabled": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "waiting": {
+          "executions": 1,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "callback": {
+          "executions": 1,
+          "callbacks": 1,
+          "microtasks": 2,
+          "microtask_collections": 2,
+          "errors": [],
+          "proofs": [
+            {
+              "before": "Listo para comenzar",
+              "after": "RSU",
+              "click": "rust-dom-synthetic"
+            }
+          ]
+        },
+        "csp-blocked": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [],
+          "proofs": []
+        },
+        "syntax-error": {
+          "executions": 0,
+          "callbacks": 0,
+          "microtasks": 0,
+          "microtask_collections": 0,
+          "errors": [
+            "MWR_NATIVE_ERROR Syntax(SyntaxError { offset: 7, message: \"expected identifier\" })"
+          ],
+          "proofs": []
+        }
+      }
+    }
+  },
+  "post_native_core_fix": {
+    "commit": "a3ff6d62919525ed29d52839a6b83fa069b8ded4",
+    "change": "Computed property-key coercion ordering; public native interface unchanged",
+    "validation": "149 debug + 149 release contracts; 10 exact async contract programs pass Node official harness; all Test262 pass baselines preserved",
+    "native_rerun": false
+  }
+}
