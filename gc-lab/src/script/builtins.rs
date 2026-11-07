@@ -9,6 +9,8 @@ type Result<T> = std::result::Result<T, ScriptError>;
 #[derive(Clone)]
 pub(super) struct Intrinsics {
     pub object: Id,
+    pub array: Id,
+    pub array_iterator: Id,
     pub function: Id,
     pub global: Id,
     pub functions: HashMap<String, Id>,
@@ -72,6 +74,14 @@ const METHODS: &[(&str, &[&str])] = &[
             "toString",
         ],
     ),
+    ("Array", &["isArray"]),
+    (
+        "Array.prototype",
+        &[
+            "push", "pop", "join", "toString", "map", "filter", "forEach", "some", "every",
+            "values", "keys", "entries",
+        ],
+    ),
     ("Function.prototype", &["call", "bind", "toString"]),
     ("String.prototype", &["valueOf", "toString"]),
     ("Number.prototype", &["valueOf", "toString"]),
@@ -79,7 +89,7 @@ const METHODS: &[(&str, &[&str])] = &[
     ("assert", &["sameValue", "notSameValue", "throws"]),
 ];
 impl Engine<'_> {
-    fn hidden(&mut self, id: Id, key: &str, v: Value) -> Result<()> {
+    fn hidden(&mut self, id: Id, key: impl Into<super::objects::Key>, v: Value) -> Result<()> {
         self.define(
             id,
             key,
@@ -161,17 +171,29 @@ impl Engine<'_> {
         self.runtime.link(env, global)?;
         self.intrinsics = Some(Intrinsics {
             object,
+            array: object,
+            array_iterator: object,
             function,
             global,
             functions: HashMap::new(),
             errors: HashMap::new(),
         });
+        let array = self.array_with_proto(0, object)?;
+        self.runtime.link(env, array)?;
+        self.intrinsics.as_mut().unwrap().array = array;
+        let iterator = self.new_object(Some(object))?;
+        self.runtime.link(env, iterator)?;
+        let array_iterator = self.new_object(Some(iterator))?;
+        self.runtime.link(env, array_iterator)?;
+        self.intrinsics.as_mut().unwrap().array_iterator = array_iterator;
         let mut objects = HashMap::from([
             ("Object.prototype".to_string(), object),
             ("Function.prototype".to_string(), function),
         ]);
         let mut names = vec![
             "Object",
+            "Array",
+            "Symbol",
             "Function",
             "String",
             "Number",
@@ -191,6 +213,7 @@ impl Engine<'_> {
                 .insert(name.into(), id);
             objects.insert(name.into(), id);
         }
+        objects.insert("Array.prototype".into(), array);
         let reflect = self.new_object(Some(object))?;
         self.runtime.link(env, reflect)?;
         objects.insert("Reflect".into(), reflect);
@@ -270,8 +293,30 @@ impl Engine<'_> {
                 let name = format!("{owner}.{method}");
                 let id = self.intrinsic_function(env, &name, Some(function))?;
                 self.intrinsics.as_mut().unwrap().functions.insert(name, id);
-                self.hidden(objects[*owner], method, Value::Object(id))?;
+                self.hidden(objects[*owner], *method, Value::Object(id))?;
             }
+        }
+        let self_iter =
+            self.intrinsic_function(env, "%IteratorPrototype%.iterator", Some(function))?;
+        self.hidden(
+            iterator,
+            super::objects::Key::Symbol(0),
+            Value::Object(self_iter),
+        )?;
+        let next = self.intrinsic_function(env, "%ArrayIteratorPrototype%.next", Some(function))?;
+        self.hidden(array_iterator, "next", Value::Object(next))?;
+        let values = self.intrinsics.as_ref().unwrap().functions["Array.prototype.values"];
+        self.hidden(array, super::objects::Key::Symbol(0), Value::Object(values))?;
+        let symbol = objects["Symbol"];
+        for (key, id) in [("iterator", 0), ("toStringTag", 1), ("species", 2)] {
+            self.define(
+                symbol,
+                key,
+                Descriptor {
+                    value: Some(Value::Symbol(id)),
+                    ..Descriptor::default()
+                },
+            )?;
         }
         let entries: Vec<_> = objects
             .iter()
@@ -378,7 +423,7 @@ impl Engine<'_> {
             self.throw_error("TypeError", "expected object")
         }
     }
-    fn object_coercible(&mut self, v: Value) -> Result<Id> {
+    pub(super) fn object_coercible(&mut self, v: Value) -> Result<Id> {
         match v {
             Value::Object(id) => {
                 self.data(id)?;
@@ -543,6 +588,14 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name == "Array"
+            || name == "Symbol"
+            || name.starts_with("Array.")
+            || name.starts_with("%ArrayIteratorPrototype%")
+            || name.starts_with("%IteratorPrototype%")
+        {
+            return self.array_builtin(name, receiver, args);
+        }
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Undefined);
         if ERRORS.contains(&name) {
             let message = if arg(0) == Value::Undefined {
@@ -623,7 +676,11 @@ impl Engine<'_> {
                     _ if self.callable(&receiver) => "Function",
                     Value::Object(id) => {
                         let d = self.data(*id)?;
-                        if d.arguments {
+                        if d.array {
+                            "Array"
+                        } else if d.iterator.is_some() {
+                            "Array Iterator"
+                        } else if d.arguments {
                             "Arguments"
                         } else if d.error_class.is_some() {
                             "Error"

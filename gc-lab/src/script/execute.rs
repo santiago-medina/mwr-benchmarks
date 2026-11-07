@@ -1,6 +1,6 @@
 //! Evaluation and completion propagation. Every allocating operation runs under a root frame.
 use super::{
-    objects::{Data, Descriptor, Kind, Key},
+    objects::{Data, Descriptor, Key, Kind},
     parser::{Expr, Property as Literal, Stmt},
     vm::{Engine, Exception, FunctionKind, Object, ScriptError, Value},
 };
@@ -304,6 +304,18 @@ impl Engine<'_> {
                 },
                 name.is_some(),
             ),
+            Expr::Array(elements) => {
+                let id = self.new_array(elements.len() as u32)?;
+                self.protect(&Value::Object(id))?;
+                for (i, x) in elements.iter().enumerate() {
+                    if let Some(x) = x {
+                        let v = self.eval(x, env)?;
+                        self.protect(&v)?;
+                        self.put_data(id, i.to_string(), v)?;
+                    }
+                }
+                Ok(Value::Object(id))
+            }
             Expr::Object(p) => self.eval_object(p, env),
             Expr::Member(a, k) => {
                 let a = self.eval(a, env)?;
@@ -541,6 +553,7 @@ impl Engine<'_> {
                 } else if name == "Function" {
                     Err(ScriptError::Unsupported("dynamic Function constructor"))
                 } else if name == "Object"
+                    || name == "Array"
                     || self.intrinsics.as_ref().unwrap().errors.contains_key(&name)
                 {
                     self.builtin(&name, Value::Undefined, args)
@@ -749,7 +762,14 @@ impl Engine<'_> {
         }
         self.throw_error("TypeError", "cannot convert object to primitive")
     }
-    pub(super) fn to_key(&mut self,value:Value)->Result<Key>{let value=self.to_primitive(value,true)?;if let Value::Symbol(id)=value{Ok(Key::Symbol(id))}else{self.to_string(value).map(Key::String)}}
+    pub(super) fn to_key(&mut self, value: Value) -> Result<Key> {
+        let value = self.to_primitive(value, true)?;
+        if let Value::Symbol(id) = value {
+            Ok(Key::Symbol(id))
+        } else {
+            self.to_string(value).map(Key::String)
+        }
+    }
     pub(super) fn to_string(&mut self, v: Value) -> Result<String> {
         let v = self.to_primitive(v, true)?;
         Ok(match v {
@@ -758,7 +778,9 @@ impl Engine<'_> {
             Value::Bool(b) => b.to_string(),
             Value::Number(n) => number_string(f64::from_bits(n)),
             Value::String(s) => s,
-            Value::Symbol(_)=>return self.throw_error("TypeError","cannot convert symbol to string"),
+            Value::Symbol(_) => {
+                return self.throw_error("TypeError", "cannot convert symbol to string")
+            }
             _ => return Err(ScriptError::Unsupported("host primitive conversion")),
         })
     }
@@ -775,7 +797,9 @@ impl Engine<'_> {
                 }
             }
             Value::Number(n) => f64::from_bits(n),
-            Value::Symbol(_)=>return self.throw_error("TypeError","cannot convert symbol to number"),
+            Value::Symbol(_) => {
+                return self.throw_error("TypeError", "cannot convert symbol to number")
+            }
             Value::String(s) => {
                 let s =
                     s.trim_matches(|c: char| c == '\u{feff}' || c != '\u{85}' && c.is_whitespace());

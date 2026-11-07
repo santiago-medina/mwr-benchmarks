@@ -2,13 +2,42 @@
 use super::vm::{Engine, Object, ScriptError, Value};
 use crate::dual::{Domain, Id};
 type Result<T> = std::result::Result<T, ScriptError>;
-#[derive(Clone,Debug,PartialEq,Eq,Hash)]
-pub(super) enum Key { String(String), Symbol(u64) }
-impl From<&str> for Key {fn from(v:&str)->Self{Self::String(v.into())}}
-impl From<String> for Key {fn from(v:String)->Self{Self::String(v)}}
-impl From<&String> for Key {fn from(v:&String)->Self{Self::String(v.clone())}}
-impl From<&Key> for Key {fn from(v:&Key)->Self{v.clone()}}
-impl Key {pub fn index(&self)->Option<u32>{if let Self::String(s)=self {s.parse::<u32>().ok().filter(|n|*n<u32::MAX && n.to_string()==*s)}else{None}}}
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(super) enum Key {
+    String(String),
+    Symbol(u64),
+}
+impl From<&str> for Key {
+    fn from(v: &str) -> Self {
+        Self::String(v.into())
+    }
+}
+impl From<String> for Key {
+    fn from(v: String) -> Self {
+        Self::String(v)
+    }
+}
+impl From<&String> for Key {
+    fn from(v: &String) -> Self {
+        Self::String(v.clone())
+    }
+}
+impl From<&Key> for Key {
+    fn from(v: &Key) -> Self {
+        v.clone()
+    }
+}
+impl Key {
+    pub fn index(&self) -> Option<u32> {
+        if let Self::String(s) = self {
+            s.parse::<u32>()
+                .ok()
+                .filter(|n| *n < u32::MAX && n.to_string() == *s)
+        } else {
+            None
+        }
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Kind {
     Data { value: Value, writable: bool },
@@ -80,13 +109,13 @@ impl Data {
         self.prototype
             .into_iter()
             .chain(self.boxed.as_ref().and_then(Value::id))
-            .chain(self.iterator.as_ref().and_then(|i|i.target))
+            .chain(self.iterator.as_ref().and_then(|i| i.target))
             .chain(self.properties.iter().flat_map(|(_, p)| p.edges()))
             .collect()
     }
     pub fn own(&self, key: impl Into<Key>) -> Option<&Property> {
-        let key=key.into();
-        let key=key.into();
+        let key = key.into();
+        let key = key.into();
         self.properties
             .iter()
             .find(|(k, _)| *k == key)
@@ -94,7 +123,7 @@ impl Data {
     }
 }
 impl Data {
- pub(super) fn apply(&mut self,key:Key,d:Descriptor)->bool {
+    pub(super) fn apply(&mut self, key: Key, d: Descriptor) -> bool {
         let old = self.own(&key).cloned();
         if old.is_none() && !self.extensible {
             return false;
@@ -174,7 +203,7 @@ impl Data {
             self.properties.push((key, p));
         }
         true
- }
+    }
 }
 
 impl Engine<'_> {
@@ -225,11 +254,11 @@ impl Engine<'_> {
         Ok(id)
     }
     pub(super) fn own(&self, id: Id, key: impl Into<Key>) -> Result<Option<Property>> {
-        let key=key.into();
+        let key = key.into();
         Ok(self.data(id)?.own(&key).cloned())
     }
     pub(super) fn has(&self, mut id: Id, key: impl Into<Key>) -> Result<bool> {
-        let key=key.into();
+        let key = key.into();
         for _ in 0..10_000 {
             if self.own(id, &key)?.is_some() {
                 return Ok(true);
@@ -241,8 +270,13 @@ impl Engine<'_> {
         }
         Err(ScriptError::Runtime("prototype traversal limit"))
     }
-    pub(super) fn ordinary_get(&mut self, id: Id, key: impl Into<Key>, receiver: Value) -> Result<Value> {
-        let key=key.into();
+    pub(super) fn ordinary_get(
+        &mut self,
+        id: Id,
+        key: impl Into<Key>,
+        receiver: Value,
+    ) -> Result<Value> {
+        let key = key.into();
         let mut at = Some(id);
         for _ in 0..10_000 {
             let Some(id) = at else {
@@ -265,18 +299,23 @@ impl Engine<'_> {
         Err(ScriptError::Runtime("prototype traversal limit"))
     }
     pub(super) fn define(&mut self, id: Id, key: impl Into<Key>, d: Descriptor) -> Result<bool> {
-        let key=key.into();
+        let key = key.into();
         if d.data() && d.accessor() {
             return self.throw_error("TypeError", "mixed descriptor");
         }
+        if self.data(id)?.array {
+            return self.array_define(id, key, d);
+        }
         let mut data = self.data(id)?.clone();
-        let accepted=data.apply(key,d);
-        if accepted {self.replace_data(id,data)?;}
+        let accepted = data.apply(key, d);
+        if accepted {
+            self.replace_data(id, data)?;
+        }
         Ok(accepted)
     }
 
     pub(super) fn put_data(&mut self, id: Id, key: impl Into<Key>, value: Value) -> Result<()> {
-        let key=key.into();
+        let key = key.into();
         if self.define(
             id,
             &key,
@@ -300,7 +339,7 @@ impl Engine<'_> {
         value: Value,
         receiver: Value,
     ) -> Result<bool> {
-        let key=key.into();
+        let key = key.into();
         let mut at = Some(id);
         let mut found = None;
         for _ in 0..10_000 {
@@ -362,7 +401,7 @@ impl Engine<'_> {
         }
     }
     pub(super) fn delete(&mut self, id: Id, key: impl Into<Key>) -> Result<bool> {
-        let key=key.into();
+        let key = key.into();
         if self.own(id, &key)?.is_some_and(|p| !p.configurable) {
             return Ok(false);
         }
@@ -450,10 +489,26 @@ impl Engine<'_> {
         self.put_data(id, "configurable", Value::Bool(p.configurable))?;
         Ok(Value::Object(id))
     }
-    pub(super) fn own_keys(&self,id:Id)->Result<Vec<Key>> {
-        let mut indices=vec![];let mut strings=vec![];let mut symbols=vec![];
-        for (k,_) in &self.data(id)?.properties {if let Some(n)=k.index(){indices.push((n,k.clone()));}else{match k{Key::String(_)=>strings.push(k.clone()),Key::Symbol(_)=>symbols.push(k.clone())}}}
-        indices.sort_by_key(|(n,_)|*n);
-        Ok(indices.into_iter().map(|(_,k)|k).chain(strings).chain(symbols).collect())
+    pub(super) fn own_keys(&self, id: Id) -> Result<Vec<Key>> {
+        let mut indices = vec![];
+        let mut strings = vec![];
+        let mut symbols = vec![];
+        for (k, _) in &self.data(id)?.properties {
+            if let Some(n) = k.index() {
+                indices.push((n, k.clone()));
+            } else {
+                match k {
+                    Key::String(_) => strings.push(k.clone()),
+                    Key::Symbol(_) => symbols.push(k.clone()),
+                }
+            }
+        }
+        indices.sort_by_key(|(n, _)| *n);
+        Ok(indices
+            .into_iter()
+            .map(|(_, k)| k)
+            .chain(strings)
+            .chain(symbols)
+            .collect())
     }
 }

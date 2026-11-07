@@ -24,6 +24,7 @@ pub enum Expr {
         method: bool,
     },
     Object(Vec<(String, Property)>),
+    Array(Vec<Option<Expr>>),
     Member(Box<Expr>, String),
     Computed(Box<Expr>, Box<Expr>),
     Call(Box<Expr>, Vec<Expr>),
@@ -586,6 +587,21 @@ impl Parser<'_> {
                 self.expect(')')?;
                 Ok(e)
             }
+            Token::Punct('[') => {
+                let mut elements = vec![];
+                while !self.punct(']') {
+                    if self.punct(',') {
+                        elements.push(None);
+                        continue;
+                    }
+                    elements.push(Some(self.expression()?));
+                    if self.punct(']') {
+                        break;
+                    }
+                    self.expect(',')?;
+                }
+                Ok(Expr::Array(elements))
+            }
             Token::Punct('{') => {
                 let mut props = vec![];
                 let mut prototype = false;
@@ -797,6 +813,7 @@ fn validate(
             Expr::Arrow { params, body } | Expr::Function { params, body, .. } => {
                 validate(body, params, true, d + 1)?
             }
+            Expr::Array(elements) => work.extend(elements.iter().flatten().map(|x| (x, d + 1))),
             Expr::Object(p) => {
                 for (_, p) in p {
                     match p {
