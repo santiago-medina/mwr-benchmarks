@@ -46,6 +46,7 @@ const METHODS: &[(&str, &[&str])] = &[
             "assign",
             "keys",
             "getOwnPropertyNames",
+            "getOwnPropertySymbols",
         ],
     ),
     (
@@ -113,7 +114,11 @@ impl Engine<'_> {
             },
         );
         self.replace_data(id, Data::new(prototype))?;
-        let short = if name == "Function.prototype" {
+        let short = if name == "%IteratorPrototype%.iterator" {
+            "[Symbol.iterator]"
+        } else if name == "Array.species" {
+            "get [Symbol.species]"
+        } else if name == "Function.prototype" {
             ""
         } else {
             name.rsplit('.').next().unwrap()
@@ -133,7 +138,16 @@ impl Engine<'_> {
             | "assert.sameValue"
             | "assert.notSameValue" => 2,
             "Object.defineProperty" | "Reflect.defineProperty" | "Reflect.set" => 3,
-            "Function.prototype"
+            "Array.prototype.values"
+            | "Array.prototype.keys"
+            | "Array.prototype.entries"
+            | "Array.prototype.pop"
+            | "Array.prototype.toString"
+            | "%ArrayIteratorPrototype%.next"
+            | "%IteratorPrototype%.iterator"
+            | "Array.species"
+            | "Symbol"
+            | "Function.prototype"
             | "Object.prototype.toString"
             | "Object.prototype.valueOf"
             | "String.prototype.valueOf"
@@ -307,6 +321,25 @@ impl Engine<'_> {
         self.hidden(array_iterator, "next", Value::Object(next))?;
         let values = self.intrinsics.as_ref().unwrap().functions["Array.prototype.values"];
         self.hidden(array, super::objects::Key::Symbol(0), Value::Object(values))?;
+        let species = self.intrinsic_function(env, "Array.species", Some(function))?;
+        self.define(
+            objects["Array"],
+            super::objects::Key::Symbol(2),
+            Descriptor {
+                get: Some(Value::Object(species)),
+                configurable: Some(true),
+                ..Descriptor::default()
+            },
+        )?;
+        self.define(
+            array_iterator,
+            super::objects::Key::Symbol(1),
+            Descriptor {
+                value: Some(Value::String("Array Iterator".into())),
+                configurable: Some(true),
+                ..Descriptor::default()
+            },
+        )?;
         let symbol = objects["Symbol"];
         for (key, id) in [("iterator", 0), ("toStringTag", 1), ("species", 2)] {
             self.define(
@@ -760,9 +793,7 @@ impl Engine<'_> {
             .split('.')
             .nth(1)
             .ok_or(ScriptError::Unsupported("builtin"))?;
-        if matches!(method, "keys" | "getOwnPropertyNames" | "ownKeys") {
-            return Err(ScriptError::Unsupported("array-producing reflection"));
-        }
+
         if !reflect
             && matches!(
                 method,
@@ -787,7 +818,15 @@ impl Engine<'_> {
                 return Ok(arg(0));
             }
         }
-        let id = if !reflect && matches!(method, "getPrototypeOf" | "getOwnPropertyDescriptor") {
+        let id = if !reflect
+            && matches!(
+                method,
+                "getPrototypeOf"
+                    | "getOwnPropertyDescriptor"
+                    | "keys"
+                    | "getOwnPropertyNames"
+                    | "getOwnPropertySymbols"
+            ) {
             self.object_coercible(arg(0))?
         } else if !reflect && method == "assign" {
             self.object_coercible(arg(0))?
@@ -796,6 +835,33 @@ impl Engine<'_> {
         };
         self.protect(&Value::Object(id))?;
         match method {
+            "keys" | "getOwnPropertyNames" | "getOwnPropertySymbols" | "ownKeys" => {
+                let mut values = vec![];
+                for key in self.own_keys(id)? {
+                    let include = match &key {
+                        super::objects::Key::String(_) => {
+                            method != "getOwnPropertySymbols"
+                                && (method != "keys"
+                                    || self.own(id, &key)?.is_some_and(|p| p.enumerable))
+                        }
+                        super::objects::Key::Symbol(_) => {
+                            matches!(method, "getOwnPropertySymbols" | "ownKeys")
+                        }
+                    };
+                    if include {
+                        values.push(match key {
+                            super::objects::Key::String(s) => Value::String(s),
+                            super::objects::Key::Symbol(id) => Value::Symbol(id),
+                        });
+                    }
+                }
+                let result = self.new_array(values.len() as u32)?;
+                self.protect(&Value::Object(result))?;
+                for (i, v) in values.into_iter().enumerate() {
+                    self.put_data(result, i.to_string(), v)?;
+                }
+                Ok(Value::Object(result))
+            }
             "defineProperty" => {
                 let key = self.to_key(arg(1))?;
                 let d = self.descriptor(arg(2))?;

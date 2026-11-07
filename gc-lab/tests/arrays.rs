@@ -59,3 +59,27 @@ fn iterators_observe_growth_and_stay_done() {
 fn iterator_getter_error_advances_index() {
     check("const a=[1,2];Object.defineProperty(a,'0',{get:function(){throw new RangeError();}});const i=a.values();assert.throws(RangeError,function(){i.next();});assert.sameValue(i.next().value,2);");
 }
+#[test]
+fn for_of_binds_fresh_lexical_environments() {
+    check("let sum=0;const callbacks=[];for(let x of [1,2,3]){sum=sum+x;callbacks.push(()=>x);}assert.sameValue(sum,6);assert.sameValue(callbacks[0](),1);assert.sameValue(callbacks[2](),3);for(var last of [4,5]){}assert.sameValue(last,5);assert.throws(ReferenceError,function(){const x=[1];for(const x of x){}});");
+}
+#[test]
+fn for_of_closes_on_break_return_and_throw() {
+    check("let closed=0;const iterator={next:function(){return {value:{n:7},done:false};},return:function(){closed=closed+1;return {};}};const source={};source[Symbol.iterator]=function(){return iterator;};for(const x of source){assert.sameValue(x.n,7);break;}assert.sameValue(closed,1);function f(){for(const x of source){return x;}}assert.sameValue(f().n,7);assert.sameValue(closed,2);const marker={};try{for(const x of source){throw marker;}}catch(e){assert.sameValue(e,marker);}assert.sameValue(closed,3);");
+}
+#[test]
+fn close_preserves_original_throw_and_finally_completions() {
+    check("let closed=0;const i={next:function(){return {value:1,done:false};},return:function(){closed=closed+1;throw new RangeError();}};const o={};o[Symbol.iterator]=()=>i;const marker={};try{for(const x of o){throw marker;}}catch(e){assert.sameValue(e,marker);}assert.throws(RangeError,function(){for(const x of o){break;}});assert.sameValue(closed,2);let sum=0;for(const x of [1,2,3]){try{if(x===2){continue;}sum=sum+x;}finally{sum=sum+10;}}assert.sameValue(sum,34);");
+}
+#[test]
+fn iterator_next_failure_does_not_close() {
+    check("let closed=0;const i={next:function(){throw new RangeError();},return:function(){closed=closed+1;return {};}};const o={};o[Symbol.iterator]=()=>i;assert.throws(RangeError,function(){for(const x of o){}});assert.sameValue(closed,0);");
+}
+#[test]
+fn species_and_generic_map() {
+    check("const a=[1,2];const c={};c[Symbol.species]=function(n){this.length=n;};a.constructor=c;const b=a.map(function(x){return x*2;});assert.sameValue(Array.isArray(b),false);assert.sameValue(b[1],4);assert.sameValue(b.length,2);const generic={0:3,length:1,get constructor(){throw new RangeError();}};assert.sameValue(Array.prototype.map.call(generic,function(x){return x+1;})[0],4);assert.sameValue(Array[Symbol.species],Array);");
+}
+#[test]
+fn reflection_preserves_string_symbol_and_index_order() {
+    check("const s=Symbol();const o={b:1,2:2,1:3};o[s]=4;assert.sameValue(Object.keys(o).join(),'1,2,b');assert.sameValue(Object.getOwnPropertySymbols(o)[0],s);const keys=Reflect.ownKeys(o);assert.sameValue(keys.length,4);assert.sameValue(keys[3],s);assert.sameValue(Object.keys('ab').join(),'0,1');");
+}

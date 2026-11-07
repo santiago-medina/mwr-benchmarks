@@ -24,9 +24,11 @@ for(const entry of input.cases){
 console.log(JSON.stringify({node_version:process.version,harness:'official sta.js + assert.js, unchanged',total:input.cases.length,passed,failures},null,2));
 '''
 def main():
-    p=argparse.ArgumentParser(__doc__);p.add_argument('--source',type=Path,required=True);p.add_argument('--output',type=Path,default=HERE/'node-report.json');a=p.parse_args()
+    p=argparse.ArgumentParser(__doc__);p.add_argument('--profile',choices=['objects','arrays'],default='objects');p.add_argument('--source',type=Path,required=True);p.add_argument('--output',type=Path,default=None);a=p.parse_args()
     assert (a.source/'.revision').read_text().strip()==REVISION
-    paths=json.loads((HERE/'required-pass.json').read_text());cases=[]
+    suffix='' if a.profile=='objects' else '-arrays'
+    a.output=a.output or HERE/('node-report'+suffix+'.json')
+    paths=json.loads((HERE/('required-pass'+suffix+'.json')).read_text());cases=[]
     for path in paths:
         source=(a.source/'test'/path).read_text();meta=re.search(r'/\*---(.*?)---\*/',source,re.S).group(1);negative=field(meta,'negative');expected=re.search(r'type:\s*(\w+)',negative) if negative else None
         cases.append(dict(path=path,negative=expected.group(1) if expected else None))

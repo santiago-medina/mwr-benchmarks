@@ -205,6 +205,14 @@ impl Engine<'_> {
                     self.initialize(local, n, v)?;
                 }
             }
+            Stmt::Break => return Err(ScriptError::LoopBreak),
+            Stmt::Continue => return Err(ScriptError::LoopContinue),
+            Stmt::ForOf {
+                kind,
+                name,
+                iterable,
+                body,
+            } => return self.for_of(kind, name, iterable, body, env, can_return),
             Stmt::Function(..) => {}
             Stmt::Expr(x) => {
                 self.eval(x, env)?;
@@ -264,6 +272,108 @@ impl Engine<'_> {
             }
         }
         Ok(None)
+    }
+    fn for_of(
+        &mut self,
+        kind: &str,
+        name: &str,
+        source: &Expr,
+        body: &Stmt,
+        env: Id,
+        can_return: bool,
+    ) -> Result<Option<Value>> {
+        let scope = if kind == "var" {
+            env
+        } else {
+            let id = self.new_environment(
+                Some(env),
+                &[Stmt::Const(name.into(), Expr::Undefined)],
+                false,
+            )?;
+            self.protect(&Value::Object(id))?;
+            id
+        };
+        let value = self.eval(source, scope)?;
+        self.protect(&value)?;
+        let method = self.get_member(value.clone(), Key::Symbol(0))?;
+        self.protect(&method)?;
+        let iterator = self.invoke_this(method, value, vec![])?;
+        self.protect(&iterator)?;
+        if !matches!(iterator, Value::Object(_)) {
+            return self.throw_error("TypeError", "iterator is not object");
+        }
+        let next = self.get_member(iterator.clone(), "next")?;
+        self.protect(&next)?;
+        loop {
+            self.tick()?;
+            let (done, completion) = self.frame(|e| {
+                let result = e.invoke_this(next.clone(), iterator.clone(), vec![])?;
+                e.protect(&result)?;
+                if !matches!(result, Value::Object(_)) {
+                    return e.throw_error("TypeError", "iterator result is not object");
+                }
+                if e.get_member(result.clone(), "done")?.truthy() {
+                    return Ok((true, None));
+                }
+                let value = e.get_member(result, "value")?;
+                e.protect(&value)?;
+                let pending = e.frame(|e| {
+                    let local = if kind == "var" {
+                        e.var_environment(env)?
+                    } else {
+                        let stmt = if kind == "const" {
+                            Stmt::Const(name.into(), Expr::Undefined)
+                        } else {
+                            Stmt::Let(name.into(), Expr::Undefined)
+                        };
+                        let id = e.new_environment(Some(scope), &[stmt], false)?;
+                        e.protect(&Value::Object(id))?;
+                        id
+                    };
+                    e.initialize(local, name, value)?;
+                    e.statement(body, local, can_return)
+                });
+                match pending {
+                    Ok(None) | Err(ScriptError::LoopContinue) => Ok((false, None)),
+                    Err(ScriptError::LoopBreak) => e
+                        .close_iterator(iterator.clone(), Ok(None))
+                        .map(|v| (true, v)),
+                    other => e.close_iterator(iterator.clone(), other).map(|v| (true, v)),
+                }
+            })?;
+            if done {
+                return Ok(completion);
+            }
+        }
+    }
+    fn close_iterator(
+        &mut self,
+        iterator: Value,
+        pending: Result<Option<Value>>,
+    ) -> Result<Option<Value>> {
+        match &pending {
+            Ok(Some(v)) => self.protect(v)?,
+            Err(ScriptError::Thrown(e)) => self.protect(&e.value)?,
+            Err(_) => return pending,
+            _ => {}
+        }
+        let close = self.frame(|e| {
+            let method = e.get_member(iterator.clone(), "return")?;
+            e.protect(&method)?;
+            if matches!(method, Value::Undefined | Value::Null) {
+                return Ok(());
+            }
+            let value = e.invoke_this(method, iterator, vec![])?;
+            if !matches!(value, Value::Object(_)) {
+                return e.throw_error("TypeError", "iterator return is not object");
+            }
+            Ok(())
+        });
+        if matches!(pending, Err(ScriptError::Thrown(_))) {
+            return pending;
+        }
+        close?;
+        pending
     }
     pub(super) fn eval(&mut self, x: &Expr, env: Id) -> Result<Value> {
         self.tick()?;

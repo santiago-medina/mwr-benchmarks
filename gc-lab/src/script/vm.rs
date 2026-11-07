@@ -15,6 +15,8 @@ pub enum ScriptError {
     Memory(Error),
     Host(String),
     Unsupported(&'static str),
+    LoopBreak,
+    LoopContinue,
     Thrown(Exception),
 }
 impl From<Error> for ScriptError {
@@ -376,6 +378,14 @@ impl<'host> Engine<'host> {
             for s in body {
                 match s {
                     Stmt::Var(n, _) => out.push(n.clone()),
+                    Stmt::ForOf {
+                        kind, name, body, ..
+                    } => {
+                        if kind == "var" {
+                            out.push(name.clone());
+                        }
+                        vars(std::slice::from_ref(body), out);
+                    }
                     Stmt::Block(b) => vars(b, out),
                     Stmt::If(_, a, b) => {
                         vars(std::slice::from_ref(a), out);

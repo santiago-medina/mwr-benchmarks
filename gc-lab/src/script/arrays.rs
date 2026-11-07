@@ -163,6 +163,28 @@ impl Engine<'_> {
         self.put_data(id, "done", Value::Bool(done))?;
         Ok(Value::Object(id))
     }
+    fn array_species_create(&mut self, original: Id, len: u32) -> Result<Id> {
+        let mut constructor = Value::Undefined;
+        if self.data(original)?.array {
+            constructor = self.get_member(Value::Object(original), "constructor")?;
+            self.protect(&constructor)?;
+            if matches!(constructor, Value::Object(_)) {
+                constructor = self.get_member(constructor, Key::Symbol(2))?;
+                self.protect(&constructor)?;
+                if constructor == Value::Null {
+                    constructor = Value::Undefined;
+                }
+            }
+        }
+        if constructor == Value::Undefined {
+            return self.new_array(len);
+        }
+        let value = self.construct(constructor, vec![Value::number(len as f64)])?;
+        let Value::Object(id) = value else {
+            unreachable!()
+        };
+        Ok(id)
+    }
     pub(super) fn array_builtin(
         &mut self,
         name: &str,
@@ -202,6 +224,7 @@ impl Engine<'_> {
                 }
                 return Ok(Value::Object(id));
             }
+            "Array.species" => return Ok(receiver),
             "Array.isArray" => {
                 return Ok(Value::Bool(
                     matches!(arg(0),Value::Object(id)if self.data(id)?.array),
@@ -337,15 +360,6 @@ impl Engine<'_> {
                 }
                 let produces = matches!(name, "Array.prototype.map" | "Array.prototype.filter");
                 let output = if produces {
-                    let constructor = self.get_member(Value::Object(id), "constructor")?;
-                    self.protect(&constructor)?;
-                    if self.data(id)?.array {
-                        let default = self.intrinsics.as_ref().unwrap().functions["Array"];
-                        if constructor != Value::Undefined && constructor != Value::Object(default)
-                        {
-                            return Err(ScriptError::Unsupported("custom array species"));
-                        }
-                    }
                     let len = if name.ends_with("map") {
                         u32::try_from(length).map_err(|_| {
                             ScriptError::Unsupported("map output length exceeds array range")
@@ -353,7 +367,7 @@ impl Engine<'_> {
                     } else {
                         0
                     };
-                    let out = self.new_array(len)?;
+                    let out = self.array_species_create(id, len)?;
                     self.protect(&Value::Object(out))?;
                     Some(out)
                 } else {

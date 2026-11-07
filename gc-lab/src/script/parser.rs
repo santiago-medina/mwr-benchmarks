@@ -52,6 +52,14 @@ pub enum Stmt {
     Throw(Expr),
     Block(Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
+    Break,
+    Continue,
+    ForOf {
+        kind: String,
+        name: String,
+        iterable: Expr,
+        body: Box<Stmt>,
+    },
     Try {
         body: Vec<Stmt>,
         catch: Option<(String, Vec<Stmt>)>,
@@ -361,6 +369,39 @@ impl Parser<'_> {
     fn statement_inner(&mut self) -> Result<Stmt, SyntaxError> {
         if self.current() == &Token::Punct('{') {
             return Ok(Stmt::Block(self.block()?));
+        }
+        if self.word("break") {
+            self.semi()?;
+            return Ok(Stmt::Break);
+        }
+        if self.word("continue") {
+            self.semi()?;
+            return Ok(Stmt::Continue);
+        }
+        if self.word("for") {
+            self.expect('(')?;
+            let kind = if self.word("const") {
+                "const"
+            } else if self.word("let") {
+                "let"
+            } else if self.word("var") {
+                "var"
+            } else {
+                return Err(self.error("for-of requires declaration"));
+            };
+            let name = self.name()?;
+            if !self.word("of") {
+                return Err(self.error("only for-of is supported"));
+            }
+            let iterable = self.expression()?;
+            self.expect(')')?;
+            let body = Box::new(self.statement()?);
+            return Ok(Stmt::ForOf {
+                kind: kind.into(),
+                name,
+                iterable,
+                body,
+            });
         }
         if self.word("function") {
             let n = self.name()?;
@@ -740,6 +781,15 @@ fn validate(
     can_return: bool,
     depth: usize,
 ) -> Result<(), SyntaxError> {
+    validate_loop(body, params, can_return, depth, false)
+}
+fn validate_loop(
+    body: &[Stmt],
+    params: &[String],
+    can_return: bool,
+    depth: usize,
+    in_loop: bool,
+) -> Result<(), SyntaxError> {
     let err = |message| SyntaxError { offset: 0, message };
     if depth >= 64 {
         return Err(err("AST nesting limit"));
@@ -782,12 +832,21 @@ fn validate(
                 work.push((a, depth));
                 work.push((b, depth));
             }
-            Stmt::Block(b) => validate(b, &[], can_return, depth + 1)?,
+            Stmt::Break | Stmt::Continue => {
+                if !in_loop {
+                    return Err(err("loop control outside loop"));
+                }
+            }
+            Stmt::ForOf { iterable, body, .. } => {
+                work.push((iterable, depth));
+                validate_loop(std::slice::from_ref(body), &[], can_return, depth + 1, true)?;
+            }
+            Stmt::Block(b) => validate_loop(b, &[], can_return, depth + 1, in_loop)?,
             Stmt::If(e, a, b) => {
                 work.push((e, depth));
-                validate(std::slice::from_ref(a), &[], can_return, depth + 1)?;
+                validate_loop(std::slice::from_ref(a), &[], can_return, depth + 1, in_loop)?;
                 if let Some(b) = b {
-                    validate(std::slice::from_ref(b), &[], can_return, depth + 1)?;
+                    validate_loop(std::slice::from_ref(b), &[], can_return, depth + 1, in_loop)?;
                 }
             }
             Stmt::Try {
@@ -795,12 +854,12 @@ fn validate(
                 catch,
                 finally,
             } => {
-                validate(body, &[], can_return, depth + 1)?;
+                validate_loop(body, &[], can_return, depth + 1, in_loop)?;
                 if let Some((n, b)) = catch {
-                    validate(b, std::slice::from_ref(n), can_return, depth + 1)?;
+                    validate_loop(b, std::slice::from_ref(n), can_return, depth + 1, in_loop)?;
                 }
                 if let Some(b) = finally {
-                    validate(b, &[], can_return, depth + 1)?;
+                    validate_loop(b, &[], can_return, depth + 1, in_loop)?;
                 }
             }
         }
