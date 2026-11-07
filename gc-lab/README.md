@@ -241,3 +241,10 @@ compilación se reutilizan mediante la caché de Actions.
 métodos, símbolos como claves y cierre de iteradores en `for…of`. Incluye una
 lista que añade, completa y elimina nodos reales de Servo, y perfiles de
 Test262 separados para objetos y arrays.
+
+## Promesas y microtareas
+
+La etapa actual se describe en [PROMISES.md](PROMISES.md): promesas, capabilities,
+thenables y jobs trazados por el GC, con un perfil Test262 asíncrono y conexión
+a la cola de microtareas compartida de Servo. Las secciones anteriores documentan
+los hitos previos del laboratorio.
