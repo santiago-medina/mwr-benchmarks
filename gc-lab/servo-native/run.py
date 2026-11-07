@@ -15,11 +15,14 @@ def main():
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument('--servo', type=Path, required=True)
     parser.add_argument('--output', type=Path, default=HERE.parent / 'native-results')
+    parser.add_argument('--fixture', type=Path, default=HERE.parent / 'servo-fixture/index.html')
+    parser.add_argument('--before', default='Pulsar')
+    parser.add_argument('--after', default='Funciona')
     args = parser.parse_args()
     binary = args.servo.resolve()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    fixture = (HERE.parent / 'servo-fixture/index.html').read_text()
+    fixture = args.fixture.read_text()
     # The fixture contains exactly one experimental script and no ordinary JS.
     assert fixture.count('<script') == 1
     assert 'application/x-mwr-js' in fixture
@@ -29,7 +32,7 @@ def main():
         ('callback', True, True, fixture),
         ('csp-blocked', True, True, fixture.replace('<meta charset="utf-8">',
             '<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="script-src \'none\'">')),
-        ('syntax-error', True, False, fixture.replace('const button =', 'let button =')),
+        ('syntax-error', True, False, fixture.replace('const button =', 'const =')),
     ]
     results = {}
     for name, enabled, self_test, html in scenarios:
@@ -43,7 +46,8 @@ def main():
                 path = work / subdir
                 path.mkdir(mode=0o700)
                 env[key] = str(path)
-            env.update(LIBGL_ALWAYS_SOFTWARE='1', EGL_PLATFORM='surfaceless')
+            env.update(LIBGL_ALWAYS_SOFTWARE='1', EGL_PLATFORM='surfaceless',
+                       MWR_NATIVE_EXPECT_BEFORE=args.before, MWR_NATIVE_EXPECT_AFTER=args.after)
             if enabled:
                 env['MWR_NATIVE_JS'] = '1'
             if self_test:
@@ -69,7 +73,7 @@ def main():
             assert log.count('MWR_NATIVE_TEST_TASK') == (1 if name == 'callback' else 0)
             assert len(proofs) == (1 if name == 'callback' else 0), (name, log)
             if proofs:
-                assert proofs[0] == dict(before='Pulsar', after='Funciona', click='rust-dom-synthetic')
+                assert proofs[0] == dict(before=args.before, after=args.after, click='rust-dom-synthetic')
             results[name] = dict(executions=executed, callbacks=callbacks,
                                  errors=errors, proofs=proofs)
     report = dict(
@@ -78,6 +82,7 @@ def main():
         patch_sha256=hashlib.file_digest((HERE / 'servo.patch').open('rb'), 'sha256').hexdigest(),
         callback_after_event_loop_turn=True,
         module_sha256=hashlib.file_digest((HERE / 'mwr.rs').open('rb'), 'sha256').hexdigest(),
+        fixture_sha256=hashlib.sha256(fixture.encode()).hexdigest(),
         in_process=True, webdriver=False, javascript_transport=False,
         input='Rust HTMLElement::Click; synthetic, not hardware input',
         scenarios=results,

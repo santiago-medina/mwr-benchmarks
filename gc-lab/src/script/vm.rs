@@ -81,6 +81,7 @@ pub(super) enum Object {
         bindings: HashMap<String, Option<Value>>,
         mutable: HashSet<String>,
         function_scope: bool,
+        object_bindings: HashSet<String>,
     },
     Closure {
         kind: FunctionKind,
@@ -400,7 +401,16 @@ impl<'host> Engine<'host> {
                 mutable.insert(n);
             }
         }
+        let mut object_bindings = HashSet::new();
         if parent.is_none() {
+            let mut names = vec![];
+            vars(body, &mut names);
+            object_bindings.extend(names);
+            for s in body {
+                if let Stmt::Function(n, ..) = s {
+                    object_bindings.insert(n.clone());
+                }
+            }
             bindings
                 .entry("document".into())
                 .or_insert(Some(Value::Document));
@@ -416,6 +426,7 @@ impl<'host> Engine<'host> {
                 bindings,
                 mutable,
                 function_scope,
+                object_bindings,
             },
         );
         Ok(id)
@@ -423,11 +434,18 @@ impl<'host> Engine<'host> {
     pub(super) fn lookup(&mut self, mut env: Id, name: &str) -> Result<Value> {
         loop {
             let Some(Object::Environment {
-                parent, bindings, ..
+                parent,
+                bindings,
+                object_bindings,
+                ..
             }) = self.objects.get(&env)
             else {
                 return Err(ScriptError::Runtime("invalid environment"));
             };
+            if object_bindings.contains(name) {
+                let global = self.intrinsics.as_ref().unwrap().global;
+                return self.get_member(Value::Object(global), name);
+            }
             if let Some(v) = bindings.get(name) {
                 return match v.clone() {
                     Some(v) => Ok(v),
@@ -458,6 +476,21 @@ impl<'host> Engine<'host> {
                 | "Math"
                 | "JSON"
                 | "eval"
+                | "ArrayBuffer"
+                | "SharedArrayBuffer"
+                | "DataView"
+                | "Int8Array"
+                | "Uint8ClampedArray"
+                | "Int16Array"
+                | "Uint16Array"
+                | "Int32Array"
+                | "Uint32Array"
+                | "Float32Array"
+                | "Float64Array"
+                | "BigInt64Array"
+                | "BigUint64Array"
+                | "WeakRef"
+                | "FinalizationRegistry"
                 | "Uint8Array"
                 | "$262"
         ) {
@@ -468,6 +501,27 @@ impl<'host> Engine<'host> {
         self.throw_error("ReferenceError", "unknown identifier")
     }
     pub(super) fn initialize(&mut self, env: Id, name: &str, value: Value) -> Result<()> {
+        if matches!(self.objects.get(&env), Some(Object::Environment{object_bindings,..}) if object_bindings.contains(name))
+        {
+            if let Some(i) = &self.intrinsics {
+                let id = i.global;
+                return if self.define(
+                    id,
+                    name,
+                    super::objects::Descriptor {
+                        value: Some(value),
+                        writable: Some(true),
+                        enumerable: Some(true),
+                        configurable: None,
+                        ..super::objects::Descriptor::default()
+                    },
+                )? {
+                    Ok(())
+                } else {
+                    self.throw_error("TypeError", "global definition refused")
+                };
+            }
+        }
         let old = match self.objects.get(&env) {
             Some(Object::Environment { bindings, .. }) => bindings.get(name).cloned().flatten(),
             _ => return Err(ScriptError::Runtime("invalid environment")),
@@ -500,6 +554,11 @@ impl<'host> Engine<'host> {
             else {
                 return Err(ScriptError::Runtime("invalid environment"));
             };
+            if matches!(self.objects.get(&env),Some(Object::Environment{object_bindings,..})if object_bindings.contains(name))
+            {
+                let id = self.intrinsics.as_ref().unwrap().global;
+                return self.set_member(Value::Object(id), name, value);
+            }
             if let Some(v) = bindings.get(name) {
                 if v.is_none() {
                     return self

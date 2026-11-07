@@ -538,6 +538,8 @@ impl Engine<'_> {
                 if matches!(name.as_str(), "String" | "Number" | "Boolean") {
                     let v = self.builtin(&name, Value::Undefined, args)?;
                     self.box_value(v).map(Value::Object)
+                } else if name == "Function" {
+                    Err(ScriptError::Unsupported("dynamic Function constructor"))
                 } else if name == "Object"
                     || self.intrinsics.as_ref().unwrap().errors.contains_key(&name)
                 {

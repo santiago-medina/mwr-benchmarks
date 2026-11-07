@@ -1,5 +1,6 @@
 name: GC laboratory
 on:
+  workflow_dispatch:
   push:
     paths: ['gc-lab/**', '.github/workflows/gc-lab.yml']
   pull_request:
@@ -56,6 +57,7 @@ jobs:
             gc-lab/servo-results/servo.log
             gc-lab/servo-results/bridge.log
   servo-native:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[servo]')
     runs-on: ubuntu-24.04
     needs: contracts
     timeout-minutes: 180
@@ -86,6 +88,8 @@ jobs:
         run: cargo +1.97.1 build -p servoshell --no-default-features --features bundled,js_jit --offline
       - name: Execute native callbacks without WebDriver or JS transport
         run: python3 gc-lab/servo-native/run.py --servo gc-lab/.servo-native/target/debug/servoshell
+      - name: Execute object-state application in native Servo
+        run: python3 gc-lab/servo-native/run.py --servo gc-lab/.servo-native/target/debug/servoshell --fixture gc-lab/servo-native/object-fixture.html --before 'Cuenta: 0' --after 'Cuenta: 1' --output gc-lab/native-object-results
       - name: Collect real cross-heap cycles with the realm still alive
         run: python3 gc-lab/servo-native/run_gc.py --servo gc-lab/.servo-native/target/debug/servoshell
       - name: Preserve native integration evidence
@@ -96,3 +100,4 @@ jobs:
           path: |
             gc-lab/native-results/
             gc-lab/native-gc-results/
+            gc-lab/native-object-results/

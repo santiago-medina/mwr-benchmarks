@@ -322,3 +322,41 @@ fn throwing_setup_unwinds_frames_without_losing_a_native_listener() {
     assert_eq!(e.live_objects(), baseline);
     assert_eq!(e.remote_node_count(), 0);
 }
+
+#[test]
+fn object_state_counter_uses_native_receiver_and_reclaims_graph() {
+    for model in [Model::Stable, Model::Indirect] {
+        let state = Rc::new(RefCell::new(State::default()));
+        let mut e = Engine::new(model, model).unwrap();
+        e.set_dom_adapter(Box::new(Host(state.clone()))).unwrap();
+        e.execute(include_str!("../examples/object-counter.js"))
+            .unwrap();
+        assert_eq!(e.text_content("button").unwrap(), "Cuenta: 0");
+        e.dispatch_remote_click(1).unwrap();
+        assert_eq!(e.text_content("button").unwrap(), "Cuenta: 1");
+        e.collect();
+        e.dispatch_remote_click(1).unwrap();
+        assert_eq!(e.text_content("button").unwrap(), "Cuenta: 2");
+        e.release_globals();
+        assert_eq!(
+            (e.live_objects(), e.metadata_objects(), e.live_roots()),
+            (0, 0, 0)
+        );
+        assert!(state.borrow().leases.is_empty());
+    }
+}
+#[test]
+fn host_mutation_error_is_catchable_and_does_not_corrupt_dom() {
+    let state = Rc::new(RefCell::new(State::default()));
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.set_dom_adapter(Box::new(Host(state.clone()))).unwrap();
+    e.execute("const button=document.querySelector('#button');const state={caught:''};button.addEventListener('click',function(){try{this.textContent='new';}catch(error){state.caught=error.message;}});function render(){button.textContent=state.caught;}").unwrap();
+    state.borrow_mut().fail_set = true;
+    e.dispatch_remote_click(1).unwrap();
+    assert_eq!(e.text_content("button").unwrap(), "Pulsar");
+    state.borrow_mut().fail_set = false;
+    e.call_global("render").unwrap();
+    assert_eq!(e.text_content("button").unwrap(), "set failed");
+    e.release_globals();
+    assert_eq!(e.live_objects(), 0);
+}

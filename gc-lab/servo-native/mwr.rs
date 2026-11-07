@@ -371,7 +371,7 @@ fn self_test(cx: &mut JSContext, doc: &Document) -> Result<()> {
         .ok_or("test button missing")?;
     let node = button.upcast::<Node>();
     let before = node.GetTextContent().unwrap_or_default().to_string();
-    if before != "Pulsar" {
+    if before != std::env::var("MWR_NATIVE_EXPECT_BEFORE").unwrap_or_else(|_| "Pulsar".into()) {
         return Err(format!("unexpected initial text: {before}"));
     }
     button
@@ -379,14 +379,12 @@ fn self_test(cx: &mut JSContext, doc: &Document) -> Result<()> {
         .ok_or("test target not HTML")?
         .Click(cx);
     let after = node.GetTextContent().unwrap_or_default().to_string();
-    if after != "Funciona" {
+    if after != std::env::var("MWR_NATIVE_EXPECT_AFTER").unwrap_or_else(|_| "Funciona".into()) {
         return Err(format!("native callback failed: {after}"));
     }
     // This is only the rendering smoke test. The separate GC experiment keeps
     // the realm alive and proves actual native finalization without dropping it.
-    eprintln!(
-        "MWR_NATIVE_PROOF {{\"before\":\"Pulsar\",\"after\":\"Funciona\",\"click\":\"rust-dom-synthetic\"}}"
-    );
+    eprintln!("MWR_NATIVE_PROOF {}", serde_json::json!({"before":before,"after":after,"click":"rust-dom-synthetic"}));
     Ok(())
 }
 // Trusted DOM roots must go before Servo tears down its JS runtime. This hook is

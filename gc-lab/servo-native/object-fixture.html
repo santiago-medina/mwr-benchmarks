@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Estado y objetos: Rust dentro de Servo</title>
+<style>body{font:24px sans-serif;background:#eff5f3;padding:64px;color:#18362d}button{font:32px sans-serif;background:#17634c;color:white;border:0;border-radius:12px;padding:24px}p{max-width:700px}</style>
+<h1>Objetos en Rust, DOM en Servo</h1>
+<p>Estado con getters y setters, un callback con this y errores capturables.</p>
+<button id="button">Cuenta: 0</button>
+<script type="application/x-mwr-js">
+const model = {
+  _count: 0,
+  increment: function () { this.count = this.count + 1; },
+  get label() { return 'Cuenta: ' + String(this.count); }
+};
+Object.defineProperty(model, 'count', {
+  get: function () { return this._count; },
+  set: function (value) {
+    if (value < 0) { throw new RangeError('negative count'); }
+    this._count = value;
+  },
+  enumerable: true
+});
+const button = document.querySelector('#button');
+button.addEventListener('click', function () {
+  try {
+    model.increment();
+    this.textContent = model.label;
+  } catch (error) {
+    this.textContent = error.message;
+  }
+});
+button.textContent = model.label;
+</script>

@@ -73,6 +73,14 @@ impl Engine<'_> {
         Ok(Value::Object(id))
     }
     pub(super) fn get_member(&mut self, receiver: Value, property: &str) -> Result<Value> {
+        match self.get_member_inner(receiver, property) {
+            Err(ScriptError::Host(s)) if self.adapter_error.is_none() => {
+                self.throw_error("Error", &s)
+            }
+            r => r,
+        }
+    }
+    fn get_member_inner(&mut self, receiver: Value, property: &str) -> Result<Value> {
         match receiver {
             Value::Document if matches!(property, "createElement" | "querySelector") => {
                 Ok(Value::Native {
@@ -109,6 +117,14 @@ impl Engine<'_> {
         property: &str,
         value: Value,
     ) -> Result<()> {
+        match self.set_member_inner(receiver, property, value) {
+            Err(ScriptError::Host(s)) if self.adapter_error.is_none() => {
+                self.throw_error("Error", &s)
+            }
+            r => r,
+        }
+    }
+    fn set_member_inner(&mut self, receiver: Value, property: &str, value: Value) -> Result<()> {
         let Value::Object(id) = receiver else {
             return Err(ScriptError::Runtime("not a node"));
         };

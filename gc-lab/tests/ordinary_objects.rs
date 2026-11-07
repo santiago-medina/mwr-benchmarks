@@ -149,3 +149,7 @@ fn quota_failures_release_partial_intrinsics_and_graphs() {
     }
     assert!(passed && failed);
 }
+#[test]
+fn global_var_property_record_and_constant_descriptors() {
+    check("Object.defineProperty(Object.prototype,'prop',{value:1001});var prop=1002;assert(this.hasOwnProperty('prop'));assert.sameValue(this.prop,1002);this.prop=1003;assert.sameValue(prop,1003);prop=1004;assert.sameValue(this.prop,1004);assert.sameValue(Object.getOwnPropertyDescriptor(this,'prop').configurable,false);assert.sameValue(Object.getOwnPropertyDescriptor(this,'NaN').writable,false);assert.sameValue(Object.getOwnPropertyDescriptor(this,'undefined').configurable,false);");
+}

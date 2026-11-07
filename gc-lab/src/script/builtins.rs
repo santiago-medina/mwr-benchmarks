@@ -16,6 +16,8 @@ pub(super) struct Intrinsics {
 }
 const ERRORS: &[&str] = &[
     "Error",
+    "EvalError",
+    "URIError",
     "TypeError",
     "RangeError",
     "ReferenceError",
@@ -293,7 +295,60 @@ impl Engine<'_> {
                 }
             }
             if n != "this" {
-                self.hidden(global, &n, v)?;
+                if matches!(n.as_str(), "undefined" | "NaN" | "Infinity") {
+                    self.define(
+                        global,
+                        &n,
+                        Descriptor {
+                            value: Some(v),
+                            ..Descriptor::default()
+                        },
+                    )?;
+                } else {
+                    self.hidden(global, &n, v)?;
+                }
+            }
+        }
+        let number = objects["Number"];
+        for (key, n) in [
+            ("MAX_VALUE", f64::MAX),
+            ("MIN_VALUE", f64::from_bits(1)),
+            ("NaN", f64::NAN),
+            ("NEGATIVE_INFINITY", f64::NEG_INFINITY),
+            ("POSITIVE_INFINITY", f64::INFINITY),
+            ("EPSILON", f64::EPSILON),
+            ("MAX_SAFE_INTEGER", 9007199254740991.0),
+            ("MIN_SAFE_INTEGER", -9007199254740991.0),
+        ] {
+            self.define(
+                number,
+                key,
+                Descriptor {
+                    value: Some(Value::number(n)),
+                    ..Descriptor::default()
+                },
+            )?;
+        }
+        let vars = if let Some(Object::Environment {
+            object_bindings, ..
+        }) = self.objects.get(&env)
+        {
+            object_bindings.clone()
+        } else {
+            unreachable!()
+        };
+        for name in vars {
+            if self.own(global, &name)?.is_none() {
+                self.define(
+                    global,
+                    &name,
+                    Descriptor {
+                        value: Some(Value::Undefined),
+                        writable: Some(true),
+                        enumerable: Some(true),
+                        ..Descriptor::default()
+                    },
+                )?;
             }
         }
         Ok(())
