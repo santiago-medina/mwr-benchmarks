@@ -15,6 +15,7 @@ import urllib.request
 FILES = {
     "url/url_canon_path.cc": "https://raw.githubusercontent.com/chromium/chromium/main/url/url_canon_path.cc",
     "url/url_canon_unittest.cc": "https://raw.githubusercontent.com/chromium/chromium/main/url/url_canon_unittest.cc",
+    "url/url_canon_internal.h": "https://raw.githubusercontent.com/chromium/chromium/main/url/url_canon_internal.h",
 }
 RULES = [
     ("INDEX_OFFSET", "Review indexed access with arithmetic", re.compile(r"\b(?:path_value|spec)\s*\[\s*[A-Za-z_]\w*\s*\+\s*\d+\s*\]"), "medium"),
@@ -39,6 +40,32 @@ def triage(source: str, path: str):
                 })
     return findings
 
+def annotate_reviewed_isdot(findings, sources):
+    """Downgrade only guarded indexes when both upstream conditions hold."""
+    path_source = sources.get("url/url_canon_path.cc", "")
+    helper_source = sources.get("url/url_canon_internal.h", "")
+    contract_ok = (
+        "spec.size() >= 3" in helper_source
+        and "return 3;" in helper_source
+        and "spec[2] == 'e' || spec[2] == 'E'" in helper_source
+    )
+    guard_ok = (
+        "if (dotlen == 3 && is_preserving_percent_encoded_dot_in_path)" in path_source
+        and "IsDot(path_value.substr(i))" in path_source
+    )
+    if contract_ok and guard_ok:
+        for finding in findings:
+            if finding["rule"] == "INDEX_OFFSET" and (
+                finding["snippet"] == "output->push_back(path_value[i + 2]);"
+            ):
+                finding["status"] = "reviewed-likely-false-positive"
+                finding["priority"] = "info"
+                finding["rationale"] = (
+                    "Guarded by dotlen==3; IsDot returns 3 only for complete "
+                    "%2e or %2E. Re-review if upstream contracts change."
+                )
+    return findings
+
 def download(url: str) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": "MWR-Security-Lab/0.1"})
     with urllib.request.urlopen(request, timeout=30) as response:
@@ -56,6 +83,7 @@ def audit(sources: dict[str, str]):
         if path.endswith("_unittest.cc"):
             continue
         findings.extend(triage(content, path))
+    findings = annotate_reviewed_isdot(findings, sources)
     return {
         "project": "MWR Security Lab",
         "date_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -79,9 +107,9 @@ def markdown(report: dict):
     for path, meta in report["files"].items():
         rows.append(f'| `{path}` | {meta["lines"]} | `{meta["sha256"][:16]}` |')
     rows += ["", f'Potential review locations: **{len(report["review_candidates"])}**', "",
-             "| Rule | File:line | Why review |", "|---|---|---|"]
+             "| Rule | File:line | Status | Why review |", "|---|---|---|---|"]
     for f in report["review_candidates"]:
-        rows.append(f'| {f["rule"]} | `{f["file"]}:{f["line"]}` | {f["title"]} |')
+        rows.append(f'| {f["rule"]} | `{f["file"]}:{f["line"]}` | {f["status"]} | {f["title"]} |')
     rows += [
         "", "## Limitations",
         "- Static regex indicators cannot establish exploitability or even a bug.",
