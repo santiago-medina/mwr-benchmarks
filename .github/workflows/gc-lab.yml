@@ -68,7 +68,7 @@ jobs:
       - name: Install native Servo build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang libclang-dev cmake ninja-build gperf m4 pkg-config libdbus-1-dev libfreetype-dev libfontconfig1-dev libglib2.0-dev libudev-dev libunwind-dev libssl-dev libx11-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-0 libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev libegl-dev libgles-dev libasound2-dev libgl1-mesa-dri fonts-dejavu-core
+          sudo apt-get install -y patch clang libclang-dev cmake ninja-build gperf m4 pkg-config libdbus-1-dev libfreetype-dev libfontconfig1-dev libglib2.0-dev libudev-dev libunwind-dev libssl-dev libx11-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-0 libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev libegl-dev libgles-dev libasound2-dev libgl1-mesa-dri fonts-dejavu-core
       - name: Install pinned Servo Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal
       - name: Prepare pinned vendored Servo fork

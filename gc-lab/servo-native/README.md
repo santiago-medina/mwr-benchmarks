@@ -17,7 +17,8 @@ python3 gc-lab/servo-native/run.py --servo gc-lab/.servo-native/target/debug/ser
 
 Las dependencias nativas de Ubuntu están en el job `servo-native` del workflow.
 El archivo fuente vendorizado se verifica con SHA-256 antes de extraerlo. El
-parche excluye `vendor` de la autodetección del workspace y registra cinco
+parche se aplica con GNU patch, de forma independiente del repositorio Git
+que contenga la descarga. El parche excluye `vendor` de la autodetección del workspace y registra cinco
 paquetes ICU como miembros y dependencias locales. Así cbindgen usa el lockfile
 principal al invocar cargo metadata, en vez de los lockfiles antiguos empaquetados
 en esas crates. No se modifica código ni checksums de las dependencias vendorizadas.

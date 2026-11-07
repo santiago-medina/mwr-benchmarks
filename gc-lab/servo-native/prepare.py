@@ -35,8 +35,11 @@ def main():
         tar.extractall(source, filter="data")
     if (source / "GIT_REVISION").read_text().strip() != REVISION:
         raise SystemExit("Servo source revision mismatch")
-    subprocess.run(["git", "apply", "--check", str(HERE / "servo.patch")], cwd=source, check=True)
-    subprocess.run(["git", "apply", str(HERE / "servo.patch")], cwd=source, check=True)
+    # git apply silently skips paths when this tree is nested in another git
+    # repository. GNU patch always resolves paths against this source directory.
+    command = ["patch", "--batch", "--forward", "-p1", "-i", str(HERE / "servo.patch")]
+    subprocess.run(command + ["--dry-run"], cwd=source, check=True)
+    subprocess.run(command, cwd=source, check=True)
     shutil.copy2(HERE / "mwr.rs", source / "components/script/mwr.rs")
     lab = source / "mwr-gc-lab"
     lab.mkdir()
