@@ -112,3 +112,22 @@ fn parser_rejects_import_collisions_and_duplicate_exports() {
     }
     assert!(parse_module("export const x=await 1;").is_ok());
 }
+
+#[test]
+fn independent_siblings_execute_while_an_async_dependency_waits() {
+    run(vec![source("main","import {log} from './shared';import './a';import './b';assert.sameValue(log.join(','),'start,b,end');",&[("./shared","shared"),("./a","a"),("./b","b")]),source("shared","export const log=[];",&[]),source("a","import {log} from './shared';log.push('start');await 1;log.push('end');",&[("./shared","shared")]),source("b","import {log} from './shared';log.push('b');",&[("./shared","shared")])],ModuleStatus::Evaluated);
+}
+#[test]
+fn default_function_declarations_are_hoisted_through_cycles() {
+    run(vec![source("main","import {read} from './dep';export default function(){return 7;}assert.sameValue(read(),7);",&[("./dep","dep")]),source("dep","import get from './main';assert.sameValue(get(),7);assert.sameValue(get.name,'default');export function read(){return get();}",&[("./main","main")])],ModuleStatus::Evaluated);
+}
+#[test]
+fn rejection_is_cached_and_propagated_to_the_importer() {
+    run(
+        vec![
+            source("main", "import './dep';assert(false);", &[("./dep", "dep")]),
+            source("dep", "await 1;throw new Error('boom');", &[]),
+        ],
+        ModuleStatus::Errored("Error: boom".into()),
+    );
+}
