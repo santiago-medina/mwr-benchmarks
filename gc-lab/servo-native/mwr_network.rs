@@ -68,7 +68,11 @@ impl Completion {
             let body = if self.reject {
                 Err("native response body failed".into())
             } else {
-                match DOMString::from_jsval(cx, value, Default::default()) {
+                match DOMString::from_jsval(
+                    cx,
+                    value,
+                    script_bindings::conversions::StringificationBehavior::Default,
+                ) {
                     Ok(ConversionResult::Success(text)) => Ok(text.to_string()),
                     _ => Err("native response text conversion failed".into()),
                 }
