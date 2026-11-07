@@ -18,6 +18,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Unit tests
         run: python3 -m unittest discover -s security-lab -p 'test_*.py' -v
+      - name: Verify isolated IsDot contract with ASan and UBSan
+        run: |
+          g++ -std=c++17 -O1 -g -Wall -Wextra -fno-omit-frame-pointer -fsanitize=address,undefined security-lab/tests/is_dot_contract.cc -o /tmp/mwr_is_dot_contract
+          /tmp/mwr_is_dot_contract
       - name: Fetch selected public Chromium sources and generate review report
         run: python3 security-lab/audit.py --output security-lab/results
       - name: Append report to workflow summary
