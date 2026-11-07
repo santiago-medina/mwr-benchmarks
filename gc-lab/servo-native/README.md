@@ -77,3 +77,16 @@ para puntos de control incompletos o commits que solo archivan evidencia ya vali
 con la misma versión de Servo y Rust, y solo limpia los cuatro paquetes de
 integración antes de compilarlos. No hay una ABI estable de crates Rust: cambiar
 el toolchain o las features requiere una caché compatible o recompilar.
+
+## Arrays e iteración
+
+La [lista de tareas](../ARRAYS.md) usa tres controles y cuatro clicks sintéticos
+para añadir, completar, eliminar y volver a añadir un nodo. `run.py` admite
+`--target` y `--steps` para verificar el texto tras cada click; la orden exacta
+está en el workflow. `task-fixture.html` contiene el mismo programa validado en
+`examples/task-list.js`. `native-task-proof.json` y `native-array-gc-proof.json`
+guardan el hito final, con la captura `native-task-list.png`.
+
+La captura al nodo secundario de `gc-fixture.html` pasa ahora por un array y un
+objeto, sin un binding directo alternativo al nodo. Se conservan los mismos
+1.500 ciclos y las dos navegaciones para comprobar su trazado y reclamación.

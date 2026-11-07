@@ -87,3 +87,24 @@ cuotas barridas después de inicializar la realm. Las cuotas siguen siendo conta
 Cada evento externo recibe un presupuesto de ejecución nuevo. Un `.click()`
 programático o reentrante conserva el presupuesto de su llamador; no puede
 reiniciarlo para eludir el límite. Se comprueba una secuencia de 50 eventos.
+
+## Evidencia nativa final
+
+[CI 42393662445](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/42393662445)
+valida el runtime del commit `d2ad9b7d361f7c9cc5784ddff957589dfc866bc8`.
+Los cuatro jobs terminaron correctamente: 111 contratos en debug/release,
+ambos perfiles Test262 y su contraste con el harness oficial en Node,
+el puente DOM y la integración nativa.
+
+- `native-task-proof.json`: los cuatro clicks reales sintéticos verifican
+  `Tarea 1` → `[hecha] Tarea 1` → lista vacía → `Tarea 2`.
+- `native-array-gc-proof.json`: 1.500 ciclos con capturas a través de arrays,
+  3.000 finalizaciones nativas, 89 errores recuperados y dos navegaciones;
+  la realm permanece viva con su baseline de 97 objetos de VM.
+- `native-task-list.png`: captura renderizada después del cuarto click.
+
+Los informes conservan hashes de binario, módulo y artifact, el commit y el run.
+El hash de todas las fuentes Rust coincide con el del informe nativo. La caché
+se restauró y la compilación nativa tardó 71 segundos. SpiderMonkey sigue siendo
+necesario para los reflectores y el GC de Servo; nuestro programa y sus callbacks
+se ejecutan en el intérprete Rust.

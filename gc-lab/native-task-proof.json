@@ -1,0 +1,76 @@
+{
+  "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+  "binary_sha256": "59db3b04c31328a6f40654d4f63cf06ba6aba0e0830bf24a042adff020e11b04",
+  "patch_sha256": "440edf088407336ee84a0d415768a910dd87c2765e44d79c399348bcb9db2fcb",
+  "callback_after_event_loop_turn": true,
+  "module_sha256": "433011f5e25d1d28568c3e48b5c5b2964a8f32e94300e7ed0c86a054966b192f",
+  "fixture_sha256": "d23a34a18d9db2fec06035f72f7779bb7b420daac1768ef767cd97c327e5a097",
+  "in_process": true,
+  "webdriver": false,
+  "javascript_transport": false,
+  "input": "Rust HTMLElement::Click; synthetic, not hardware input",
+  "scenarios": {
+    "disabled": {
+      "executions": 0,
+      "callbacks": 0,
+      "errors": [],
+      "proofs": []
+    },
+    "waiting": {
+      "executions": 1,
+      "callbacks": 0,
+      "errors": [],
+      "proofs": []
+    },
+    "callback": {
+      "executions": 1,
+      "callbacks": 4,
+      "errors": [],
+      "proofs": [
+        {
+          "before": "",
+          "after": "Tarea 2",
+          "click": "rust-dom-synthetic",
+          "steps": [
+            [
+              "#button",
+              "Tarea 1"
+            ],
+            [
+              "#complete",
+              "[hecha] Tarea 1"
+            ],
+            [
+              "#remove",
+              ""
+            ],
+            [
+              "#button",
+              "Tarea 2"
+            ]
+          ]
+        }
+      ]
+    },
+    "csp-blocked": {
+      "executions": 0,
+      "callbacks": 0,
+      "errors": [],
+      "proofs": []
+    },
+    "syntax-error": {
+      "executions": 0,
+      "callbacks": 0,
+      "errors": [
+        "MWR_NATIVE_ERROR Syntax(SyntaxError { offset: 87, message: \"expected identifier\" })"
+      ],
+      "proofs": []
+    }
+  },
+  "tested_commit": "d2ad9b7d361f7c9cc5784ddff957589dfc866bc8",
+  "workflow_run": "https://github.com/santiago-medina/mwr-benchmarks/actions/runs/42393662445",
+  "artifact_id": 13582461819,
+  "artifact_sha256": "2e5fb5ecf6964d811468018a1c50b0cc47857e8f167f1b8df8bb9df50b435b7e",
+  "dependency_cache_hit": true,
+  "native_compile_seconds": 71
+}
