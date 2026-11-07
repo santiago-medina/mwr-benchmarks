@@ -192,7 +192,8 @@ impl Engine<'_> {
                 } else {
                     FunctionKind::Ordinary
                 };
-                let f = self.make_function(env, Some(n), p, b, kind, false)?;
+                let name = if n == "\0default" { "default" } else { n };
+                let f = self.make_function(env, Some(name), p, b, kind, false)?;
                 self.initialize(env, n, f)?;
             }
         }

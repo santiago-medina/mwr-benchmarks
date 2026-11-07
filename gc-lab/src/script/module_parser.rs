@@ -111,10 +111,34 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
         }
         if p.word("export") {
             if p.word("default") {
-                let local = "\0default".to_string();
-                let expression = p.expression()?;
-                p.semi()?;
-                module.body.push(Stmt::Const(local.clone(), expression));
+                let mut local = "\0default".to_string();
+                let async_function = p.current() == &Token::Name("async".into())
+                    && p.tokens
+                        .get(p.cursor + 1)
+                        .is_some_and(|(t, _)| *t == Token::Name("function".into()));
+                if p.current() == &Token::Name("function".into()) || async_function {
+                    if async_function {
+                        p.take();
+                        if p.newline() {
+                            return Err(p.error("newline in async declaration"));
+                        }
+                    }
+                    p.take();
+                    if matches!(p.current(), Token::Name(_)) {
+                        local = p.name()?;
+                    }
+                    let params = p.params()?;
+                    let body = p.block()?;
+                    module.body.push(if async_function {
+                        Stmt::AsyncFunction(local.clone(), params, body)
+                    } else {
+                        Stmt::Function(local.clone(), params, body)
+                    });
+                } else {
+                    let expression = p.expression()?;
+                    p.semi()?;
+                    module.body.push(Stmt::Const(local.clone(), expression));
+                }
                 module.exports.push(Export {
                     exported: "default".into(),
                     local,
@@ -128,6 +152,11 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
                     None
                 };
                 p.semi()?;
+                if let Some(specifier) = &from {
+                    if !module.requests.contains(specifier) {
+                        module.requests.push(specifier.clone());
+                    }
+                }
                 module
                     .exports
                     .extend(entries.into_iter().map(|(local, exported)| Export {
@@ -159,8 +188,25 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
     let mut imports = HashSet::new();
     for import in &module.imports {
         for (_, local) in &import.bindings {
+            if super::reserved(local)
+                || matches!(local.as_str(), "default" | "import" | "export")
+            {
+                return Err(p.error("invalid imported binding"));
+            }
             if !imports.insert(local.clone()) {
                 return Err(p.error("duplicate imported binding"));
+            }
+        }
+    }
+    let mut lexical = imports.clone();
+    for statement in &module.body {
+        if let Stmt::Const(n, _)
+        | Stmt::Let(n, _)
+        | Stmt::Function(n, ..)
+        | Stmt::AsyncFunction(n, ..) = statement
+        {
+            if !lexical.insert(n.clone()) {
+                return Err(p.error("duplicate module binding"));
             }
         }
     }

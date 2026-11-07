@@ -374,7 +374,14 @@ impl Engine<'_> {
             .ok_or(ScriptError::Runtime("unknown module"))?;
         let group = self.modules.records[i].group;
         if let Some(error) = self.modules.errors.get(&group).cloned() {
-            return Ok(ModuleStatus::Errored(format!("{:?}", self.thrown(error))));
+            return Ok(ModuleStatus::Errored(match self.thrown(error) {
+                ScriptError::Thrown(ex) => format!(
+                    "{}: {}",
+                    ex.name.unwrap_or_else(|| "Error".into()),
+                    ex.message
+                ),
+                other => format!("{other:?}"),
+            }));
         }
         Ok(
             if self.modules.groups[group]
