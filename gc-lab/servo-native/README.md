@@ -112,8 +112,9 @@ Los informes finales están en `native-promise-proof.json`,
 `mwr_network.rs` conecta callbacks nativos de Fetch y Response con las
 continuaciones descritas en [ASYNC.md](../ASYNC.md). Los handlers solo conservan
 pipeline y serial; la sesión posee AbortControllers y Responses nativos hasta
-que la VM libera sus wrappers. Los hooks de Document.abort/unload cancelan
-transporte usando el contexto existente antes de descartar el registro.
+que la VM libera sus wrappers. Document.abort cancela transporte con el contexto existente. Document.unload
+retira primero la sesión y cancela después, de modo que ningún callback tardío
+pueda reactivar una VM descargada.
 
 ```sh
 python3 gc-lab/servo-native/run_fetch.py --servo gc-lab/.servo-native/target/debug/servoshell

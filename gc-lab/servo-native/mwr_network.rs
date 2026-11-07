@@ -162,6 +162,9 @@ pub(super) fn abort_all(cx: &mut JSContext, window: &Window) {
     let Some(state) = session(window) else {
         return;
     };
+    abort_state(cx, &state);
+}
+pub(super) fn abort_state(cx: &mut JSContext, state: &Session) {
     let controllers: Vec<_> = {
         let registry = state.registry.borrow();
         registry

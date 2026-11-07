@@ -473,12 +473,24 @@ fn self_test(cx: &mut JSContext, doc: &Document) -> Result<()> {
 pub(crate) fn abort_network(cx: &mut JSContext, window: &Window) {
     network::abort_all(cx, window);
 }
+pub(crate) fn retire(cx: &mut JSContext, window: &Window) {
+    let state = SESSIONS.with(|s| s.borrow_mut().remove(&window.pipeline_id()));
+    if let Some(state) = state {
+        // Invalidate callbacks before aborting: native rejection delivery can
+        // enqueue work, but an unloaded document must never resume its VM.
+        network::abort_state(cx, &state);
+        clear_listeners(&state);
+    }
+}
 pub(crate) fn clear(window: &Window) {
     if let Some(state) = SESSIONS.with(|s| s.borrow_mut().remove(&window.pipeline_id())) {
-        for (id, node) in state.registry.borrow_mut().nodes.drain() {
-            if let Some(node) = node.root() {
-                node.upcast::<EventTarget>().set_mwr_listener(id, false);
-            }
+        clear_listeners(&state);
+    }
+}
+fn clear_listeners(state: &Session) {
+    for (id, node) in state.registry.borrow_mut().nodes.drain() {
+        if let Some(node) = node.root() {
+            node.upcast::<EventTarget>().set_mwr_listener(id, false);
         }
     }
 }
