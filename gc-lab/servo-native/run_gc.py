@@ -62,6 +62,8 @@ def main():
         assert proof['disconnected_js_root_survival'] is True
         assert proof['stale_ids_rejected'] is True
         assert proof['navigation_rounds'] == 2
+        assert proof['retired_realm_microtasks_ignored'] == 2
+        assert log.count('MWR_NATIVE_STALE_MICROTASK') == 2
         assert proof['old_sessions_destroyed'] is True
         assert proof['old_documents_finalized'] is True
         assert proof['old_global_native_nodes_finalized'] is True

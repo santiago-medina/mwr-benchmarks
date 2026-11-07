@@ -7,6 +7,8 @@
 <script type="application/x-mwr-js">
 const detached = document.createElement('button');
 detached.textContent = 'Rooted';
+const never = new Promise(function () {});
+never.then(function () { detached.textContent = 'must not execute after navigation'; });
 const make = () => {
   const button = document.querySelector('#cycle');
   const captures = [{node: document.createElement('button')}];

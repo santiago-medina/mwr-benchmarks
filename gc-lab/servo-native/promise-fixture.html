@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Promesas y microtareas en Rust dentro de Servo</title>
+<style>body{font:22px sans-serif;background:#edf4f2;color:#18362d;padding:48px}main{max-width:760px}h1{font-size:36px}button{font:22px sans-serif;background:#17634c;color:white;border:0;border-radius:8px;padding:16px 24px}#result{background:white;border-radius:8px;padding:22px;line-height:1.5}#order{font-family:monospace}</style>
+<main><h1>Operaciones diferidas en Rust</h1><p>Promesas y thenables en nuestra VM. Microtareas en la cola real de Servo.</p>
+<button id="button">Procesar operación</button><p id="result">Listo para comenzar</p><p id="order"></p></main>
+<script type="application/x-mwr-js">
+const button = document.querySelector('#button');
+const result = document.querySelector('#result');
+button.addEventListener('click', function () {
+  result.textContent = 'Pendiente';
+  const payload = document.createElement('span');
+  payload.textContent = 'conservado por la microtarea';
+  const order = [];
+  Promise.resolve({then: function (resolve) {
+    order.push('adoptar');
+    resolve(payload);
+  }}).then(function (node) {
+    order.push('then');
+    if (node.textContent !== 'conservado por la microtarea') { throw new Error('GC perdió el nodo'); }
+    return 4;
+  }).finally(function () {
+    order.push('finally');
+  }).then(function (value) {
+    result.textContent = 'Resultado ' + String(value) + ' | ' + order.join(' > ');
+  }).catch(function (error) {
+    result.textContent = 'Error: ' + error.message;
+  });
+  queueMicrotask(function () { order.push('micro'); });
+});
+</script>

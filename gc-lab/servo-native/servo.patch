@@ -265,3 +265,15 @@ index 04c0ed7..6cba356 100644
          trace_refcounted_objects(tr);
          settings_stack::trace(tr);
      }
+diff --git a/components/script/runtime/job_queue.rs b/components/script/runtime/job_queue.rs
+--- a/components/script/runtime/job_queue.rs
++++ b/components/script/runtime/job_queue.rs
+@@ -213,6 +213,8 @@
+     if unsafe { (*job_queue).draining } {
+         return;
+     }
++
++    crate::mwr::begin_microtask_checkpoint();
+ 
+     // Step 2. Set the event loop's performing a microtask checkpoint to true.
+     unsafe {

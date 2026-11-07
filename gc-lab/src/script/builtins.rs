@@ -53,6 +53,8 @@ const METHODS: &[(&str, &[&str])] = &[
     (
         "Reflect",
         &[
+            "construct",
+            "apply",
             "get",
             "set",
             "defineProperty",
@@ -82,11 +84,11 @@ const METHODS: &[(&str, &[&str])] = &[
     (
         "Array.prototype",
         &[
-            "push", "pop", "join", "toString", "map", "filter", "forEach", "some", "every",
-            "values", "keys", "entries",
+            "indexOf", "push", "pop", "join", "toString", "map", "filter", "forEach", "some",
+            "every", "values", "keys", "entries",
         ],
     ),
-    ("Function.prototype", &["call", "bind", "toString"]),
+    ("Function.prototype", &["call", "bind", "apply", "toString"]),
     ("String.prototype", &["valueOf", "toString"]),
     ("Number.prototype", &["valueOf", "toString"]),
     ("Boolean.prototype", &["valueOf", "toString"]),
@@ -119,7 +121,7 @@ impl Engine<'_> {
         self.replace_data(id, Data::new(prototype))?;
         let short = if name == "%IteratorPrototype%.iterator" {
             "[Symbol.iterator]"
-        } else if name == "Array.species" {
+        } else if matches!(name, "Array.species" | "Promise.species") {
             "get [Symbol.species]"
         } else if name == "Function.prototype" {
             ""
@@ -127,7 +129,9 @@ impl Engine<'_> {
             name.rsplit('.').next().unwrap()
         };
         let arity = match name {
-            "Promise.prototype.then"
+            "Reflect.construct"
+            | "Function.prototype.apply"
+            | "Promise.prototype.then"
             | "parseInt"
             | "Object.create"
             | "Object.defineProperties"
@@ -142,7 +146,10 @@ impl Engine<'_> {
             | "assert.throws"
             | "assert.sameValue"
             | "assert.notSameValue" => 2,
-            "Object.defineProperty" | "Reflect.defineProperty" | "Reflect.set" => 3,
+            "Reflect.apply"
+            | "Object.defineProperty"
+            | "Reflect.defineProperty"
+            | "Reflect.set" => 3,
             "Array.prototype.values"
             | "Array.prototype.keys"
             | "Array.prototype.entries"
@@ -150,6 +157,7 @@ impl Engine<'_> {
             | "Array.prototype.toString"
             | "%ArrayIteratorPrototype%.next"
             | "%IteratorPrototype%.iterator"
+            | "Promise.species"
             | "Array.species"
             | "Symbol"
             | "Function.prototype"
@@ -164,18 +172,18 @@ impl Engine<'_> {
         };
         self.define(
             id,
-            "name",
+            "length",
             Descriptor {
-                value: Some(Value::String(short.into())),
+                value: Some(Value::number(arity as f64)),
                 configurable: Some(true),
                 ..Descriptor::default()
             },
         )?;
         self.define(
             id,
-            "length",
+            "name",
             Descriptor {
-                value: Some(Value::number(arity as f64)),
+                value: Some(Value::String(short.into())),
                 configurable: Some(true),
                 ..Descriptor::default()
             },
@@ -648,6 +656,21 @@ impl Engine<'_> {
         }
         Ok(())
     }
+    fn argument_list(&mut self, value: Value, nullable: bool) -> Result<Vec<Value>> {
+        if nullable && matches!(value, Value::Null | Value::Undefined) {
+            return Ok(vec![]);
+        }
+        let id = self.object_argument(value)?;
+        let length = self.length_of(id)?;
+        let mut args = vec![];
+        for index in 0..length {
+            self.tick()?;
+            let value = self.get_member(Value::Object(id), index.to_string())?;
+            self.protect(&value)?;
+            args.push(value);
+        }
+        Ok(args)
+    }
     pub(super) fn builtin(
         &mut self,
         name: &str,
@@ -682,6 +705,32 @@ impl Engine<'_> {
             return self.assert_builtin(name, args);
         }
         match name {
+            "Reflect.construct" => {
+                let target = arg(0);
+                let new_target = if args.len() > 2 {
+                    arg(2)
+                } else {
+                    target.clone()
+                };
+                if !self.constructible(&target) || !self.constructible(&new_target) {
+                    return self
+                        .throw_error("TypeError", "Reflect.construct requires constructors");
+                }
+                let arguments = self.argument_list(arg(1), false)?;
+                return self.construct_with_new_target(target, arguments, new_target);
+            }
+            "Reflect.apply" | "Function.prototype.apply" => {
+                let (target, this, arguments) = if name == "Reflect.apply" {
+                    (arg(0), arg(1), arg(2))
+                } else {
+                    (receiver, arg(0), arg(1))
+                };
+                if !self.callable(&target) {
+                    return self.throw_error("TypeError", "apply target is not callable");
+                }
+                let values = self.argument_list(arguments, name == "Function.prototype.apply")?;
+                return self.invoke_this(target, this, values);
+            }
             "parseInt" => {
                 let text = self.to_string(arg(0))?;
                 let mut s = text.trim_start_matches(|c: char| {

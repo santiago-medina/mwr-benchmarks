@@ -132,3 +132,53 @@ fn quotas_in_jobs_are_terminal_and_do_not_become_js_rejections() {
     }
     assert!(errors > 0 && successes > 0);
 }
+#[test]
+fn reflected_construction_and_builtin_property_order() {
+    check("const bound=function(){}.bind();Object.defineProperty(bound,'prototype',{get:function(){throw new Test262Error();}});assert.throws(Test262Error,function(){Reflect.construct(Promise,[function(){}],bound);});const keys=Object.getOwnPropertyNames(Promise);assert.sameValue(keys.indexOf('name'),keys.indexOf('length')+1);const C=function(){};const custom={};C.prototype=custom;const p=Reflect.construct(Promise,[function(r){r(8);}],C);assert.sameValue(Object.getPrototypeOf(p),custom);Promise.prototype.then.call(p,function(v){assert.sameValue(v,8);});");
+}
+#[test]
+fn queue_capacity_failure_cancels_roots() {
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.set_microtask_queue_limit(2);
+    assert!(e
+        .execute("function f(){}queueMicrotask(f);queueMicrotask(f);queueMicrotask(f);")
+        .is_err());
+    assert_eq!(
+        (
+            e.pending_microtasks(),
+            e.live_objects(),
+            e.metadata_objects(),
+            e.live_roots()
+        ),
+        (0, 0, 0, 0)
+    );
+}
+#[test]
+fn done_is_latched_and_assertions_in_reactions_are_not_false_passes() {
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.enable_test_harness();
+    e.execute("Promise.resolve().then(function(){$DONE();$DONE('second');});")
+        .unwrap();
+    e.microtask_checkpoint(100).unwrap();
+    assert_eq!(e.async_test_state().0, 2);
+    assert!(e.async_test_state().1.is_some());
+    e.release_globals();
+    e.execute("Promise.resolve().then(function(){assert(false);});")
+        .unwrap();
+    e.microtask_checkpoint(100).unwrap();
+    assert!(e.unhandled_test_failure().is_some());
+    e.release_globals();
+    assert_eq!(e.live_objects(), 0);
+}
+#[test]
+fn a_terminal_public_call_cancels_previously_queued_jobs() {
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.execute("queueMicrotask(function(){});function fail(){const a={};}")
+        .unwrap();
+    e.set_budget(Some(e.charged_bytes()));
+    assert!(e.call_global("fail").is_err());
+    assert_eq!(e.pending_microtasks(), 0);
+    e.set_budget(None);
+    e.release_globals();
+    assert_eq!(e.live_objects(), 0);
+}

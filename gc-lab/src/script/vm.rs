@@ -19,6 +19,18 @@ pub enum ScriptError {
     LoopContinue,
     Thrown(Exception),
 }
+impl ScriptError {
+    pub(super) fn is_terminal(&self) -> bool {
+        matches!(
+            self,
+            Self::Memory(_)
+                | Self::Runtime(_)
+                | Self::Host(_)
+                | Self::Unsupported(_)
+                | Self::Syntax(_)
+        )
+    }
+}
 impl From<Error> for ScriptError {
     fn from(e: Error) -> Self {
         Self::Memory(e)
@@ -109,7 +121,9 @@ pub struct Engine<'host> {
     pub(super) jobs: std::collections::VecDeque<super::promises::QueuedJob>,
     pub(super) next_job: u64,
     pub(super) checkpoint_running: bool,
+    pub(super) microtask_queue_limit: usize,
     pub(super) microtask_errors: Vec<String>,
+    pub(super) unhandled: HashMap<Id, (bool, String)>,
     pub(super) done_count: usize,
     pub(super) done_error: Option<String>,
     stress: bool,
@@ -139,7 +153,9 @@ impl<'host> Engine<'host> {
             jobs: super::promises::empty_queue(),
             next_job: 1,
             checkpoint_running: false,
+            microtask_queue_limit: 10_000,
             microtask_errors: vec![],
+            unhandled: HashMap::new(),
             done_count: 0,
             done_error: None,
             stress: true,
@@ -172,7 +188,9 @@ impl<'host> Engine<'host> {
             jobs: self.jobs,
             next_job: self.next_job,
             checkpoint_running: self.checkpoint_running,
+            microtask_queue_limit: self.microtask_queue_limit,
             microtask_errors: self.microtask_errors,
+            unhandled: self.unhandled,
             done_count: self.done_count,
             done_error: self.done_error,
             stress: self.stress,
@@ -280,6 +298,7 @@ impl<'host> Engine<'host> {
     }
     pub fn release_globals(&mut self) {
         self.cancel_microtasks();
+        self.unhandled.clear();
         if let Some(global) = self.global.take() {
             self.runtime.unroot(global).expect("owned global root");
         }
@@ -294,6 +313,9 @@ impl<'host> Engine<'host> {
             e.protect(&callee)?;
             e.invoke(callee, vec![]).map(|_| ())
         });
+        if result.as_ref().is_err_and(|e| e.is_terminal()) {
+            self.cancel_microtasks();
+        }
         self.collect();
         result
     }
@@ -654,6 +676,17 @@ impl Drop for Frame<'_, '_> {
 /// A VM between native event-loop invocations; it holds no borrowed host context.
 pub struct SuspendedEngine(Engine<'static>);
 impl SuspendedEngine {
+    pub fn pending_microtasks(&self) -> usize {
+        self.0.pending_microtasks()
+    }
+    pub fn cancel_microtasks(&mut self) {
+        self.0.cancel_microtasks();
+        self.0.collect();
+    }
+    pub fn unhandled_rejection_count(&self) -> usize {
+        self.0.unhandled_rejection_count()
+    }
+
     /// Return native edges reachable from real VM roots or ONE native listener.
     /// Read-only: never allocate VM objects, call a host operation or collect.
     pub fn trace_native_edges(&self, listener: Option<u64>) -> Vec<u64> {

@@ -30,7 +30,7 @@ impl Value {
             _ => self == b,
         }
     }
-    fn strict_equal(&self, b: &Self) -> bool {
+    pub(super) fn strict_equal(&self, b: &Self) -> bool {
         match (self, b) {
             (Self::Number(a), Self::Number(b)) => f64::from_bits(*a) == f64::from_bits(*b),
             _ => self == b,
@@ -686,6 +686,14 @@ impl Engine<'_> {
         }
     }
     pub(super) fn construct(&mut self, f: Value, args: Vec<Value>) -> Result<Value> {
+        self.construct_with_new_target(f.clone(), args, f)
+    }
+    pub(super) fn construct_with_new_target(
+        &mut self,
+        f: Value,
+        args: Vec<Value>,
+        new_target: Value,
+    ) -> Result<Value> {
         let Value::Object(id) = f.clone() else {
             return self.throw_error("TypeError", "not a constructor");
         };
@@ -696,12 +704,21 @@ impl Engine<'_> {
                 ..
             }) => {
                 prefix.extend(args);
-                self.construct(target, prefix)
+                self.construct_with_new_target(
+                    target.clone(),
+                    prefix,
+                    if new_target == f { target } else { new_target },
+                )
             }
             Some(Object::Builtin { name, .. }) => {
                 if name == "Promise" {
-                    return self
-                        .promise_constructor(args.first().cloned().unwrap_or(Value::Undefined));
+                    return self.promise_constructor_target(
+                        new_target,
+                        args.first().cloned().unwrap_or(Value::Undefined),
+                    );
+                }
+                if new_target != f {
+                    return Err(ScriptError::Unsupported("custom newTarget for builtin"));
                 }
                 if matches!(name.as_str(), "String" | "Number" | "Boolean") {
                     let v = self.builtin(&name, Value::Undefined, args)?;
@@ -721,7 +738,7 @@ impl Engine<'_> {
                 kind: FunctionKind::Ordinary,
                 ..
             }) => {
-                let p = self.get_member(f.clone(), "prototype")?;
+                let p = self.get_member(new_target, "prototype")?;
                 let p = if let Value::Object(p) = p {
                     p
                 } else {

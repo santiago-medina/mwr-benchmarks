@@ -24,11 +24,34 @@ fn main() {
     let path = args
         .next()
         .expect("js_check CASE.js [expected runtime error]");
-    let negative = args.next();
+    let remaining: Vec<_> = args.collect();
+    let asynchronous = remaining.iter().any(|s| s == "--async");
+    let negative = remaining.into_iter().find(|s| s != "--async");
     let source = std::fs::read_to_string(path).expect("source");
     let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
     e.enable_test_harness();
-    let result = e.execute(&format!("\"use strict\";\n{source}"));
+    let mut result = e.execute(&format!("\"use strict\";\n{source}"));
+    if result.is_ok() {
+        result = e.microtask_checkpoint(10_000).map(|_| ());
+    }
+    let (done, error) = e.async_test_state();
+    let harness_error = if result.is_err() {
+        None
+    } else if let Some(error) = error {
+        Some(format!("$DONE: {error}"))
+    } else if asynchronous && done != 1 {
+        Some(format!("expected one $DONE, got {done}"))
+    } else if let Some(error) = e.unhandled_test_failure() {
+        Some(error)
+    } else {
+        let errors = e.take_microtask_errors();
+        if errors.is_empty() {
+            None
+        } else {
+            Some(format!("microtask errors: {errors:?}"))
+        }
+    };
+
     let assertions = e.assertion_count();
     e.release_globals();
     let clean = e.live_objects() == 0
@@ -37,6 +60,8 @@ fn main() {
         && e.charged_bytes() == 0;
     let (status, reason) = if !clean {
         ("failed", "GC cleanup failed".into())
+    } else if let Some(error) = harness_error {
+        ("failed", error)
     } else {
         match (result, negative) {
             (Err(ScriptError::Syntax(s)), _) => ("unsupported", format!("syntax: {}", s.message)),

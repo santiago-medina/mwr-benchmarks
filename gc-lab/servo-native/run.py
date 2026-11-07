@@ -20,13 +20,16 @@ def main():
     parser.add_argument('--after', default='Funciona')
     parser.add_argument('--target', default='#button')
     parser.add_argument('--steps', type=json.loads, help='JSON list of [click selector, expected target text]')
+    parser.add_argument('--require-microtasks', action='store_true')
+    parser.add_argument('--gc-between-microtasks', action='store_true')
+    parser.add_argument('--observer-probe', action='store_true')
     args = parser.parse_args()
     binary = args.servo.resolve()
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     fixture = args.fixture.read_text()
     # The fixture contains exactly one experimental script and no ordinary JS.
-    assert fixture.count('<script') == 1
+    assert fixture.count('<script') == (2 if args.observer_probe else 1)
     assert 'application/x-mwr-js' in fixture
     scenarios = [
         ('disabled', False, True, fixture),
@@ -54,6 +57,9 @@ def main():
             env.pop('MWR_NATIVE_TEST_STEPS', None)
             if args.steps is not None:
                 env['MWR_NATIVE_TEST_STEPS'] = json.dumps(args.steps)
+            env.pop('MWR_NATIVE_MICROTASK_GC_STRESS', None)
+            if args.gc_between_microtasks:
+                env['MWR_NATIVE_MICROTASK_GC_STRESS'] = '1'
             if enabled:
                 env['MWR_NATIVE_JS'] = '1'
             if self_test:
@@ -70,6 +76,12 @@ def main():
             assert image.exists() and image.stat().st_size > 1000, (name, 'missing render')
             executed = log.count('MWR_NATIVE_EXECUTED')
             callbacks = log.count('MWR_NATIVE_CALLBACK')
+            microtasks = log.count('MWR_NATIVE_MICROTASK\n')
+            microtask_collections = log.count('MWR_NATIVE_MICROTASK_GC\n')
+            if name == 'callback' and args.require_microtasks:
+                assert microtasks > 0, log
+                if args.gc_between_microtasks:
+                    assert microtask_collections == microtasks, log
             errors = [line for line in log.splitlines() if line.startswith('MWR_NATIVE_ERROR ')]
             proofs = [json.loads(line.removeprefix('MWR_NATIVE_PROOF '))
                       for line in log.splitlines() if line.startswith('MWR_NATIVE_PROOF ')]
@@ -83,7 +95,7 @@ def main():
                 if args.steps is not None:
                     expected_proof['steps'] = args.steps
                 assert proofs[0] == expected_proof
-            results[name] = dict(executions=executed, callbacks=callbacks,
+            results[name] = dict(executions=executed, callbacks=callbacks, microtasks=microtasks, microtask_collections=microtask_collections,
                                  errors=errors, proofs=proofs)
     report = dict(
         servo_revision='aac43a3f31a259f04a574f5ec4e959c943ad7cc7',
@@ -93,6 +105,7 @@ def main():
         module_sha256=hashlib.file_digest((HERE / 'mwr.rs').open('rb'), 'sha256').hexdigest(),
         fixture_sha256=hashlib.sha256(fixture.encode()).hexdigest(),
         in_process=True, webdriver=False, javascript_transport=False,
+        observation_only_spidermonkey_probe=args.observer_probe,
         input='Rust HTMLElement::Click; synthetic, not hardware input',
         scenarios=results,
     )

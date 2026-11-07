@@ -1,0 +1,35 @@
+{
+  "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
+  "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
+  "implementation_sha256": "e2d6541059e621b579bca34577f347dd433d682917b1d6fa5b65704de956d578",
+  "runner_sha256": "fa494606d2d382404f9408c32ee0ea3e4a6a3c57e283f365cd7e96067e1039f2",
+  "new_failures": [],
+  "variant": "strict script only; standard strict prefix; original test body",
+  "profile": "promises",
+  "scopes": [
+    "built-ins/Promise/*.js",
+    "built-ins/Promise/resolve",
+    "built-ins/Promise/reject",
+    "built-ins/Promise/prototype/then",
+    "built-ins/Promise/prototype/catch",
+    "built-ins/Promise/prototype/finally"
+  ],
+  "total": 221,
+  "counts": {
+    "passed": 125,
+    "unsupported": 96
+  },
+  "assertions": 123,
+  "regressions": [],
+  "unsupported_reasons": {
+    "unsupported harness includes: isConstructor.js": 12,
+    "syntax: expected semicolon": 27,
+    "unsupported execution flags: noStrict": 1,
+    "unsupported harness includes: propertyHelper.js": 24,
+    "standard intrinsic not implemented": 4,
+    "syntax: unsupported reserved expression": 12,
+    "unsupported harness includes: promiseHelper.js": 14,
+    "unsupported execution flags: async,noStrict": 2
+  },
+  "failures": []
+}

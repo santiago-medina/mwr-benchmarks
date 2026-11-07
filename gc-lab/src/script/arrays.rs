@@ -308,6 +308,27 @@ impl Engine<'_> {
         self.protect(&Value::Object(id))?;
         let length = self.length_of(id)?;
         match name {
+            "Array.prototype.indexOf" => {
+                let n = self.to_number(arg(1))?;
+                let n = if n.is_nan() { 0.0 } else { n.trunc() };
+                if n >= length as f64 {
+                    return Ok(Value::number(-1.0));
+                }
+                let mut at = if n < 0.0 {
+                    (length as f64 + n).max(0.0) as u64
+                } else {
+                    n as u64
+                };
+                while let Some(index) = self.next_present_index(id, at, length)? {
+                    self.tick()?;
+                    at = index + 1;
+                    let value = self.get_member(Value::Object(id), index.to_string())?;
+                    if value.strict_equal(&arg(0)) {
+                        return Ok(Value::number(index as f64));
+                    }
+                }
+                Ok(Value::number(-1.0))
+            }
             "Array.prototype.push" => {
                 if length + args.len() as u64 > 9007199254740991 {
                     return self.throw_error("TypeError", "length exceeds safe integer");

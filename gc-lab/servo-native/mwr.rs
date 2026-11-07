@@ -5,10 +5,12 @@ use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-use crate::JSTraceable;
+use crate::{JSTraceable,DomTypeHolder};
+use script_bindings::settings_stack::run_a_script;
+use crate::runtime::job_queue::MicrotaskRunnable;
 use gc_lab::Model;
 use gc_lab::script::{DomAdapter, Engine, SuspendedEngine};
 use js::context::JSContext;
@@ -217,6 +219,10 @@ impl Drop for NativeAdapter<'_> {
     }
 }
 impl DomAdapter for NativeAdapter<'_> {
+    fn queue_microtask(&mut self,serial:u64)->Result<()> {
+        let doc=self.registry.borrow().document()?;
+        doc.global().enqueue_microtask(self.cx,Box::new(MwrMicrotask{pipeline:doc.window().pipeline_id(),serial}));Ok(())
+    }
     fn traces_native_edges(&self) -> bool {
         true
     }
@@ -297,10 +303,10 @@ fn session(window: &Window) -> Option<Rc<Session>> {
     SESSIONS.with(|s| s.borrow().get(&window.pipeline_id()).cloned())
 }
 pub(crate) fn execute(cx: &mut JSContext, doc: &Document, source: &str) {
-    if let Err(error) = execute_inner(cx, doc, source) {
-        eprintln!("MWR_NATIVE_ERROR {error}");
-        clear(doc.window());
-    }
+    let global=doc.global();
+    run_a_script::<DomTypeHolder,_,_>(cx,&global,|cx|{
+        if let Err(error)=execute_inner(cx,doc,source){eprintln!("MWR_NATIVE_ERROR {error}");clear(doc.window());}
+    });
 }
 fn execute_inner(cx: &mut JSContext, doc: &Document, source: &str) -> Result<()> {
     let window = doc.window();
@@ -350,7 +356,10 @@ fn execute_inner(cx: &mut JSContext, doc: &Document, source: &str) -> Result<()>
     }
     Ok(())
 }
-pub(crate) fn dispatch(cx: &mut JSContext, target: &EventTarget, id: u64) -> Result<()> {
+pub(crate) fn dispatch(cx: &mut JSContext,target:&EventTarget,id:u64)->Result<()> {
+    let global=target.global();run_a_script::<DomTypeHolder,_,_>(cx,&global,|cx|dispatch_inner(cx,target,id))
+}
+fn dispatch_inner(cx: &mut JSContext, target: &EventTarget, id: u64) -> Result<()> {
     let global = target.global();
     let window = global.downcast::<Window>().ok_or("not a window")?;
     let state = session(window).ok_or("no native session")?;
@@ -468,4 +477,43 @@ fn collect_joint(cx: &mut JSContext, window: &Window) -> Result<()> {
         }
     }
     Ok(())
+}
+
+// Host queue entries hold only stable numeric IDs, never DOM roots or VM pointers.
+thread_local! {static MWR_MICROTASKS:Cell<usize>=const{Cell::new(0)};}
+static STALE_MICROTASKS:AtomicUsize=AtomicUsize::new(0);
+fn stale_microtask_count()->usize{STALE_MICROTASKS.load(Ordering::Acquire)}
+pub(crate) fn begin_microtask_checkpoint(){MWR_MICROTASKS.with(|n|n.set(0));}
+#[derive(MallocSizeOf)]
+struct MwrMicrotask{pipeline:PipelineId,serial:u64}
+#[expect(unsafe_code)]
+unsafe impl JSTraceable for MwrMicrotask{
+    // Both fields are plain identifiers. Managed edges live in the rooted VM job.
+    unsafe fn trace(&self,_:*mut JSTracer){}
+}
+impl MicrotaskRunnable for MwrMicrotask{
+    fn handler(&self,cx:&mut JSContext){
+        let Some(state)=SESSIONS.with(|s|s.borrow().get(&self.pipeline).cloned())else{STALE_MICROTASKS.fetch_add(1,Ordering::AcqRel);eprintln!("MWR_NATIVE_STALE_MICROTASK");return};
+        let count=MWR_MICROTASKS.with(|n|{let count=n.get()+1;n.set(count);count});
+        if count>10_000{if let Some(engine)=state.engine.borrow_mut().as_mut(){engine.cancel_microtasks();}if count==10_001{eprintln!("MWR_NATIVE_ERROR microtask checkpoint limit");}return;}
+        let doc=match state.registry.borrow().document(){Ok(doc)=>doc,Err(_)=>return};
+        if std::env::var_os("MWR_NATIVE_MICROTASK_GC_STRESS").is_some_and(|s|s=="1") {
+            let mut realm=crate::realms::enter_auto_realm(cx,doc.window());
+            if let Err(error)=collect_joint(&mut realm.current_realm(),doc.window()){eprintln!("MWR_NATIVE_ERROR microtask GC: {error}");return;}
+            eprintln!("MWR_NATIVE_MICROTASK_GC");
+        }
+        let global=doc.global();
+        run_a_script::<DomTypeHolder,_,_>(cx,&global,|cx|{
+            let mut realm=crate::realms::enter_auto_realm(cx,&*global);
+            let dormant=state.engine.borrow_mut().take();
+            let Some(dormant)=dormant else{eprintln!("MWR_NATIVE_ERROR microtask ran during active VM");return};
+            let mut context=realm.current_realm();
+            let mut engine=dormant.resume(Box::new(NativeAdapter::new(&mut context,state.registry.clone())));
+            let result=engine.run_one_microtask(Some(self.serial));
+            for error in engine.take_microtask_errors(){eprintln!("MWR_NATIVE_MICROTASK_ERROR {error}");}
+            *state.engine.borrow_mut()=Some(engine.suspend());
+            match result{Ok(true)=>eprintln!("MWR_NATIVE_MICROTASK"),Ok(false)=>{},Err(error)=>eprintln!("MWR_NATIVE_ERROR {error:?}")}
+            queue_collection(&doc);
+        });
+    }
 }

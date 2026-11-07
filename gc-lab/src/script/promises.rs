@@ -156,6 +156,9 @@ pub(super) struct QueuedJob {
     pub root: ExternalRoot,
 }
 impl Engine<'_> {
+    pub fn set_microtask_queue_limit(&mut self, limit: usize) {
+        self.microtask_queue_limit = limit;
+    }
     pub fn pending_microtasks(&self) -> usize {
         self.jobs.len()
     }
@@ -213,6 +216,14 @@ impl Engine<'_> {
                 .ok_or(ScriptError::Runtime("missing job record"))?;
             e.run_job(job)
         });
+        let result = match result {
+            Err(ScriptError::Thrown(e)) => {
+                self.microtask_errors
+                    .push(format!("{:?}: {}", e.name, e.message));
+                Ok(())
+            }
+            other => other,
+        };
         if result.is_err() {
             self.cancel_microtasks();
         }
@@ -220,16 +231,19 @@ impl Engine<'_> {
         result.map(|_| true)
     }
     pub(super) fn enqueue_job(&mut self, job: Job) -> Result<()> {
+        if self.jobs.len() >= self.microtask_queue_limit {
+            return Err(ScriptError::Runtime("pending microtask limit"));
+        }
+        let serial = self.next_job;
+        let next_job = serial
+            .checked_add(1)
+            .ok_or(ScriptError::Runtime("job serial limit"))?;
         let id = self.new_object(None)?;
         let mut data = Data::new(None);
         data.job = Some(job);
         self.replace_data(id, data)?;
         let root = self.runtime.root(id)?;
-        let serial = self.next_job;
-        self.next_job = self
-            .next_job
-            .checked_add(1)
-            .ok_or(ScriptError::Runtime("job serial limit"))?;
+        self.next_job = next_job;
         self.jobs.push_back(QueuedJob { serial, root });
         if let Some(adapter) = self.adapter.as_mut() {
             if let Err(error) = adapter.queue_microtask(serial) {
@@ -300,8 +314,20 @@ impl Engine<'_> {
     pub fn async_test_state(&self) -> (usize, Option<&str>) {
         (self.done_count, self.done_error.as_deref())
     }
+    pub fn unhandled_test_failure(&self) -> Option<String> {
+        self.unhandled
+            .values()
+            .find(|(failure, _)| *failure)
+            .map(|(_, message)| message.clone())
+    }
     pub fn unhandled_rejection_count(&self) -> usize {
-        self.objects.values().filter(|o|matches!(o,Object::Ordinary(d)if matches!(d.promise.as_ref(),Some(PromiseState{state:State::Rejected(_),handled:false,..})))).count()
+        self.unhandled.len()
+    }
+    pub fn take_unhandled_rejections(&mut self) -> Vec<String> {
+        self.unhandled
+            .drain()
+            .map(|(_, (_, message))| message)
+            .collect()
     }
     fn internal_function(&mut self, action: Internal, length: usize) -> Result<Value> {
         let id = self.new_object(Some(self.intrinsics.as_ref().unwrap().function))?;
@@ -355,11 +381,21 @@ impl Engine<'_> {
         let reject = self.internal_function(Internal::Resolve { cell, reject: true }, 1)?;
         Ok((resolve, reject))
     }
-    pub(super) fn promise_constructor(&mut self, executor: Value) -> Result<Value> {
+    pub(super) fn promise_constructor_target(
+        &mut self,
+        new_target: Value,
+        executor: Value,
+    ) -> Result<Value> {
         if !self.callable(&executor) {
             return self.throw_error("TypeError", "promise executor is not callable");
         }
-        let id = self.new_object(Some(self.intrinsics.as_ref().unwrap().promise))?;
+        let proto = self.get_member(new_target, "prototype")?;
+        let proto = if let Value::Object(id) = proto {
+            id
+        } else {
+            self.intrinsics.as_ref().unwrap().promise
+        };
+        let id = self.new_object(Some(proto))?;
         self.protect(&Value::Object(id))?;
         let mut data = self.data(id)?.clone();
         data.promise = Some(PromiseState {
@@ -434,6 +470,17 @@ impl Engine<'_> {
             State::Fulfilled(value)
         };
         self.replace_data(id, data)?;
+        if reject && !self.data(id)?.promise.as_ref().unwrap().handled {
+            let State::Rejected(value) = &self.data(id)?.promise.as_ref().unwrap().state else {
+                unreachable!()
+            };
+            let assertion = matches!(value,Value::Object(error)if self.data(*error).is_ok_and(|d|d.error_class.as_deref()==Some("Test262Error")));
+            let diagnostic = format!("{:?}", self.thrown(value.clone()));
+            if self.unhandled.len() >= self.microtask_queue_limit {
+                return Err(ScriptError::Runtime("unhandled rejection diagnostic limit"));
+            }
+            self.unhandled.insert(id, (assertion, diagnostic));
+        }
         for job in jobs {
             self.enqueue_job(job)?;
         }
@@ -490,7 +537,9 @@ impl Engine<'_> {
             return self.throw_error("TypeError", "promise constructor is not object");
         }
         if let Value::Object(id) = value {
-            if self.data(id)?.promise.is_some() {
+            if !matches!(self.objects.get(&id), Some(Object::Node { .. }))
+                && self.data(id)?.promise.is_some()
+            {
                 let c = self.get_member(Value::Object(id), "constructor")?;
                 if c.same_value(&constructor) {
                     return Ok(Value::Object(id));
@@ -638,6 +687,7 @@ impl Engine<'_> {
                     }),
                 };
                 self.replace_data(id, data)?;
+                self.unhandled.remove(&id);
                 if let Some(job) = job {
                     self.enqueue_job(job)?;
                 }

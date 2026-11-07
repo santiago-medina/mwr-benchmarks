@@ -14,3 +14,7 @@ conformance/results/cases.json
 /conformance/results-arrays/cases.json
 
 /native-task-results/
+
+/conformance/results-promises/cases.json
+/native-promise-results/
+/native-microtask-interop-results/

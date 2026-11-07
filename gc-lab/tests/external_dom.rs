@@ -433,3 +433,17 @@ fn each_external_event_gets_a_fresh_execution_budget() {
     e.release_globals();
     assert_eq!(e.live_objects(), 0);
 }
+#[test]
+fn queued_job_alone_keeps_a_foreign_node_then_releases_it() {
+    let (mut e, state) = engine();
+    e.enable_test_harness();
+    e.execute("function make(){const node=document.createElement('span');node.textContent='kept';Promise.resolve(node).then(function(n){assert.sameValue(n.textContent,'kept');n.textContent='done';});}make();").unwrap();
+    e.collect();
+    assert!(state.borrow().leases.contains(&11));
+    e.microtask_checkpoint(100).unwrap();
+    assert_eq!(e.assertion_count(), 1);
+    assert_eq!(state.borrow().text[&11], "done");
+    assert!(!state.borrow().leases.contains(&11));
+    e.release_globals();
+    assert_eq!((e.live_objects(), e.live_roots()), (0, 0));
+}
