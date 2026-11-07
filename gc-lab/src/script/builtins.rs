@@ -13,7 +13,7 @@ pub(super) struct Intrinsics {
     pub promise: Id,
     pub array_iterator: Id,
     pub function: Id,
-    pub async_function:Id,
+    pub async_function: Id,
     pub global: Id,
     pub functions: HashMap<String, Id>,
     pub errors: HashMap<String, Id>,
@@ -203,16 +203,37 @@ impl Engine<'_> {
             promise: object,
             array_iterator: object,
             function,
-            async_function:function,
+            async_function: function,
             global,
             functions: HashMap::new(),
             errors: HashMap::new(),
         });
-        let async_function=self.new_object(Some(function))?;self.runtime.link(env,async_function)?;self.intrinsics.as_mut().unwrap().async_function=async_function;
-        let async_constructor=self.intrinsic_function(env,"AsyncFunction",Some(function))?;
-        self.hidden(async_function,"constructor",Value::Object(async_constructor))?;
-        self.define(async_constructor,"prototype",Descriptor{value:Some(Value::Object(async_function)),..Descriptor::default()})?;
-        self.define(async_function,super::objects::Key::Symbol(1),Descriptor{value:Some(Value::String("AsyncFunction".into())),configurable:Some(true),..Descriptor::default()})?;
+        let async_function = self.new_object(Some(function))?;
+        self.runtime.link(env, async_function)?;
+        self.intrinsics.as_mut().unwrap().async_function = async_function;
+        let async_constructor = self.intrinsic_function(env, "AsyncFunction", Some(function))?;
+        self.hidden(
+            async_function,
+            "constructor",
+            Value::Object(async_constructor),
+        )?;
+        self.define(
+            async_constructor,
+            "prototype",
+            Descriptor {
+                value: Some(Value::Object(async_function)),
+                ..Descriptor::default()
+            },
+        )?;
+        self.define(
+            async_function,
+            super::objects::Key::Symbol(1),
+            Descriptor {
+                value: Some(Value::String("AsyncFunction".into())),
+                configurable: Some(true),
+                ..Descriptor::default()
+            },
+        )?;
         let array = self.array_with_proto(0, object)?;
         self.runtime.link(env, array)?;
         self.intrinsics.as_mut().unwrap().array = array;

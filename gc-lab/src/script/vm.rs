@@ -103,7 +103,7 @@ pub(super) enum Object {
     },
     Closure {
         kind: FunctionKind,
-        program:Option<std::sync::Arc<super::asynchronous::Program>>,
+        program: Option<std::sync::Arc<super::asynchronous::Program>>,
         data: Data,
         environment: Id,
         params: Vec<String>,
@@ -418,7 +418,7 @@ impl<'host> Engine<'host> {
                         mutable.insert(n.clone());
                     }
                 }
-                Stmt::Function(n, ..)|Stmt::AsyncFunction(n,..) => {
+                Stmt::Function(n, ..) | Stmt::AsyncFunction(n, ..) => {
                     bindings.insert(n.clone(), Some(Value::Undefined));
                     mutable.insert(n.clone());
                 }
@@ -478,7 +478,7 @@ impl<'host> Engine<'host> {
             vars(body, &mut names);
             object_bindings.extend(names);
             for s in body {
-                if let Stmt::Function(n, ..)|Stmt::AsyncFunction(n,..) = s {
+                if let Stmt::Function(n, ..) | Stmt::AsyncFunction(n, ..) = s {
                     object_bindings.insert(n.clone());
                 }
             }

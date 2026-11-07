@@ -49,14 +49,19 @@ impl PromiseState {
         for r in &self.reactions {
             values.extend(r.fulfilled.clone());
             values.extend(r.rejected.clone());
-            if let Some(cap) = &r.capability{values.extend(cap.values());}
+            if let Some(cap) = &r.capability {
+                values.extend(cap.values());
+            }
         }
         values.iter().filter_map(Value::id).collect()
     }
 }
 #[derive(Clone)]
 pub(super) enum Internal {
-    AsyncResume {activation:Id,reject:bool},
+    AsyncResume {
+        activation: Id,
+        reject: bool,
+    },
     Resolve {
         cell: Id,
         reject: bool,
@@ -77,7 +82,7 @@ pub(super) enum Internal {
 impl Internal {
     pub fn edges(&self) -> Vec<Id> {
         match self {
-            Self::AsyncResume{activation,..}=>vec![*activation],
+            Self::AsyncResume { activation, .. } => vec![*activation],
             Self::Resolve { cell, .. } | Self::Capability { cell } => vec![*cell],
             Self::Finally {
                 handler,
@@ -134,7 +139,9 @@ impl Job {
             } => {
                 let mut values = vec![argument.clone()];
                 values.extend(handler.clone());
-                if let Some(cap) = capability{values.extend(cap.values());}
+                if let Some(cap) = capability {
+                    values.extend(cap.values());
+                }
                 values
             }
             Self::Thenable {
@@ -272,10 +279,21 @@ impl Engine<'_> {
                 } else {
                     Ok(argument)
                 };
-                if let Some(capability)=capability {match outcome {
-                    Ok(v)=>{self.protect(&v)?;self.invoke(capability.resolve,vec![v])?;},
-                    Err(ScriptError::Thrown(e))=>{self.protect(&e.value)?;self.invoke(capability.reject,vec![e.value])?;},Err(e)=>return Err(e)
-                }}else{outcome?;}
+                if let Some(capability) = capability {
+                    match outcome {
+                        Ok(v) => {
+                            self.protect(&v)?;
+                            self.invoke(capability.resolve, vec![v])?;
+                        }
+                        Err(ScriptError::Thrown(e)) => {
+                            self.protect(&e.value)?;
+                            self.invoke(capability.reject, vec![e.value])?;
+                        }
+                        Err(e) => return Err(e),
+                    }
+                } else {
+                    outcome?;
+                }
                 Ok(())
             }
             Job::Thenable {
@@ -548,7 +566,9 @@ impl Engine<'_> {
     pub(super) fn promise_internal(&mut self, action: Internal, args: Vec<Value>) -> Result<Value> {
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Undefined);
         match action {
-            Internal::AsyncResume{activation,reject}=>self.resume_async(activation,arg(0),reject),
+            Internal::AsyncResume { activation, reject } => {
+                self.resume_async(activation, arg(0), reject)
+            }
             Internal::Resolve { cell, reject } => {
                 let mut data = self.data(cell)?.clone();
                 let Some(Cell::Resolving { promise, resolved }) = data.cell.as_mut() else {
@@ -609,11 +629,48 @@ impl Engine<'_> {
             }
         }
     }
-    pub(super) fn attach_reaction(&mut self,id:Id,fulfilled:Option<Value>,rejected:Option<Value>,capability:Option<Capability>)->Result<()> {
-        let reaction=Reaction{fulfilled,rejected,capability};
-        let mut data=self.data(id)?.clone();let p=data.promise.as_mut().ok_or(ScriptError::Runtime("missing promise record"))?;p.handled=true;
-        let job=match &p.state {State::Pending=>{p.reactions.push(reaction);None},State::Fulfilled(v)=>Some(Job::Reaction{handler:reaction.fulfilled,argument:v.clone(),reject:false,capability:reaction.capability}),State::Rejected(v)=>Some(Job::Reaction{handler:reaction.rejected,argument:v.clone(),reject:true,capability:reaction.capability})};
-        self.replace_data(id,data)?;self.unhandled.remove(&id);if let Some(job)=job{self.enqueue_job(job)?;}Ok(())
+    pub(super) fn attach_reaction(
+        &mut self,
+        id: Id,
+        fulfilled: Option<Value>,
+        rejected: Option<Value>,
+        capability: Option<Capability>,
+    ) -> Result<()> {
+        let reaction = Reaction {
+            fulfilled,
+            rejected,
+            capability,
+        };
+        let mut data = self.data(id)?.clone();
+        let p = data
+            .promise
+            .as_mut()
+            .ok_or(ScriptError::Runtime("missing promise record"))?;
+        p.handled = true;
+        let job = match &p.state {
+            State::Pending => {
+                p.reactions.push(reaction);
+                None
+            }
+            State::Fulfilled(v) => Some(Job::Reaction {
+                handler: reaction.fulfilled,
+                argument: v.clone(),
+                reject: false,
+                capability: reaction.capability,
+            }),
+            State::Rejected(v) => Some(Job::Reaction {
+                handler: reaction.rejected,
+                argument: v.clone(),
+                reject: true,
+                capability: reaction.capability,
+            }),
+        };
+        self.replace_data(id, data)?;
+        self.unhandled.remove(&id);
+        if let Some(job) = job {
+            self.enqueue_job(job)?;
+        }
+        Ok(())
     }
     pub(super) fn promise_builtin(
         &mut self,
@@ -654,7 +711,20 @@ impl Engine<'_> {
                 }
                 let c = self.species(receiver)?;
                 let cap = self.capability(c)?;
-                self.attach_reaction(id,if self.callable(&arg(0)){Some(arg(0))}else{None},if self.callable(&arg(1)){Some(arg(1))}else{None},Some(cap.clone()))?;
+                self.attach_reaction(
+                    id,
+                    if self.callable(&arg(0)) {
+                        Some(arg(0))
+                    } else {
+                        None
+                    },
+                    if self.callable(&arg(1)) {
+                        Some(arg(1))
+                    } else {
+                        None
+                    },
+                    Some(cap.clone()),
+                )?;
                 Ok(cap.promise)
             }
             "Promise.prototype.catch" => {

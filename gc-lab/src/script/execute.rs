@@ -103,7 +103,14 @@ impl Engine<'_> {
         };
         let id = self.allocate(Domain::Js, -400)?;
         self.runtime.link(id, env)?;
-        let program=if matches!(kind,FunctionKind::Async|FunctionKind::AsyncArrow|FunctionKind::AsyncMethod){Some(super::asynchronous::compile(body)?)}else{None};
+        let program = if matches!(
+            kind,
+            FunctionKind::Async | FunctionKind::AsyncArrow | FunctionKind::AsyncMethod
+        ) {
+            Some(super::asynchronous::compile(body)?)
+        } else {
+            None
+        };
         self.objects.insert(
             id,
             Object::Closure {
@@ -118,7 +125,16 @@ impl Engine<'_> {
         self.protect(&Value::Object(id))?;
         self.replace_data(
             id,
-            Data::new(Some(if matches!(kind,FunctionKind::Async|FunctionKind::AsyncArrow|FunctionKind::AsyncMethod){self.intrinsics.as_ref().unwrap().async_function}else{self.intrinsics.as_ref().unwrap().function})),
+            Data::new(Some(
+                if matches!(
+                    kind,
+                    FunctionKind::Async | FunctionKind::AsyncArrow | FunctionKind::AsyncMethod
+                ) {
+                    self.intrinsics.as_ref().unwrap().async_function
+                } else {
+                    self.intrinsics.as_ref().unwrap().function
+                },
+            )),
         )?;
         self.define(
             id,
@@ -168,10 +184,14 @@ impl Engine<'_> {
         }
         Ok(Value::Object(id))
     }
-    pub(super) fn hoist_functions(&mut self,body:&[Stmt],env:Id)->Result<()> {
+    pub(super) fn hoist_functions(&mut self, body: &[Stmt], env: Id) -> Result<()> {
         for s in body {
-            if let Stmt::Function(n, p, b)|Stmt::AsyncFunction(n,p,b) = s {
-                let kind=if matches!(s,Stmt::AsyncFunction(..)){FunctionKind::Async}else{FunctionKind::Ordinary};
+            if let Stmt::Function(n, p, b) | Stmt::AsyncFunction(n, p, b) = s {
+                let kind = if matches!(s, Stmt::AsyncFunction(..)) {
+                    FunctionKind::Async
+                } else {
+                    FunctionKind::Ordinary
+                };
                 let f = self.make_function(env, Some(n), p, b, kind, false)?;
                 self.initialize(env, n, f)?;
             }
@@ -184,7 +204,7 @@ impl Engine<'_> {
         env: Id,
         can_return: bool,
     ) -> Result<Option<Value>> {
-        self.hoist_functions(body,env)?;
+        self.hoist_functions(body, env)?;
         for s in body {
             self.tick()?;
             let completion = self.frame(|e| e.statement(s, env, can_return))?;
@@ -199,7 +219,12 @@ impl Engine<'_> {
         self.protect(&Value::Object(local))?;
         self.block(body, local, can_return)
     }
-    pub(super) fn statement(&mut self, s: &Stmt, env: Id, can_return: bool) -> Result<Option<Value>> {
+    pub(super) fn statement(
+        &mut self,
+        s: &Stmt,
+        env: Id,
+        can_return: bool,
+    ) -> Result<Option<Value>> {
         match s {
             Stmt::Const(n, x) | Stmt::Let(n, x) => {
                 let v = self.eval(x, env)?;
@@ -220,7 +245,7 @@ impl Engine<'_> {
                 iterable,
                 body,
             } => return self.for_of(kind, name, iterable, body, env, can_return),
-            Stmt::Function(..)|Stmt::AsyncFunction(..) => {}
+            Stmt::Function(..) | Stmt::AsyncFunction(..) => {}
             Stmt::Expr(x) => {
                 self.eval(x, env)?;
             }
@@ -435,9 +460,27 @@ impl Engine<'_> {
                 },
                 name.is_some(),
             ),
-            Expr::Await(_)=>Err(ScriptError::Runtime("await requires continuation")),
-            Expr::AsyncArrow{params,body}=>self.make_function(env,None,params,body,FunctionKind::AsyncArrow,false),
-            Expr::AsyncFunction{name,params,body,method}=>self.make_function(env,name.as_deref(),params,body,if *method{FunctionKind::AsyncMethod}else{FunctionKind::Async},name.is_some()),
+            Expr::Await(_) => Err(ScriptError::Runtime("await requires continuation")),
+            Expr::AsyncArrow { params, body } => {
+                self.make_function(env, None, params, body, FunctionKind::AsyncArrow, false)
+            }
+            Expr::AsyncFunction {
+                name,
+                params,
+                body,
+                method,
+            } => self.make_function(
+                env,
+                name.as_deref(),
+                params,
+                body,
+                if *method {
+                    FunctionKind::AsyncMethod
+                } else {
+                    FunctionKind::Async
+                },
+                name.is_some(),
+            ),
             Expr::Array(elements) => {
                 let id = self.new_array(elements.len() as u32)?;
                 self.protect(&Value::Object(id))?;
@@ -497,61 +540,67 @@ impl Engine<'_> {
             },
         }
     }
-    fn eval_object(&mut self,props:&[(String,Literal)],env:Id)->Result<Value>{let id=self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;self.protect(&Value::Object(id))?;for(k,p)in props{self.literal_property(id,k,p,env)?;}Ok(Value::Object(id))}
-    pub(super) fn literal_property(&mut self,id:Id,k:&str,p:&Literal,env:Id)->Result<()> {
-            let d = match p {
-                Literal::Prototype(x) => {
-                    let v = self.eval(x, env)?;
-                    match v {
-                        Value::Object(p) => {
-                            self.set_prototype(id, Some(p))?;
-                        }
-                        Value::Null => {
-                            self.set_prototype(id, None)?;
-                        }
-                        _ => {}
+    fn eval_object(&mut self, props: &[(String, Literal)], env: Id) -> Result<Value> {
+        let id = self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;
+        self.protect(&Value::Object(id))?;
+        for (k, p) in props {
+            self.literal_property(id, k, p, env)?;
+        }
+        Ok(Value::Object(id))
+    }
+    pub(super) fn literal_property(&mut self, id: Id, k: &str, p: &Literal, env: Id) -> Result<()> {
+        let d = match p {
+            Literal::Prototype(x) => {
+                let v = self.eval(x, env)?;
+                match v {
+                    Value::Object(p) => {
+                        self.set_prototype(id, Some(p))?;
                     }
-                    return Ok(());
-                }
-                Literal::Value(x) => {
-                    let v = self.eval(x, env)?;
-                    self.protect(&v)?;
-                    Descriptor {
-                        value: Some(v),
-                        writable: Some(true),
-                        enumerable: Some(true),
-                        configurable: Some(true),
-                        ..Descriptor::default()
+                    Value::Null => {
+                        self.set_prototype(id, None)?;
                     }
+                    _ => {}
                 }
-                Literal::Getter(b) => {
-                    let f =
-                        self.make_function(env, Some(k), &[], b, FunctionKind::Method, false)?;
-                    Descriptor {
-                        get: Some(f),
-                        enumerable: Some(true),
-                        configurable: Some(true),
-                        ..Descriptor::default()
-                    }
+                return Ok(());
+            }
+            Literal::Value(x) => {
+                let v = self.eval(x, env)?;
+                self.protect(&v)?;
+                Descriptor {
+                    value: Some(v),
+                    writable: Some(true),
+                    enumerable: Some(true),
+                    configurable: Some(true),
+                    ..Descriptor::default()
                 }
-                Literal::Setter(n, b) => {
-                    let f = self.make_function(
-                        env,
-                        Some(k),
-                        std::slice::from_ref(n),
-                        b,
-                        FunctionKind::Method,
-                        false,
-                    )?;
-                    Descriptor {
-                        set: Some(f),
-                        enumerable: Some(true),
-                        configurable: Some(true),
-                        ..Descriptor::default()
-                    }
+            }
+            Literal::Getter(b) => {
+                let f = self.make_function(env, Some(k), &[], b, FunctionKind::Method, false)?;
+                Descriptor {
+                    get: Some(f),
+                    enumerable: Some(true),
+                    configurable: Some(true),
+                    ..Descriptor::default()
                 }
-            };
-            self.define(id, k, d)?;
+            }
+            Literal::Setter(n, b) => {
+                let f = self.make_function(
+                    env,
+                    Some(k),
+                    std::slice::from_ref(n),
+                    b,
+                    FunctionKind::Method,
+                    false,
+                )?;
+                Descriptor {
+                    set: Some(f),
+                    enumerable: Some(true),
+                    configurable: Some(true),
+                    ..Descriptor::default()
+                }
+            }
+        };
+        self.define(id, k, d)?;
         Ok(())
     }
     fn eval_call(&mut self, f: &Expr, args: &[Expr], env: Id, new: bool) -> Result<Value> {
@@ -652,7 +701,17 @@ impl Engine<'_> {
                 program,
                 ..
             }) => {
-                if let Some(program)=program{return self.start_async(environment,params,body,kind,receiver,args,program);}
+                if let Some(program) = program {
+                    return self.start_async(
+                        environment,
+                        params,
+                        body,
+                        kind,
+                        receiver,
+                        args,
+                        program,
+                    );
+                }
                 let local = self.new_environment(Some(environment), &body, true)?;
                 self.protect(&Value::Object(local))?;
                 if kind != FunctionKind::Arrow {
@@ -685,7 +744,14 @@ impl Engine<'_> {
             Some(Object::Builtin { name, .. }) => {
                 matches!(
                     name.as_str(),
-                    "Promise" | "Array" | "Object" | "Function" | "String" | "Number" | "Boolean"
+                    "Promise"
+                        | "Array"
+                        | "Object"
+                        | "Function"
+                        | "AsyncFunction"
+                        | "String"
+                        | "Number"
+                        | "Boolean"
                 ) || self
                     .intrinsics
                     .as_ref()
@@ -732,7 +798,7 @@ impl Engine<'_> {
                 if matches!(name.as_str(), "String" | "Number" | "Boolean") {
                     let v = self.builtin(&name, Value::Undefined, args)?;
                     self.box_value(v).map(Value::Object)
-                } else if name == "Function" {
+                } else if name == "Function" || name == "AsyncFunction" {
                     Err(ScriptError::Unsupported("dynamic Function constructor"))
                 } else if name == "Object"
                     || name == "Array"
