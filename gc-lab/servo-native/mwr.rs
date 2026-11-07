@@ -4,17 +4,17 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::{Rc, Weak};
 use std::sync::{
-    Arc,
     atomic::{AtomicBool, AtomicUsize, Ordering},
+    Arc,
 };
 
-use crate::{JSTraceable,DomTypeHolder};
-use script_bindings::settings_stack::run_a_script;
 use crate::runtime::job_queue::MicrotaskRunnable;
-use gc_lab::Model;
+use crate::{DomTypeHolder, JSTraceable};
 use gc_lab::script::{DomAdapter, Engine, SuspendedEngine};
+use gc_lab::Model;
 use js::context::JSContext;
 use js::jsapi::JSTracer;
+use script_bindings::settings_stack::run_a_script;
 use servo_base::id::PipelineId;
 
 use crate::dom::bindings::codegen::Bindings::DocumentBinding::DocumentMethods;
@@ -219,9 +219,16 @@ impl Drop for NativeAdapter<'_> {
     }
 }
 impl DomAdapter for NativeAdapter<'_> {
-    fn queue_microtask(&mut self,serial:u64)->Result<()> {
-        let doc=self.registry.borrow().document()?;
-        doc.global().enqueue_microtask(self.cx,Box::new(MwrMicrotask{pipeline:doc.window().pipeline_id(),serial}));Ok(())
+    fn queue_microtask(&mut self, serial: u64) -> Result<()> {
+        let doc = self.registry.borrow().document()?;
+        doc.global().enqueue_microtask(
+            self.cx,
+            Box::new(MwrMicrotask {
+                pipeline: doc.window().pipeline_id(),
+                serial,
+            }),
+        );
+        Ok(())
     }
     fn traces_native_edges(&self) -> bool {
         true
@@ -263,15 +270,21 @@ impl DomAdapter for NativeAdapter<'_> {
         node.SetTextContent(self.cx, Some(DOMString::from(text)))
             .map_err(|e| format!("SetTextContent: {e:?}"))
     }
-    fn append_child(&mut self,parent:u64,child:u64)->Result<()> {
-        let parent=self.registry.borrow().node(parent)?;
-        let child=self.registry.borrow().node(child)?;
-        parent.AppendChild(self.cx,&child).map(|_|()).map_err(|e|format!("AppendChild: {e:?}"))
+    fn append_child(&mut self, parent: u64, child: u64) -> Result<()> {
+        let parent = self.registry.borrow().node(parent)?;
+        let child = self.registry.borrow().node(child)?;
+        parent
+            .AppendChild(self.cx, &child)
+            .map(|_| ())
+            .map_err(|e| format!("AppendChild: {e:?}"))
     }
-    fn remove_child(&mut self,parent:u64,child:u64)->Result<()> {
-        let parent=self.registry.borrow().node(parent)?;
-        let child=self.registry.borrow().node(child)?;
-        parent.RemoveChild(self.cx,&child).map(|_|()).map_err(|e|format!("RemoveChild: {e:?}"))
+    fn remove_child(&mut self, parent: u64, child: u64) -> Result<()> {
+        let parent = self.registry.borrow().node(parent)?;
+        let child = self.registry.borrow().node(child)?;
+        parent
+            .RemoveChild(self.cx, &child)
+            .map(|_| ())
+            .map_err(|e| format!("RemoveChild: {e:?}"))
     }
     fn set_click_listener(&mut self, id: u64, enabled: bool) -> Result<()> {
         let node = self.registry.borrow().node(id)?;
@@ -303,9 +316,12 @@ fn session(window: &Window) -> Option<Rc<Session>> {
     SESSIONS.with(|s| s.borrow().get(&window.pipeline_id()).cloned())
 }
 pub(crate) fn execute(cx: &mut JSContext, doc: &Document, source: &str) {
-    let global=doc.global();
-    run_a_script::<DomTypeHolder,_,_>(cx,&global,|cx|{
-        if let Err(error)=execute_inner(cx,doc,source){eprintln!("MWR_NATIVE_ERROR {error}");clear(doc.window());}
+    let global = doc.global();
+    run_a_script::<DomTypeHolder, _, _>(cx, &global, |cx| {
+        if let Err(error) = execute_inner(cx, doc, source) {
+            eprintln!("MWR_NATIVE_ERROR {error}");
+            clear(doc.window());
+        }
     });
 }
 fn execute_inner(cx: &mut JSContext, doc: &Document, source: &str) -> Result<()> {
@@ -356,8 +372,9 @@ fn execute_inner(cx: &mut JSContext, doc: &Document, source: &str) -> Result<()>
     }
     Ok(())
 }
-pub(crate) fn dispatch(cx: &mut JSContext,target:&EventTarget,id:u64)->Result<()> {
-    let global=target.global();run_a_script::<DomTypeHolder,_,_>(cx,&global,|cx|dispatch_inner(cx,target,id))
+pub(crate) fn dispatch(cx: &mut JSContext, target: &EventTarget, id: u64) -> Result<()> {
+    let global = target.global();
+    run_a_script::<DomTypeHolder, _, _>(cx, &global, |cx| dispatch_inner(cx, target, id))
 }
 fn dispatch_inner(cx: &mut JSContext, target: &EventTarget, id: u64) -> Result<()> {
     let global = target.global();
@@ -384,25 +401,50 @@ fn dispatch_inner(cx: &mut JSContext, target: &EventTarget, id: u64) -> Result<(
 // This exercises Servo's real DOM event dispatcher in Rust, not a hardware input
 // event. Ordinary human clicks use the same foreign-listener branch.
 fn self_test(cx: &mut JSContext, doc: &Document) -> Result<()> {
-    let selector=std::env::var("MWR_NATIVE_TEST_TARGET").unwrap_or_else(|_|"#button".into());
-    let target=doc.QuerySelector(cx,DOMString::from(selector)).map_err(|e|format!("{e:?}"))?.ok_or("test target missing")?;
-    let node=target.upcast::<Node>();
-    let before=node.GetTextContent().unwrap_or_default().to_string();
-    if before!=std::env::var("MWR_NATIVE_EXPECT_BEFORE").unwrap_or_else(|_|"Pulsar".into()){return Err(format!("unexpected initial text: {before}"));}
-    let configured=std::env::var("MWR_NATIVE_TEST_STEPS").ok();
-    let steps:Vec<(String,String)>=if let Some(json)=&configured {serde_json::from_str(json).map_err(|e|format!("test steps: {e}"))?}else{vec![("#button".into(),std::env::var("MWR_NATIVE_EXPECT_AFTER").unwrap_or_else(|_|"Funciona".into()))]};
-    let mut observed=vec![];
-    for (selector,expected)in steps {
-        let button=doc.QuerySelector(cx,DOMString::from(selector.clone())).map_err(|e|format!("{e:?}"))?.ok_or("test control missing")?;
-        button.downcast::<HTMLElement>().ok_or("test control not HTML")?.Click(cx);
-        let actual=node.GetTextContent().unwrap_or_default().to_string();
-        if actual!=expected{return Err(format!("native callback failed: {actual}, expected {expected}"));}
-        observed.push((selector,actual));
+    let selector = std::env::var("MWR_NATIVE_TEST_TARGET").unwrap_or_else(|_| "#button".into());
+    let target = doc
+        .QuerySelector(cx, DOMString::from(selector))
+        .map_err(|e| format!("{e:?}"))?
+        .ok_or("test target missing")?;
+    let node = target.upcast::<Node>();
+    let before = node.GetTextContent().unwrap_or_default().to_string();
+    if before != std::env::var("MWR_NATIVE_EXPECT_BEFORE").unwrap_or_else(|_| "Pulsar".into()) {
+        return Err(format!("unexpected initial text: {before}"));
     }
-    let after=node.GetTextContent().unwrap_or_default().to_string();
-    let mut proof=serde_json::json!({"before":before,"after":after,"click":"rust-dom-synthetic"});
-    if configured.is_some(){proof["steps"]=serde_json::json!(observed);}
-    eprintln!("MWR_NATIVE_PROOF {proof}");Ok(())
+    let configured = std::env::var("MWR_NATIVE_TEST_STEPS").ok();
+    let steps: Vec<(String, String)> = if let Some(json) = &configured {
+        serde_json::from_str(json).map_err(|e| format!("test steps: {e}"))?
+    } else {
+        vec![(
+            "#button".into(),
+            std::env::var("MWR_NATIVE_EXPECT_AFTER").unwrap_or_else(|_| "Funciona".into()),
+        )]
+    };
+    let mut observed = vec![];
+    for (selector, expected) in steps {
+        let button = doc
+            .QuerySelector(cx, DOMString::from(selector.clone()))
+            .map_err(|e| format!("{e:?}"))?
+            .ok_or("test control missing")?;
+        button
+            .downcast::<HTMLElement>()
+            .ok_or("test control not HTML")?
+            .Click(cx);
+        let actual = node.GetTextContent().unwrap_or_default().to_string();
+        if actual != expected {
+            return Err(format!(
+                "native callback failed: {actual}, expected {expected}"
+            ));
+        }
+        observed.push((selector, actual));
+    }
+    let after = node.GetTextContent().unwrap_or_default().to_string();
+    let mut proof = serde_json::json!({"before":before,"after":after,"click":"rust-dom-synthetic"});
+    if configured.is_some() {
+        proof["steps"] = serde_json::json!(observed);
+    }
+    eprintln!("MWR_NATIVE_PROOF {proof}");
+    Ok(())
 }
 // Trusted DOM roots must go before Servo tears down its JS runtime. This hook is
 // mandatory on navigation/shutdown; the registry is not a joint tracing GC.
@@ -481,39 +523,91 @@ fn collect_joint(cx: &mut JSContext, window: &Window) -> Result<()> {
 
 // Host queue entries hold only stable numeric IDs, never DOM roots or VM pointers.
 thread_local! {static MWR_MICROTASKS:Cell<usize>=const{Cell::new(0)};}
-static STALE_MICROTASKS:AtomicUsize=AtomicUsize::new(0);
-fn stale_microtask_count()->usize{STALE_MICROTASKS.load(Ordering::Acquire)}
-pub(crate) fn begin_microtask_checkpoint(){MWR_MICROTASKS.with(|n|n.set(0));}
-#[derive(MallocSizeOf)]
-struct MwrMicrotask{pipeline:PipelineId,serial:u64}
-#[expect(unsafe_code)]
-unsafe impl JSTraceable for MwrMicrotask{
-    // Both fields are plain identifiers. Managed edges live in the rooted VM job.
-    unsafe fn trace(&self,_:*mut JSTracer){}
+static STALE_MICROTASKS: AtomicUsize = AtomicUsize::new(0);
+fn stale_microtask_count() -> usize {
+    STALE_MICROTASKS.load(Ordering::Acquire)
 }
-impl MicrotaskRunnable for MwrMicrotask{
-    fn handler(&self,cx:&mut JSContext){
-        let Some(state)=SESSIONS.with(|s|s.borrow().get(&self.pipeline).cloned())else{STALE_MICROTASKS.fetch_add(1,Ordering::AcqRel);eprintln!("MWR_NATIVE_STALE_MICROTASK");return};
-        let count=MWR_MICROTASKS.with(|n|{let count=n.get()+1;n.set(count);count});
-        if count>10_000{if let Some(engine)=state.engine.borrow_mut().as_mut(){engine.cancel_microtasks();}if count==10_001{eprintln!("MWR_NATIVE_ERROR microtask checkpoint limit");}return;}
-        let doc=match state.registry.borrow().document(){Ok(doc)=>doc,Err(_)=>return};
-        if std::env::var_os("MWR_NATIVE_MICROTASK_GC_STRESS").is_some_and(|s|s=="1") {
-            let mut realm=crate::realms::enter_auto_realm(cx,doc.window());
-            if let Err(error)=collect_joint(&mut realm.current_realm(),doc.window()){eprintln!("MWR_NATIVE_ERROR microtask GC: {error}");return;}
+pub(crate) fn begin_microtask_checkpoint() {
+    MWR_MICROTASKS.with(|n| n.set(0));
+}
+#[derive(MallocSizeOf)]
+struct MwrMicrotask {
+    pipeline: PipelineId,
+    serial: u64,
+}
+#[expect(unsafe_code)]
+unsafe impl JSTraceable for MwrMicrotask {
+    // Both fields are plain identifiers. Managed edges live in the rooted VM job.
+    unsafe fn trace(&self, _: *mut JSTracer) {}
+}
+impl MicrotaskRunnable for MwrMicrotask {
+    fn handler(&self, cx: &mut JSContext) {
+        let Some(state) = SESSIONS.with(|s| s.borrow().get(&self.pipeline).cloned()) else {
+            STALE_MICROTASKS.fetch_add(1, Ordering::AcqRel);
+            eprintln!("MWR_NATIVE_STALE_MICROTASK");
+            return;
+        };
+        let count = MWR_MICROTASKS.with(|n| {
+            let count = n.get() + 1;
+            n.set(count);
+            count
+        });
+        if count > 10_000 {
+            if let Some(engine) = state.engine.borrow_mut().as_mut() {
+                engine.cancel_microtasks();
+            }
+            if count == 10_001 {
+                eprintln!("MWR_NATIVE_ERROR microtask checkpoint limit");
+            }
+            return;
+        }
+        let doc = match state.registry.borrow().document() {
+            Ok(doc) => doc,
+            Err(_) => return,
+        };
+        if std::env::var_os("MWR_NATIVE_MICROTASK_GC_STRESS").is_some_and(|s| s == "1") {
+            let mut realm = crate::realms::enter_auto_realm(cx, doc.window());
+            if let Err(error) = collect_joint(&mut realm.current_realm(), doc.window()) {
+                eprintln!("MWR_NATIVE_ERROR microtask GC: {error}");
+                return;
+            }
             eprintln!("MWR_NATIVE_MICROTASK_GC");
         }
-        let global=doc.global();
-        run_a_script::<DomTypeHolder,_,_>(cx,&global,|cx|{
-            let mut realm=crate::realms::enter_auto_realm(cx,&*global);
-            let dormant=state.engine.borrow_mut().take();
-            let Some(dormant)=dormant else{eprintln!("MWR_NATIVE_ERROR microtask ran during active VM");return};
-            let mut context=realm.current_realm();
-            let mut engine=dormant.resume(Box::new(NativeAdapter::new(&mut context,state.registry.clone())));
-            let result=engine.run_one_microtask(Some(self.serial));
-            for error in engine.take_microtask_errors(){eprintln!("MWR_NATIVE_MICROTASK_ERROR {error}");}
-            *state.engine.borrow_mut()=Some(engine.suspend());
-            match result{Ok(true)=>eprintln!("MWR_NATIVE_MICROTASK"),Ok(false)=>{},Err(error)=>eprintln!("MWR_NATIVE_ERROR {error:?}")}
+        let global = doc.global();
+        run_a_script::<DomTypeHolder, _, _>(cx, &global, |cx| {
+            let mut realm = crate::realms::enter_auto_realm(cx, &*global);
+            let dormant = state.engine.borrow_mut().take();
+            let Some(dormant) = dormant else {
+                eprintln!("MWR_NATIVE_ERROR microtask ran during active VM");
+                return;
+            };
+            let mut context = realm.current_realm();
+            let mut engine = dormant.resume(Box::new(NativeAdapter::new(
+                &mut context,
+                state.registry.clone(),
+            )));
+            let result = engine.run_one_microtask(Some(self.serial));
+            for error in engine.take_microtask_errors() {
+                eprintln!("MWR_NATIVE_MICROTASK_ERROR {error}");
+            }
+            *state.engine.borrow_mut() = Some(engine.suspend());
+            match result {
+                Ok(true) => eprintln!("MWR_NATIVE_MICROTASK"),
+                Ok(false) => {}
+                Err(error) => eprintln!("MWR_NATIVE_ERROR {error:?}"),
+            }
             queue_collection(&doc);
         });
+    }
+}
+
+pub(crate) fn finish_microtask_checkpoint() {
+    let states: Vec<_> = SESSIONS.with(|s| s.borrow().values().cloned().collect());
+    for state in states {
+        if let Some(engine) = state.engine.borrow_mut().as_mut() {
+            for message in engine.take_unhandled_rejections() {
+                eprintln!("MWR_NATIVE_UNHANDLED_REJECTION {message}");
+            }
+        }
     }
 }

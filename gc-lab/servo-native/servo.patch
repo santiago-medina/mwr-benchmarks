@@ -277,3 +277,11 @@ diff --git a/components/script/runtime/job_queue.rs b/components/script/runtime/
  
      // Step 2. Set the event loop's performing a microtask checkpoint to true.
      unsafe {
+@@ -318,6 +320,7 @@
+     unsafe {
+         (*job_queue).draining = false;
+     }
++    crate::mwr::finish_microtask_checkpoint();
+     // TODO: Step 8. Record timing info for microtask checkpoint.
+ }
+ 

@@ -265,8 +265,8 @@ struct NavigationProbe {
     proof: serde_json::Value,
     round: usize,
     waits: usize,
-    retired_pipeline:PipelineId,
-    stale_queued:bool,
+    retired_pipeline: PipelineId,
+    stale_queued: bool,
 }
 static NAVIGATION: Mutex<Option<NavigationProbe>> = Mutex::new(None);
 
@@ -310,7 +310,8 @@ fn begin_navigation(
         proof,
         round,
         waits: 0,
-        retired_pipeline:doc.window().pipeline_id(),stale_queued:false,
+        retired_pipeline: doc.window().pipeline_id(),
+        stale_queued: false,
     });
     let window = doc.window();
     let data = window.load_data_for_document(url, window.pipeline_id());
@@ -362,15 +363,26 @@ fn navigation_poll(cx: &mut JSContext, doc: &Document) -> Result<()> {
         return Ok(());
     }
     if !probe.stale_queued {
-        doc.global().enqueue_microtask(cx,Box::new(MwrMicrotask{pipeline:probe.retired_pipeline,serial:u64::MAX}));
-        probe.stale_queued=true;*NAVIGATION.lock().unwrap()=Some(probe);queue_navigation_poll(doc);return Ok(());
+        doc.global().enqueue_microtask(
+            cx,
+            Box::new(MwrMicrotask {
+                pipeline: probe.retired_pipeline,
+                serial: u64::MAX,
+            }),
+        );
+        probe.stale_queued = true;
+        *NAVIGATION.lock().unwrap() = Some(probe);
+        queue_navigation_poll(doc);
+        return Ok(());
     }
-    if stale_microtask_count()<probe.round {return Err("retired realm microtask was not ignored".into());}
+    if stale_microtask_count() < probe.round {
+        return Err("retired realm microtask was not ignored".into());
+    }
     eprintln!("MWR_GC_NAVIGATION {}", probe.round);
     if probe.round < 2 {
         return begin_navigation(cx, doc, probe.proof, probe.round + 1);
     }
-    probe.proof["retired_realm_microtasks_ignored"]=serde_json::json!(stale_microtask_count());
+    probe.proof["retired_realm_microtasks_ignored"] = serde_json::json!(stale_microtask_count());
     probe.proof["navigation_rounds"] = serde_json::json!(probe.round);
     probe.proof["old_sessions_destroyed"] = serde_json::json!(true);
     probe.proof["old_documents_finalized"] = serde_json::json!(true);
