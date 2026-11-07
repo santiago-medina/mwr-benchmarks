@@ -117,13 +117,27 @@ jobs:
           sudo apt-get install -y patch clang libclang-dev cmake ninja-build gperf m4 pkg-config libdbus-1-dev libfreetype-dev libfontconfig1-dev libglib2.0-dev libudev-dev libunwind-dev libssl-dev libx11-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-0 libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev libegl-dev libgles-dev libasound2-dev libgl1-mesa-dri fonts-dejavu-core
       - name: Install pinned Servo Rust toolchain
         run: rustup toolchain install 1.97.1 --profile minimal
+      - name: Restore verified vendored source archive
+        id: servo-source
+        uses: actions/cache/restore@v4
+        with:
+          path: gc-lab/.servo-native.tar.gz
+          key: servo-source-aac43a3f31a259f04a574f5ec4e959c943ad7cc7-6e26f21e6c8bcb8e
       - name: Prepare pinned vendored Servo fork
         run: python3 gc-lab/servo-native/prepare.py
+      - name: Cache verified source before native compilation
+        if: steps.servo-source.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: gc-lab/.servo-native.tar.gz
+          key: servo-source-aac43a3f31a259f04a574f5ec4e959c943ad7cc7-6e26f21e6c8bcb8e
       - uses: actions/cache@v4
         with:
           path: gc-lab/.servo-native/target
-          key: servo-native-gc-v1-0.7.0-rust-1.97.1-${{ hashFiles('gc-lab/servo-native/**', 'gc-lab/src/**') }}
-          restore-keys: servo-native-gc-v1-0.7.0-rust-1.97.1-
+          key: servo-native-deps-v2-0.7.0-rust-1.97.1-${{ hashFiles('gc-lab/.servo-native/Cargo.lock', 'gc-lab/.servo-native/Cargo.toml', 'gc-lab/.servo-native/components/script/Cargo.toml', 'gc-lab/Cargo.toml') }}
+          restore-keys: |
+            servo-native-deps-v2-0.7.0-rust-1.97.1-
+            servo-native-gc-v1-0.7.0-rust-1.97.1-
       - name: Clear integration crates after restoring dependency cache
         working-directory: gc-lab/.servo-native
         run: cargo +1.97.1 clean -p servo-script -p servo-layout -p servo -p servoshell --offline
