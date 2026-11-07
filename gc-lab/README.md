@@ -103,7 +103,7 @@ Para medirlo harían falta revisores y cambios equivalentes con errores sembrado
 
 ## Verificación
 
-20 pruebas de integración pasan en debug y release:
+Las 20 pruebas iniciales de integración pasan en debug y release:
 
 * Las ocho pruebas anteriores ahora se ejecutan en los tres modelos: ciclos,
   reentrada, referencias caducadas, tokens de otro heap, cadenas de 20.000 objetos,
@@ -195,3 +195,11 @@ Aprendizaje: los ciclos son recuperables si TODAS las referencias relevantes son
 visibles para un trazado común. Usar raíces permanentes para cada listener habría
 impedido esa recuperación. Llevar esta propiedad a dos heaps reales requiere un
 protocolo adicional de tracing o colección de ciclos que este laboratorio no valida.
+
+
+## Dos heaps separados
+
+La siguiente etapa implementa dos arenas independientes y un coordinador de
+trazado, con presupuesto de bytes lógicos y 10 pruebas nuevas (30 en total).
+Ver [DUAL_HEAP.md](DUAL_HEAP.md) para invariantes, límites exactos del presupuesto,
+evidencia y reproducción. `dual-results.csv` registra los escenarios.

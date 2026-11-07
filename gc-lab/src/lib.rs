@@ -13,7 +13,7 @@ pub enum Model {
     Indirect,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Handle {
     heap: u64,
     index: usize,
@@ -38,6 +38,8 @@ pub enum Error {
     InvalidRoot,
     ObjectLimit,
     ReentryLimit,
+    ByteLimit,
+    AllocationFailed,
 }
 
 #[derive(Debug)]
@@ -257,6 +259,23 @@ impl Heap {
     }
 
     pub fn collect(&mut self) -> Collection {
+        self.collect_with_roots(&[])
+    }
+
+    /// Coordinator-only roots must be valid tokens owned by this heap.
+    pub(crate) fn root_handles(&self) -> Vec<Handle> {
+        self.roots
+            .iter()
+            .flatten()
+            .map(|entry| entry.handle)
+            .collect()
+    }
+
+    pub(crate) fn object_charge() -> usize {
+        std::mem::size_of::<Object>()
+    }
+
+    pub(crate) fn collect_with_roots(&mut self, external: &[Handle]) -> Collection {
         let mut marked = vec![false; self.slots.len()];
         let mut pending: Vec<_> = self
             .roots
@@ -264,6 +283,7 @@ impl Heap {
             .flatten()
             .map(|entry| entry.handle)
             .collect();
+        pending.extend_from_slice(external);
         while let Some(h) = pending.pop() {
             let obj = self.object(h).expect("internal dangling edge or root");
             let position = self.position(h).unwrap();
@@ -436,5 +456,6 @@ impl Drop for RootScope<'_> {
     }
 }
 
+pub mod dual;
 pub mod host;
 pub mod operations;

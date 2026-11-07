@@ -19,3 +19,5 @@ jobs:
         run: cargo +stable test --manifest-path gc-lab/Cargo.toml --offline
       - name: Release contracts
         run: cargo +stable test --manifest-path gc-lab/Cargo.toml --release --offline
+      - name: Two-heap recovery demo
+        run: cargo +stable run --manifest-path gc-lab/Cargo.toml --bin dual_demo --release --offline
