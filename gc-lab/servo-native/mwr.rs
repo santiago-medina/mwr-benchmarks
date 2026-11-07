@@ -36,6 +36,8 @@ use crate::dom::window::Window;
 
 #[path = "mwr_gc_test.rs"]
 mod gc_test;
+#[path = "mwr_network.rs"]
+mod network;
 
 type Result<T> = std::result::Result<T, String>;
 thread_local! {
@@ -51,6 +53,7 @@ struct Session {
     lifetime: Life,
 }
 struct Registry {
+    network: network::Network,
     document: WeakNode,
     nodes: HashMap<u64, WeakNode>,
     pins: Vec<Trusted<Node>>,
@@ -219,6 +222,23 @@ impl Drop for NativeAdapter<'_> {
     }
 }
 impl DomAdapter for NativeAdapter<'_> {
+    fn supports_fetch(&self) -> bool {
+        true
+    }
+    fn start_fetch(&mut self, serial: u64, url: &str) -> Result<()> {
+        self.start_network(serial, url)
+    }
+    fn read_response_text(&mut self, serial: u64, response: u64) -> Result<()> {
+        self.read_network_text(serial, response)
+    }
+    fn cancel_fetch(&mut self, serial: u64) {
+        self.cancel_network(serial);
+    }
+    fn release_responses(&mut self, responses: &[u64]) -> Result<()> {
+        self.release_network(responses);
+        Ok(())
+    }
+
     fn queue_microtask(&mut self, serial: u64) -> Result<()> {
         let doc = self.registry.borrow().document()?;
         doc.global().enqueue_microtask(
@@ -332,6 +352,7 @@ fn execute_inner(cx: &mut JSContext, doc: &Document, source: &str) -> Result<()>
     let state = Rc::new(Session {
         engine: RefCell::new(None),
         registry: Rc::new(RefCell::new(Registry {
+            network: network::Network::default(),
             document: WeakNode::new(doc.upcast::<Node>()),
             pins: vec![],
             nodes: HashMap::new(),

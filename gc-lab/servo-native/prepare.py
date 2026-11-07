@@ -40,7 +40,7 @@ def main():
     command = ["patch", "--batch", "--forward", "-p1", "-i", str(HERE / "servo.patch")]
     subprocess.run(command + ["--dry-run"], cwd=source, check=True)
     subprocess.run(command, cwd=source, check=True)
-    for name in ("mwr.rs", "mwr_gc_test.rs"):
+    for name in ("mwr.rs", "mwr_gc_test.rs", "mwr_network.rs"):
         shutil.copy2(HERE / name, source / "components/script" / name)
     lab = source / "mwr-gc-lab"
     lab.mkdir()
