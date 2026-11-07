@@ -19,7 +19,7 @@ use js::{
 
 struct FetchOwner {
     controller: Trusted<AbortController>,
-    cancellation: Option<crate::fetch::FetchCancellation>,
+    cancellation: Option<crate::fetch::fetch::FetchCancellation>,
 }
 impl FetchOwner {
     fn cancel(&self, cx: &mut JSContext) {
@@ -211,7 +211,7 @@ impl NativeAdapter<'_> {
         let mut init = RequestInit::empty();
         init.signal = Some(Some(controller.signal()));
         let mut cancellation = None;
-        let promise = crate::fetch::Fetch_with_cancellation(
+        let promise = crate::fetch::fetch::Fetch_with_cancellation(
             &global,
             RequestOrUSVString::USVString(USVString(url.into())),
             &init,

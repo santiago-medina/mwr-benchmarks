@@ -301,6 +301,28 @@ diff --git a/components/script/dom/document/document.rs b/components/script/dom/
 diff --git a/components/script/fetch/network_listener.rs b/components/script/fetch/network_listener.rs
 --- a/components/script/fetch/network_listener.rs
 +++ b/components/script/fetch/network_listener.rs
+@@ -40,8 +40,8 @@
+     // (e.g. mixed content, CORS restriction, CSP policy, etc), then this resource
+     // will not be included as a PerformanceResourceTiming object in
+     // the Performance Timeline.
+-    if let Err(error) = &result &&
+-        error.is_permanent_failure()
++    if let Err(error) = &result
++        && error.is_permanent_failure()
+     {
+         return;
+     }
+@@ -55,8 +55,8 @@
+     // (e.g. due to a network error) MAY be included as PerformanceResourceTiming
+     // objects in the Performance Timeline and MUST contain initialized attribute
+     // values for processed substeps of the processing model.
+-    if resource_timing.timing_type != ResourceTimingType::Resource &&
+-        resource_timing.timing_type != ResourceTimingType::Error
++    if resource_timing.timing_type != ResourceTimingType::Resource
++        && resource_timing.timing_type != ResourceTimingType::Error
+     {
+         warn!(
+             "Submitting non-resource ({:?}) timing as resource",
 @@ -133,7 +133,7 @@
      pub(crate) context: Arc<Mutex<Option<Listener>>>,
      pub(crate) task_source: SendableTaskSource,
@@ -310,7 +332,7 @@ diff --git a/components/script/fetch/network_listener.rs b/components/script/fet
  }
  
  impl<Listener: FetchResponseListener> NetworkListener<Listener> {
-@@ -145,13 +145,13 @@
+@@ -145,13 +145,15 @@
          Self {
              context: Arc::new(Mutex::new(Some(context))),
              task_source,
@@ -322,14 +344,36 @@ diff --git a/components/script/fetch/network_listener.rs b/components/script/fet
      pub(crate) fn notify(&mut self, message: FetchResponseMsg) {
          let context = self.context.clone();
 -        let global_scope = self.global_scope.clone();
-+        let Some(global_scope) = self.global_scope.lock().unwrap().clone() else { return; };
++        let Some(global_scope) = self.global_scope.lock().unwrap().clone() else {
++            return;
++        };
          self.task_source
              .queue(task!(network_listener_response: move |cx| {
                  if let FetchResponseMsg::ProcessResponseEOF(request_id, ..) = &message {
 diff --git a/components/script/fetch/fetch.rs b/components/script/fetch/fetch.rs
 --- a/components/script/fetch/fetch.rs
 +++ b/components/script/fetch/fetch.rs
-@@ -361,13 +361,34 @@
+@@ -343,8 +343,8 @@
+     // Step 1. Reject promise with error.
+     promise.reject(cx, abort_reason);
+     // Step 2. If request’s body is non-null and is readable, then cancel request’s body with error.
+-    if let Some(body) = request.body() &&
+-        body.is_readable()
++    if let Some(body) = request.body()
++        && body.is_readable()
+     {
+         body.cancel(cx, global, abort_reason);
+     }
+@@ -354,13 +354,28 @@
+         return;
+     };
+     // Step 5. If response’s body is non-null and is readable, then error response’s body with error.
+-    if let Some(body) = response.body() &&
+-        body.is_readable()
++    if let Some(body) = response.body()
++        && body.is_readable()
+     {
+         body.error(cx, abort_reason);
      }
  }
  
@@ -350,22 +394,35 @@ diff --git a/components/script/fetch/fetch.rs b/components/script/fetch/fetch.rs
 +}
  /// <https://fetch.spec.whatwg.org/#dom-global-fetch>
  #[expect(non_snake_case)]
--pub(crate) fn Fetch(
-+pub(crate) fn Fetch(global: &GlobalScope, input: RequestInfo, init: &RequestInit, cx: &mut CurrentRealm) -> RootedPromise {
+ pub(crate) fn Fetch(
+@@ -369,6 +384,17 @@
+     init: &RequestInit,
+     cx: &mut CurrentRealm,
+ ) -> RootedPromise {
 +    Fetch_with_cancellation(global, input, init, cx, &mut None)
 +}
 +/// The same Fetch algorithm, optionally exposing a native lifetime anchor.
 +#[expect(non_snake_case)]
 +pub(crate) fn Fetch_with_cancellation(
-     global: &GlobalScope,
-     input: RequestInfo,
-     init: &RequestInit,
-     cx: &mut CurrentRealm,
++    global: &GlobalScope,
++    input: RequestInfo,
++    init: &RequestInit,
++    cx: &mut CurrentRealm,
 +    cancellation: &mut Option<FetchCancellation>,
- ) -> RootedPromise {
++) -> RootedPromise {
      // Step 1. Let p be a new promise.
      let promise = Promise::new_in_realm(cx);
-@@ -437,6 +458,10 @@
+ 
+@@ -384,7 +410,7 @@
+             response.error_stream(cx, e.clone());
+             promise.reject_error(cx, e);
+             return promise;
+-        },
++        }
+         Ok(r) => r,
+     };
+     // Step 3. Let request be requestObject’s request.
+@@ -437,6 +463,10 @@
          global.task_manager().networking_task_source().to_sendable(),
          global,
      );
@@ -376,3 +433,95 @@ diff --git a/components/script/fetch/fetch.rs b/components/script/fetch/fetch.rs
      let fetch_context = network_listener.context.clone();
  
      // Step 11. Add the following abort steps to requestObject’s signal:
+@@ -708,7 +738,7 @@
+                 response.set_type(cx, DOMResponseType::Error);
+                 response.error_stream(cx, Error::Type(c"Network error occurred".to_owned()));
+                 return;
+-            },
++            }
+             // Step 12.4. Set responseObject to the result of creating a Response object,
+             // given response, "immutable", and relevantRealm.
+             Ok(metadata) => match metadata {
+@@ -716,28 +746,28 @@
+                     let r = self.response_object.root();
+                     fill_headers_with_metadata(cx, &r, m);
+                     r.set_type(cx, DOMResponseType::Default);
+-                },
++                }
+                 FetchMetadata::Filtered { filtered, .. } => match filtered {
+                     FilteredMetadata::Basic(m) => {
+                         let r = self.response_object.root();
+                         fill_headers_with_metadata(cx, &r, m);
+                         r.set_type(cx, DOMResponseType::Basic);
+-                    },
++                    }
+                     FilteredMetadata::Cors(m) => {
+                         let r = self.response_object.root();
+                         fill_headers_with_metadata(cx, &r, m);
+                         r.set_type(cx, DOMResponseType::Cors);
+-                    },
++                    }
+                     FilteredMetadata::Opaque => {
+                         self.response_object
+                             .root()
+                             .set_type(cx, DOMResponseType::Opaque);
+-                    },
++                    }
+                     FilteredMetadata::OpaqueRedirect(url) => {
+                         let r = self.response_object.root();
+                         r.set_type(cx, DOMResponseType::Opaqueredirect);
+                         r.set_final_url(url);
+-                    },
++                    }
+                 },
+             },
+         }
+@@ -762,8 +792,8 @@
+         let response_object = self.response_object.root();
+         let mut realm = enter_auto_realm(cx, &*response_object);
+         let cx = &mut realm.current_realm();
+-        if let Err(ref error) = response &&
+-            *error == NetworkError::DecompressionError
++        if let Err(ref error) = response
++            && *error == NetworkError::DecompressionError
+         {
+             response_object.error_stream(cx, Error::Type(c"Network error occurred".to_owned()));
+         }
+@@ -883,14 +913,14 @@
+     let mut muted_errors = false;
+     loop {
+         match action_receiver.recv().unwrap() {
+-            FetchResponseMsg::ProcessRequestBody(..) => {},
++            FetchResponseMsg::ProcessRequestBody(..) => {}
+             FetchResponseMsg::ProcessResponse(_, Ok(m)) => {
+                 muted_errors = m.is_cors_cross_origin();
+                 metadata = Some(match m {
+                     FetchMetadata::Unfiltered(m) => m,
+                     FetchMetadata::Filtered { unsafe_, .. } => unsafe_,
+                 })
+-            },
++            }
+             FetchResponseMsg::ProcessResponseChunk(_, data) => buf.extend_from_slice(&data),
+             FetchResponseMsg::ProcessResponseEOF(_, Ok(_), _) => {
+                 let metadata = metadata.unwrap();
+@@ -898,15 +928,15 @@
+                     submit_timing_data(cx, global, url, InitiatorType::Other, timing);
+                 }
+                 return Ok((metadata, buf, muted_errors));
+-            },
+-            FetchResponseMsg::ProcessResponse(_, Err(e)) |
+-            FetchResponseMsg::ProcessResponseEOF(_, Err(e), _) => return Err(e),
++            }
++            FetchResponseMsg::ProcessResponse(_, Err(e))
++            | FetchResponseMsg::ProcessResponseEOF(_, Err(e), _) => return Err(e),
+             FetchResponseMsg::ProcessCspViolations(_, violations) => {
+                 csp_violations_processor.process_csp_violations(cx, violations);
+-            },
++            }
+             FetchResponseMsg::ProcessContentLength(_request_id, size) => {
+                 buf.reserve(size.saturating_sub(buf.len()))
+-            },
++            }
+         }
+     }
+ }
