@@ -27,6 +27,8 @@ def main():
         ('disabled', False, True, fixture),
         ('waiting', True, False, fixture),
         ('callback', True, True, fixture),
+        ('csp-blocked', True, True, fixture.replace('<meta charset="utf-8">',
+            '<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="script-src \'none\'">')),
         ('syntax-error', True, False, fixture.replace('const button =', 'let button =')),
     ]
     results = {}
@@ -50,7 +52,7 @@ def main():
             page.write_text(html)
             image = output / f'{name}.png'
             command = [str(binary), '--headless', '--window-size=900x600',
-                       '--temporary-storage', '-o', str(image), page.as_uri()]
+                       '--temporary-storage', '-x', '-o', str(image), page.as_uri()]
             process = subprocess.run(command, env=env, capture_output=True, timeout=180)
             log = process.stdout.decode(errors='replace') + process.stderr.decode(errors='replace')
             (output / f'{name}.log').write_text(log)
@@ -62,8 +64,9 @@ def main():
             proofs = [json.loads(line.removeprefix('MWR_NATIVE_PROOF '))
                       for line in log.splitlines() if line.startswith('MWR_NATIVE_PROOF ')]
             expected = {'disabled': (0, 0, 0), 'waiting': (1, 0, 0),
-                        'callback': (1, 1, 0), 'syntax-error': (0, 0, 1)}[name]
+                        'callback': (1, 1, 0), 'syntax-error': (0, 0, 1), 'csp-blocked': (0, 0, 0)}[name]
             assert (executed, callbacks, len(errors)) == expected, (name, log)
+            assert log.count('MWR_NATIVE_TEST_TASK') == (1 if name == 'callback' else 0)
             assert len(proofs) == (1 if name == 'callback' else 0), (name, log)
             if proofs:
                 assert proofs[0] == dict(before='Pulsar', after='Funciona', objects=0,
@@ -74,6 +77,8 @@ def main():
     report = dict(
         servo_revision='aac43a3f31a259f04a574f5ec4e959c943ad7cc7',
         binary_sha256=hashlib.file_digest(binary.open('rb'), 'sha256').hexdigest(),
+        patch_sha256=hashlib.file_digest((HERE / 'servo.patch').open('rb'), 'sha256').hexdigest(),
+        callback_after_event_loop_turn=True,
         module_sha256=hashlib.file_digest((HERE / 'mwr.rs').open('rb'), 'sha256').hexdigest(),
         in_process=True, webdriver=False, javascript_transport=False,
         input='Rust HTMLElement::Click; synthetic, not hardware input',

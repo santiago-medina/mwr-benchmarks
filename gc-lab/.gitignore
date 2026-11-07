@@ -1,7 +1,7 @@
 /target/
 /.servo-test/
 /servo-results/
-/__pycache__/
+__pycache__/
 /.servo-native/
 /.servo-native.tar.gz
 /native-results/

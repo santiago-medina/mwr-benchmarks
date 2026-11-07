@@ -1,8 +1,11 @@
 # Laboratorio de memoria: tres modelos y revisión humana
 
 Prototipo en Rust, sin dependencias externas, con `#![forbid(unsafe_code)]`.
-No es un motor JavaScript ni una réplica de Boa/Nova. El objetivo es comparar
-contratos de referencias antes de comprometer la arquitectura de un motor.
+Incluye experimentos de GC y un intérprete de un subconjunto explícito de JS;
+no es un motor compatible con ECMAScript ni una réplica de Boa/Nova. La
+[integración nativa en Servo](servo-native/README.md) enlaza el intérprete dentro
+del navegador manteniendo SpiderMonkey para el DOM. Los contratos de memoria
+siguen siendo el núcleo del laboratorio.
 
 ## Reproducir
 

@@ -2,8 +2,9 @@
 
 Este directorio contiene el adaptador dentro del hilo de script y un parche
 mínimo sobre Servo fijado a `aac43a3f31a259f04a574f5ec4e959c943ad7cc7`.
-La validación completa requiere COMPILAR el fork y ejecutar `run.py`; la existencia
-del parche por sí sola no demuestra integración funcional.
+El fork se ha compilado y la prueba local ha mostrado «Funciona» con
+nuestro callback dentro de Servo. El resultado se registra en `../native-proof.json`;
+el job `servo-native` reproduce la compilación y conserva los PNG y logs.
 
 ```sh
 python3 gc-lab/servo-native/prepare.py
@@ -29,13 +30,14 @@ Se conservan los controles previos de scripting y CSP de la ruta de preparación
 El estado de VM se suspende entre invocaciones y toma prestado el contexto DOM
 solo durante la llamada; el adaptador no fabrica contextos ni usa unsafe.
 
-`MWR_NATIVE_SELF_TEST=1` comprueba el texto inicial, pulsa con
+`MWR_NATIVE_SELF_TEST=1` encola una tarea DOM para un turno posterior del
+bucle de eventos. Esa tarea comprueba el texto inicial y pulsa con
 `HTMLElement::Click` desde Rust, verifica «Funciona», suelta las raíces de nuestra
 VM y vuelve a pulsar para comprobar que el listener fue retirado. Es un evento
 sintético del DOM real, no un clic físico. El runner solo arranca el navegador y
 recoge logs y PNG; las operaciones y verificaciones DOM ocurren dentro de Servo.
-Los controles adicionales deshabilitan el backend, esperan sin pulsar y prueban
-un programa con sintaxis rechazada por nuestro parser.
+Los controles adicionales deshabilitan el backend, esperan sin pulsar, bloquean
+la ejecución mediante CSP y prueban sintaxis rechazada por nuestro parser.
 
 Límites: SpiderMonkey sigue siendo necesario para reflectores, contexto y GC de
 Servo. Los leases `Trusted<Node>` son raíces fuertes explícitas y se retiran al

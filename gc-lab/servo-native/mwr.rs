@@ -161,7 +161,19 @@ fn execute_inner(cx: &mut JSContext, doc: &Document, source: &str) -> Result<()>
     SESSIONS.with(|s| s.borrow_mut().insert(window.pipeline_id(), state));
     eprintln!("MWR_NATIVE_EXECUTED");
     if std::env::var_os("MWR_NATIVE_SELF_TEST").is_some_and(|s| s == "1") {
-        self_test(cx, doc)?;
+        let document = Trusted::new(doc);
+        doc.global()
+            .task_manager()
+            .dom_manipulation_task_source()
+            .queue(task!(MwrNativeSelfTest: move |cx| {
+                let document = document.root();
+                let mut realm = crate::realms::enter_auto_realm(cx, document.window());
+                eprintln!("MWR_NATIVE_TEST_TASK");
+                if let Err(error) = self_test(&mut realm.current_realm(), &document) {
+                    eprintln!("MWR_NATIVE_ERROR {error}");
+                    clear(document.window());
+                }
+            }));
     }
     Ok(())
 }
@@ -227,10 +239,11 @@ fn self_test(cx: &mut JSContext, doc: &Document) -> Result<()> {
     }
     // After GC the same dispatcher must no longer invoke a released callback.
     button.downcast::<HTMLElement>().unwrap().Click(cx);
+    drop(state);
+    clear(doc.window());
     eprintln!(
         "MWR_NATIVE_PROOF {{\"before\":\"Pulsar\",\"after\":\"Funciona\",\"objects\":0,\"roots\":0,\"wrappers\":0,\"metadata\":0,\"leases\":0,\"click\":\"rust-dom-synthetic\"}}"
     );
-    clear(doc.window());
     Ok(())
 }
 // Trusted DOM roots must go before Servo tears down its JS runtime. This hook is

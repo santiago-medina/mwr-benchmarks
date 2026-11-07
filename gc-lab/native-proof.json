@@ -1,0 +1,56 @@
+{
+  "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+  "binary_sha256": "7f3b1d8ecad407ac5dac66e06715cf9121a3ebebcc0eb16e9ac98d6223bf0544",
+  "patch_sha256": "0e6e1b21a6263b325391b5af8c1a1450971200637b49e3be93884b448e9f9e4b",
+  "callback_after_event_loop_turn": true,
+  "module_sha256": "3a2a4e2f5f6f57dcf8bcf9eccfcae7f69b24d78900c16fbdf50b29e6c56c1fa9",
+  "in_process": true,
+  "webdriver": false,
+  "javascript_transport": false,
+  "input": "Rust HTMLElement::Click; synthetic, not hardware input",
+  "scenarios": {
+    "disabled": {
+      "executions": 0,
+      "callbacks": 0,
+      "errors": [],
+      "proofs": []
+    },
+    "waiting": {
+      "executions": 1,
+      "callbacks": 0,
+      "errors": [],
+      "proofs": []
+    },
+    "callback": {
+      "executions": 1,
+      "callbacks": 1,
+      "errors": [],
+      "proofs": [
+        {
+          "before": "Pulsar",
+          "after": "Funciona",
+          "objects": 0,
+          "roots": 0,
+          "wrappers": 0,
+          "metadata": 0,
+          "leases": 0,
+          "click": "rust-dom-synthetic"
+        }
+      ]
+    },
+    "csp-blocked": {
+      "executions": 0,
+      "callbacks": 0,
+      "errors": [],
+      "proofs": []
+    },
+    "syntax-error": {
+      "executions": 0,
+      "callbacks": 0,
+      "errors": [
+        "MWR_NATIVE_ERROR Syntax(SyntaxError { offset: 5, message: \"expected punctuation\" })"
+      ],
+      "proofs": []
+    }
+  }
+}

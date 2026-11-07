@@ -1,4 +1,19 @@
-# Un botón visible en Servo, con el programa ejecutado por nuestro intérprete
+# Dos experimentos de integración con Servo
+
+## Integración nativa actual
+
+El fork de Servo 0.7.0 se ha compilado localmente con nuestro intérprete enlazado
+dentro de `servo-script`. El parser HTML le entrega directamente el programa
+experimental y el dispatcher DOM llama a nuestra closure. La prueba muestra
+«Funciona» sin WebDriver, intérprete externo ni JavaScript de transporte.
+
+El [adaptador, parche y comandos](servo-native/README.md) están separados del
+experimento anterior. `native-proof.json` registra el resultado local y el
+workflow compila el fork y conserva logs/PNG como `servo-native-interpreter`.
+SpiderMonkey permanece para el DOM y su GC; no se ha sustituido todo el backend.
+La pulsación de la prueba nativa es `HTMLElement::Click` desde Rust, sintética.
+
+## Experimento anterior: puente fuera de proceso
 
 ## Resultado y alcance
 
@@ -109,14 +124,13 @@ se registran también en servo-source-audit.json.
 Esto demuestra un bloqueo estructural para un reemplazo inmediato, no que sea
 imposible integrar otro motor. Tampoco demuestra por sí solo un defecto de Servo.
 
-## Próximo experimento interno que tendría sentido
+## Fronteras que quedan tras el experimento nativo
 
-Crear en un fork un puerto de comandos DOM en el hilo de script de Servo, con
-leases nativas y callbacks extranjeros identificados, conservando inicialmente
-SpiderMonkey para las partes del DOM que todavía dependen de él. Reutilizaríamos
-DomAdapter cambiando el transporte, sin cambiar la semántica del intérprete.
+El adaptador nativo ya conecta comandos DOM en el hilo de script, leases nativas
+y callbacks extranjeros identificados. Conserva SpiderMonkey para el DOM y
+reutiliza DomAdapter con un préstamo temporal del contexto durante cada llamada.
 
 Solo después abordaríamos un backend completamente independiente: selección del
 ejecutor de scripts, representación de listeners, rooting/tracing entre heaps,
-conversión de valores WebIDL y contexto de ejecución/excepciones. No hemos escrito
-un parche interno sin compilarlo ni afirmamos que esa refactorización esté hecha.
+conversión de valores WebIDL y contexto de ejecución/excepciones. La integración del subconjunto está compilada y probada; esa refactorización
+completa aún no está hecha.
