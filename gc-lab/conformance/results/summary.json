@@ -1,7 +1,7 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "658ae4862ef332e0f0fc1bef5ed3d5d18860701efb0ae3e603471cf7f6a4e73b",
+  "implementation_sha256": "07903a20fb7bea371770fa372ab146d3b9acdc800953b84713a733a58a095060",
   "runner_sha256": "e6a519b7590caa9e46c0f756eea69d3d92a026e4d4673561a8f57c2091e8e23b",
   "new_failures": [],
   "variant": "strict script only; standard strict prefix; original test body",

@@ -257,6 +257,15 @@ impl Engine<'_> {
                     self.mutable_binding(local, name, value)?;
                     pending = self.block(b, local, can_return);
                 }
+                if matches!(
+                    pending,
+                    Err(ScriptError::Memory(_)
+                        | ScriptError::Runtime(_)
+                        | ScriptError::Unsupported(_)
+                        | ScriptError::Host(_))
+                ) {
+                    return pending;
+                }
                 match &pending {
                     Ok(Some(v)) => self.protect(v)?,
                     Err(ScriptError::Thrown(ex)) => self.protect(&ex.value)?,
@@ -369,6 +378,11 @@ impl Engine<'_> {
             }
             Ok(())
         });
+        if let Err(error) = &close {
+            if !matches!(error, ScriptError::Thrown(_)) {
+                return Err(error.clone());
+            }
+        }
         if matches!(pending, Err(ScriptError::Thrown(_))) {
             return pending;
         }

@@ -138,3 +138,53 @@ fn quota_failure_cannot_publish_an_index_without_its_length() {
     }
     assert!(successes > 0 && failures > 0);
 }
+#[test]
+fn iterator_close_does_not_turn_a_quota_failure_into_a_catchable_js_throw() {
+    let mut checked = 0;
+    for extra in (0..2048).step_by(64).chain([4096, 8192]) {
+        let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+        e.execute("const marker={};const state={started:false,finished:false,caught:false};const i={next:function(){return {value:1,done:false};},return:function(){state.started=true;const noise=[{a:{}},{b:{}},{c:{}}];state.finished=true;return {};}};const source={};source[Symbol.iterator]=()=>i;function work(){try{for(const x of source){throw marker;}}catch(e){state.caught=true;}}function verify(){if(state.started&&!state.finished&&state.caught){throw 'quota was hidden';}}").unwrap();
+        let base = e.charged_bytes();
+        e.set_budget(Some(base + extra));
+        let _ = e.call_global("work");
+        e.set_budget(None);
+        e.call_global("verify").unwrap();
+        checked += 1;
+        e.release_globals();
+        assert_eq!(e.live_roots(), 0);
+    }
+    assert!(checked > 0);
+}
+#[test]
+fn finally_return_does_not_hide_a_terminal_allocation_failure() {
+    let mut failed = 0;
+    let mut succeeded = 0;
+    for caught in [false, true] {
+        for extra in (0..2048).step_by(64).chain([4096, 8192]) {
+            let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+            let program="const state={started:false,finished:false};function work(){try{state.started=true;const noise=[{a:{}},{b:{}},{c:{}}];state.finished=true;}finally{return 1;}}function verify(){if(state.started&&!state.finished){throw 'allocation was hidden';}}";
+            let program = if caught {
+                program.replace(
+                    "try{state.started",
+                    "try{throw 1;}catch(error){state.started",
+                )
+            } else {
+                program.into()
+            };
+            e.execute(&program).unwrap();
+            let base = e.charged_bytes();
+            e.set_budget(Some(base + extra));
+            let result = e.call_global("work");
+            e.set_budget(None);
+            if result.is_ok() {
+                succeeded += 1;
+                e.call_global("verify").unwrap();
+            } else {
+                failed += 1;
+            }
+            e.release_globals();
+            assert_eq!((e.live_objects(), e.live_roots()), (0, 0));
+        }
+    }
+    assert!(failed > 0 && succeeded > 0);
+}

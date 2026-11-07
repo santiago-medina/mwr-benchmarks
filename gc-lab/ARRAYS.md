@@ -67,7 +67,7 @@ python3 gc-lab/conformance/compare_node.py --source gc-lab/.test262-source --pro
 
 El módulo `arrays.rs` concentra las operaciones exóticas, los métodos y el estado
 mínimo del iterador; reutiliza el GC y los descriptores existentes. La suite tiene
-108 contratos, incluidos fallos de cuota con realm ya inicializada y liberación
+110 contratos, incluidos fallos de cuota con realm ya inicializada y liberación
 de nodos al sacar una tarea del array. La regresión nativa conserva 1.500 ciclos y
 dos navegaciones; el único camino al nodo capturado pasa ahora por un array y un
 objeto. La CI registra el resultado de esa ejecución por separado de los contratos.
@@ -80,4 +80,6 @@ iteración asíncrona. Los símbolos soportados cubren identidad, claves y los
 well-known `iterator`, `species` y `toStringTag`; descripciones y boxing de símbolos
 siguen fuera del subconjunto. `for…of` admite declaraciones simples de un binding,
 sin etiquetas ni destructuring. El parser no implementa todas las early errors.
-Las cuotas siguen siendo contabilidad lógica del grafo, no un límite de RSS.
+Los fallos de memoria y límites de ejecución no se convierten en excepciones JS:
+ni `IteratorClose` ni un `return` de `finally` pueden ocultarlos. Se prueban con
+cuotas barridas después de inicializar la realm. Las cuotas siguen siendo contabilidad lógica del grafo, no un límite de RSS.
