@@ -1,5 +1,7 @@
 # Primera ejecución vertical de JavaScript
 
+Este documento conserva el primer hito. Para el estado posterior, ver [OBJECTS.md](OBJECTS.md), [ARRAYS.md](ARRAYS.md), [PROMISES.md](PROMISES.md), [ASYNC.md](ASYNC.md) y [FETCH.md](FETCH.md).
+
 Esta página describe la etapa inicial con DOM simulado. La extensión posterior
 a DOM real de Servo está documentada en [SERVO_INTEGRATION.md](SERVO_INTEGRATION.md).
 

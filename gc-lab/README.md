@@ -244,7 +244,16 @@ Test262 separados para objetos y arrays.
 
 ## Promesas y microtareas
 
-La etapa actual se describe en [PROMISES.md](PROMISES.md): promesas, capabilities,
+Esta etapa se describe en [PROMISES.md](PROMISES.md): promesas, capabilities,
 thenables y jobs trazados por el GC, con un perfil Test262 asíncrono y conexión
 a la cola de microtareas compartida de Servo. Las secciones anteriores documentan
 los hitos previos del laboratorio.
+
+## Async/await y red nativa
+
+[ASYNC.md](ASYNC.md) describe las continuaciones explícitas, el trazado de activaciones
+y el perfil oficial de 249 casos (40 aprobados, 209 no soportados, cero fallos).
+[FETCH.md](FETCH.md) describe las promesas de cabeceras/cuerpo y el adaptador a
+Fetch/Response de Servo, con las pruebas HTTP y sus límites. Hay 148 contratos
+debug/release; las pruebas de transporte nativo deben comprobarse en sus informes
+y en Actions, por separado de los contratos del host simulado.

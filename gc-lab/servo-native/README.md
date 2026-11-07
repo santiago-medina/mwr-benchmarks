@@ -106,3 +106,27 @@ transporta nuestro programa. La regresión de navegación encola un token con el
 pipeline ya retirado y comprueba su no ejecución antes de publicar la prueba.
 Los informes finales están en `native-promise-proof.json`,
 `native-microtask-interop-proof.json` y `native-promise-gc-proof.json`.
+
+## Async/await y Fetch
+
+`mwr_network.rs` conecta callbacks nativos de Fetch y Response con las
+continuaciones descritas en [ASYNC.md](../ASYNC.md). Los handlers solo conservan
+pipeline y serial; la sesión posee AbortControllers y Responses nativos hasta
+que la VM libera sus wrappers. Los hooks de Document.abort/unload cancelan
+transporte usando el contexto existente antes de descartar el registro.
+
+```sh
+python3 gc-lab/servo-native/run_fetch.py --servo gc-lab/.servo-native/target/debug/servoshell
+```
+
+El runner sirve HTTP local y espera observaciones DOM nativas, manteniendo
+bloqueado el evento load con una imagen mientras continúa la red. Comprueba
+éxito, 404, 204, fallo de conexión, CORS, CSP y navegación con un cuerpo pendiente.
+No usa el self-test de click sincrónico para simular una operación de red.
+Ver [FETCH.md](../FETCH.md) para límites y estado de la evidencia.
+
+La caché de dependencias se identifica por versión, toolchain y manifiestos,
+sin crear una entrada nueva por cada edición del intérprete. El archivo de
+fuentes verificado también se guarda antes de compilar, incluso si las pruebas
+posteriores fallan. Los cuatro paquetes de integración se siguen limpiando
+antes de cada compilación nativa.
