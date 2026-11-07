@@ -42,3 +42,8 @@ para registrar una nueva referencia, no una actualización automática de CI.
 El informe completo `results/cases.json` contiene el hash de cada fuente y su
 resultado; CI lo conserva como artifact. El resumen añade hashes de implementación
 y runner. Tanto las rutas aprobadas como los fallos conocidos se versionan.
+
+Como comprobación independiente, `compare_node.py` ejecuta los 1.185 casos
+aprobados en Node 24 con `sta.js` y `assert.js` oficiales, sin modificar.
+Los 1.185 pasan también allí; el informe está en `node-report.json`.
+Esto valida el oráculo de esos casos, no cubre los 1.619 no soportados.

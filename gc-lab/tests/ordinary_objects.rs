@@ -153,3 +153,51 @@ fn quota_failures_release_partial_intrinsics_and_graphs() {
 fn global_var_property_record_and_constant_descriptors() {
     check("Object.defineProperty(Object.prototype,'prop',{value:1001});var prop=1002;assert(this.hasOwnProperty('prop'));assert.sameValue(this.prop,1002);this.prop=1003;assert.sameValue(prop,1003);prop=1004;assert.sameValue(this.prop,1004);assert.sameValue(Object.getOwnPropertyDescriptor(this,'prop').configurable,false);assert.sameValue(Object.getOwnPropertyDescriptor(this,'NaN').writable,false);assert.sameValue(Object.getOwnPropertyDescriptor(this,'undefined').configurable,false);");
 }
+#[test]
+fn failed_public_lookup_does_not_escape_exception_roots() {
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.execute("const keep={};").unwrap();
+    for _ in 0..4 {
+        assert!(e.call_global("missing").is_err());
+        assert!(e.binding_string("also_missing").is_err());
+    }
+    e.release_globals();
+    assert_eq!(
+        (e.live_objects(), e.metadata_objects(), e.live_roots()),
+        (0, 0, 0)
+    );
+}
+#[test]
+fn allocation_failure_inside_existing_realm_preserves_roots_and_recovery() {
+    let mut successes = 0;
+    let mut failures = 0;
+    for model in [Model::Stable, Model::Indirect] {
+        for extra in [0, 16, 64, 128, 256, 512, 1024, 2048, 4096] {
+            let mut e = Engine::new(model, model).unwrap();
+            e.execute("const root={keep:{value:1}};function work(){root.other={a:{b:2}};Object.defineProperty(root,'accessor',{get:function(){return root.keep;},configurable:true});}function inspect(){if(root.keep.value!==1){throw 'corrupt';}}").unwrap();
+            let base = e.charged_bytes();
+            e.set_budget(Some(base + extra));
+            if e.call_global("work").is_ok() {
+                successes += 1;
+            } else {
+                failures += 1;
+            }
+            e.collect();
+            assert_eq!(e.live_roots(), 1);
+            assert_eq!(e.live_objects(), e.metadata_objects());
+            e.set_budget(None);
+            e.call_global("inspect").unwrap();
+            e.release_globals();
+            assert_eq!(
+                (
+                    e.live_objects(),
+                    e.metadata_objects(),
+                    e.live_roots(),
+                    e.charged_bytes()
+                ),
+                (0, 0, 0, 0)
+            );
+        }
+    }
+    assert!(successes > 0 && failures > 0);
+}

@@ -286,10 +286,13 @@ impl<'host> Engine<'host> {
         }
     }
     pub(super) fn binding(&mut self, name: &str) -> Result<Value> {
-        let global = self
-            .global
-            .ok_or(ScriptError::Runtime("no global environment"))?;
-        self.lookup(self.runtime.resolve(global)?, name)
+        self.frame(|e| {
+            let global = e
+                .global
+                .ok_or(ScriptError::Runtime("no global environment"))?;
+            let id = e.runtime.resolve(global)?;
+            e.lookup(id, name)
+        })
     }
     pub fn execute(&mut self, source: &str) -> Result<()> {
         let program = parser::parse(source).map_err(ScriptError::Syntax)?;
