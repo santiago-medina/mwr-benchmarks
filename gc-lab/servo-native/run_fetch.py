@@ -147,7 +147,12 @@ run();
                 assert 'MWR_NATIVE_ERROR ' not in log, log
                 assert image.exists() and image.stat().st_size > 1000
                 completions = [line.strip() for line in lines if line.startswith('MWR_NATIVE_FETCH_COMPLETION ')]
-                assert len(completions) == (2 if scenario in ('success', 'http404') else 1), (scenario, completions)
+                if scenario == 'navigation':
+                    # Abort rejection can run before teardown or be discarded with
+                    # the retired document. Neither may keep the old realm alive.
+                    assert 1 <= len(completions) <= 2 and completions[0].endswith(' headers'), completions
+                else:
+                    assert len(completions) == (2 if scenario in ('success', 'http404') else 1), (scenario, completions)
                 if scenario == 'csp':
                     assert '/data' not in requests, requests
                 results[scenario] = dict(after=expected, completions=completions,
