@@ -22,10 +22,19 @@ jobs:
         run: |
           g++ -std=c++17 -O1 -g -Wall -Wextra -fno-omit-frame-pointer -fsanitize=address,undefined security-lab/tests/is_dot_contract.cc -o /tmp/mwr_is_dot_contract
           /tmp/mwr_is_dot_contract
+      - name: Differential URL API test in installed Google Chrome
+        run: |
+          node --version
+          google-chrome --version
+          npm install --no-save --prefix security-lab/js playwright-core@1.56.1
+          node security-lab/js/compare_urls.mjs
       - name: Fetch selected public Chromium sources and generate review report
         run: python3 security-lab/audit.py --output security-lab/results
       - name: Append report to workflow summary
-        run: cat security-lab/results/report.md >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          cat security-lab/results/report.md >> "$GITHUB_STEP_SUMMARY"
+          printf '\n' >> "$GITHUB_STEP_SUMMARY"
+          cat security-lab/results/differential.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
