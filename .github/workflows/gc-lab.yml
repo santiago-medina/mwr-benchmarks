@@ -1,0 +1,21 @@
+name: GC laboratory
+on:
+  push:
+    paths: ['gc-lab/**', '.github/workflows/gc-lab.yml']
+  pull_request:
+    paths: ['gc-lab/**', '.github/workflows/gc-lab.yml']
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt
+      - name: Formatting
+        run: cargo +stable fmt --manifest-path gc-lab/Cargo.toml --check
+      - name: Debug contracts
+        run: cargo +stable test --manifest-path gc-lab/Cargo.toml --offline
+      - name: Release contracts
+        run: cargo +stable test --manifest-path gc-lab/Cargo.toml --release --offline
