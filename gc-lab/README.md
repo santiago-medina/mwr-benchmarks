@@ -234,3 +234,10 @@ La [integración nativa](servo-native/README.md) ejecuta el contador dentro de
 Servo, sin transporte de JavaScript para nuestro programa. SpiderMonkey sigue
 siendo necesario para los reflectores y el GC nativo. Las dependencias de la
 compilación se reutilizan mediante la caché de Actions.
+
+## Arrays e iteración
+
+[ARRAYS.md](ARRAYS.md) describe el siguiente hito: arrays dispersos, `length`,
+métodos, símbolos como claves y cierre de iteradores en `for…of`. Incluye una
+lista que añade, completa y elimina nodos reales de Servo, y perfiles de
+Test262 separados para objetos y arrays.

@@ -26,7 +26,7 @@ actualiza el modelo y escribe el label en el DOM. El HTML nativo está en
 5. `src/script/builtins.rs`: tabla explícita de intrinsics y dispatch hacia las
    operaciones anteriores. `host.rs` conecta los receptores con el adaptador DOM.
 
-La prueba de contratos tiene 88 casos en debug y release. Los casos nuevos
+En este hito, la prueba de contratos tenía 88 casos en debug y release. Los casos nuevos
 recorren heaps estables e indirectos con GC antes de cada asignación de objeto.
 También se prueban cuotas, excepciones de getters/setters, error de escritura
 nativa capturable y recuperación sin alterar el DOM. El corpus diferencial tiene
@@ -34,7 +34,7 @@ nativa capturable y recuperación sin alterar el DOM. El corpus diferencial tien
 
 ## Límites actuales
 
-No hay arrays, símbolos, Proxy, módulos, promesas, loops ni el lenguaje completo.
+El hito posterior [ARRAYS.md](ARRAYS.md) añade arrays, símbolos mínimos y `for…of`. Siguen faltando Proxy, módulos, promesas y el lenguaje completo.
 El parser admite un subconjunto explícito y tiene límites de tamaño/profundidad;
 no es una implementación completa de las early errors de ECMAScript. Los errores
 del host durante operaciones DOM son excepciones JS; los fallos de memoria,

@@ -83,3 +83,58 @@ fn species_and_generic_map() {
 fn reflection_preserves_string_symbol_and_index_order() {
     check("const s=Symbol();const o={b:1,2:2,1:3};o[s]=4;assert.sameValue(Object.keys(o).join(),'1,2,b');assert.sameValue(Object.getOwnPropertySymbols(o)[0],s);const keys=Reflect.ownKeys(o);assert.sameValue(keys.length,4);assert.sameValue(keys[3],s);assert.sameValue(Object.keys('ab').join(),'0,1');");
 }
+#[test]
+fn iterator_is_the_only_owner_and_exhaustion_releases_its_target() {
+    for model in [Model::Stable, Model::Indirect] {
+        let mut e = Engine::new(model, model).unwrap();
+        e.enable_test_harness();
+        e.execute("const iterator=[{n:7}].values();function consume(){assert.sameValue(iterator.next().value.n,7);assert.sameValue(iterator.next().done,true);}").unwrap();
+        e.collect();
+        let before = e.live_objects();
+        e.call_global("consume").unwrap();
+        e.collect();
+        assert!(e.live_objects() + 2 <= before);
+        assert_eq!(e.live_roots(), 1);
+        e.release_globals();
+        assert_eq!(
+            (e.live_objects(), e.metadata_objects(), e.live_roots()),
+            (0, 0, 0)
+        );
+    }
+}
+#[test]
+fn pending_return_and_throw_arrays_survive_allocating_iterator_close() {
+    check("const i={next:function(){return {value:1,done:false};},return:function(){const noise=[{a:{}},{b:{}}];return {};}};const source={};source[Symbol.iterator]=()=>i;function f(){for(const x of source){return [{n:7}];}}assert.sameValue(f()[0].n,7);function g(){for(const x of source){throw [{n:8}];}}try{g();assert(false);}catch(e){assert.sameValue(e[0].n,8);}");
+}
+#[test]
+fn quota_failure_cannot_publish_an_index_without_its_length() {
+    let mut successes = 0;
+    let mut failures = 0;
+    for extra in [0, 64, 128, 256, 512, 1024, 2048] {
+        let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+        e.enable_test_harness();
+        e.execute("const a=[];const value={n:7};function grow(){a[4]=value;}function unchanged(){assert.sameValue(a.length,0);assert.sameValue(a.hasOwnProperty('4'),false);}function changed(){assert.sameValue(a.length,5);assert.sameValue(a[4],value);}").unwrap();
+        let baseline = e.charged_bytes();
+        e.set_budget(Some(baseline + extra));
+        let result = e.call_global("grow");
+        e.set_budget(None);
+        if result.is_ok() {
+            successes += 1;
+            e.call_global("changed").unwrap();
+        } else {
+            failures += 1;
+            e.call_global("unchanged").unwrap();
+        }
+        e.release_globals();
+        assert_eq!(
+            (
+                e.live_objects(),
+                e.metadata_objects(),
+                e.live_roots(),
+                e.charged_bytes()
+            ),
+            (0, 0, 0, 0)
+        );
+    }
+    assert!(successes > 0 && failures > 0);
+}
