@@ -72,7 +72,7 @@ python3 gc-lab/conformance/run.py --source gc-lab/.test262-source --profile prom
 python3 gc-lab/conformance/compare_node.py --source gc-lab/.test262-source --profile promises
 ```
 
-## Pruebas nativas preparadas
+## Pruebas nativas verificadas
 
 `promise-fixture.html` contiene el programa de `examples/promise-task.js`.
 Cada click resuelve un thenable, encadena un resultado, espera un `finally` y
@@ -88,7 +88,7 @@ compartida de vaciar todos los jobs Rust de golpe.
 La regresión de 1.500 ciclos conserva además una promesa pendiente entre
 invocaciones y realiza dos navegaciones. Después de cada retirada de realm se
 encola un token con su pipeline anterior y se comprueba que realmente se ignore.
-Los informes nativos se archivan una vez finalice la compilación de esa revisión.
+Los informes y capturas se conservan en el repositorio, con su commit y workflow.
 
 ## Límites
 
@@ -100,3 +100,23 @@ Los rechazos no manejados se notifican como diagnósticos del host; todavía no
 hay eventos HTML `unhandledrejection`/`rejectionhandled`. Los límites de memoria
 siguen siendo contabilidad lógica del grafo, no RSS. No se afirma compatibilidad
 completa con ECMAScript ni sustitución de los reflectores o el GC de SpiderMonkey.
+
+## Evidencia final
+
+[CI 42398228306](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/42398228306)
+valida el runtime de `af0a8c297dd8a5dad0b8dbdf3816234a4660deb8`; terminaron
+correctamente los cuatro jobs, incluidos 128 contratos en debug/release y los
+tres perfiles Test262 con su comprobación independiente en Node.
+
+- `native-promise-proof.json`: dos clicks, 18 jobs y 18 colecciones conjuntas
+  antes de sus ejecuciones; resultado `Resultado 4 | adoptar > micro > then > finally`.
+- `native-microtask-interop-proof.json`: dos jobs Rust, GC antes de ambos y el
+  observador de SpiderMonkey entre ellos; resultado `RSU`.
+- `native-promise-gc-proof.json`: 1.500 ciclos, 3.000 botones finalizados, 89
+  errores recuperados, baseline constante de 117 objetos, dos navegaciones y
+  dos entradas dirigidas a realms retiradas realmente ignoradas.
+- `native-promise.png` y `native-microtask-interop.png`: capturas de ambos resultados.
+
+Los tres informes corresponden al mismo binario. El hash de todas las fuentes
+Rust actuales coincide con el medido por la prueba nativa. La caché de dependencias
+se restauró y la compilación nativa tardó 71 segundos.

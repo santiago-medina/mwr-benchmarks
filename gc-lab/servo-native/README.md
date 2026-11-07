@@ -90,3 +90,19 @@ guardan el hito final, con la captura `native-task-list.png`.
 La captura al nodo secundario de `gc-fixture.html` pasa ahora por un array y un
 objeto, sin un binding directo alternativo al nodo. Se conservan los mismos
 1.500 ciclos y las dos navegaciones para comprobar su trazado y reclamación.
+
+## Promesas y cola de microtareas
+
+[PROMISES.md](../PROMISES.md) documenta los jobs trazados, el límite de cada
+checkpoint y la prueba `R → S → U` con un `MutationObserver` de SpiderMonkey.
+Cada job VM se encola con `GlobalScope::enqueue_microtask` como un runnable real,
+identificado solo por pipeline y serial. Los ámbitos `run_a_script` impiden
+ejecutarlo dentro de una invocación activa. El parche en `runtime/job_queue.rs`
+marca los límites del checkpoint y entrega los diagnósticos al host.
+
+El runner añade `--require-microtasks`, `--gc-between-microtasks` y
+`--observer-probe`. La sonda SpiderMonkey solo observa cambios DOM; no evalúa ni
+transporta nuestro programa. La regresión de navegación encola un token con el
+pipeline ya retirado y comprueba su no ejecución antes de publicar la prueba.
+Los informes finales están en `native-promise-proof.json`,
+`native-microtask-interop-proof.json` y `native-promise-gc-proof.json`.
