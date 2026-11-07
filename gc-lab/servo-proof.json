@@ -1,0 +1,50 @@
+{
+  "program_executor": "gc-lab Rust AST interpreter",
+  "dom": "Servo 0.7.0",
+  "transport": "SpiderMonkey DOM RPC via WebDriver",
+  "spidermonkey_replaced": false,
+  "capabilities": {
+    "browserName": "servo",
+    "proxy": {},
+    "acceptInsecureCerts": false,
+    "unhandledPromptBehavior": "dismiss and notify",
+    "pageLoadStrategy": "normal",
+    "strictFileInteractability": false,
+    "timeouts": {
+      "script": 30000,
+      "pageLoad": 300000,
+      "implicit": 0
+    },
+    "browserVersion": "0.0.1",
+    "platformName": "linux",
+    "setWindowRect": true,
+    "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Servo/0.7.0 Firefox/153.0"
+  },
+  "before": "Pulsar",
+  "registered": {
+    "hooks": 1,
+    "queued": 0,
+    "nodes": 1
+  },
+  "after_native_click_before_rust": "Pulsar",
+  "after_rust_callback": "Funciona",
+  "rust_after_release": {
+    "objects": 0,
+    "metadata": 0,
+    "roots": 0,
+    "remote_nodes": 0
+  },
+  "servo_after_release": {
+    "nodes": 0,
+    "queued": 0,
+    "hooks": 0
+  },
+  "transport_operations": [
+    "QUERY",
+    "TAG",
+    "LISTEN",
+    "SET_TEXT",
+    "RELEASE"
+  ],
+  "success": true
+}

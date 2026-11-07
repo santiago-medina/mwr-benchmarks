@@ -1,5 +1,8 @@
 # Primera ejecución vertical de JavaScript
 
+Esta página describe la etapa inicial con DOM simulado. La extensión posterior
+a DOM real de Servo está documentada en [SERVO_INTEGRATION.md](SERVO_INTEGRATION.md).
+
 ## Resultado y reproducción
 
 El programa de `examples/button.js` se analiza y ejecuta: crea un nodo, registra

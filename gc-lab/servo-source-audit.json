@@ -1,0 +1,90 @@
+{
+  "servo_tag": "v0.7.0",
+  "servo_commit": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+  "linux_archive_sha256": "728eba1be1cc1851e05dfaa90e18f98ab8644dd2355bedb0b8a5e89795ebe333",
+  "sources": [
+    {
+      "boundary": "classic scripts",
+      "path": "components/script/dom/globalscope/script_execution.rs",
+      "blob_sha": "debb455d74977a2d192ebd2c7c79bcca7d842710",
+      "lines": [
+        133,
+        179
+      ],
+      "finding": "Classic script execution calls SpiderMonkey JS_ExecuteScript."
+    },
+    {
+      "boundary": "script elements",
+      "path": "components/script/dom/html/scripting/htmlscriptelement.rs",
+      "blob_sha": "66b7adee3052f012743a3e5effe9d51adcbfffdc",
+      "lines": [
+        975,
+        1028
+      ],
+      "finding": "HTML script execution routes classic scripts to run_a_classic_script."
+    },
+    {
+      "boundary": "DOM rooting",
+      "path": "components/script_bindings/reflector.rs",
+      "blob_sha": "8fb2ee17653070159042e252439a952ea99a53d5",
+      "lines": [
+        47,
+        55,
+        292
+      ],
+      "finding": "Reflectors hold SpiderMonkey JSObject pointers, trace using JSTracer, and require JSContext for reflection."
+    },
+    {
+      "boundary": "callbacks",
+      "path": "components/script_bindings/callback.rs",
+      "blob_sha": "1654a3fad01224d15caedb9c0ed73051e244223f",
+      "lines": [
+        150,
+        158,
+        252
+      ],
+      "finding": "CallbackObject wraps a JSObject and CallbackFunction builds on that representation."
+    },
+    {
+      "boundary": "event listeners",
+      "path": "components/script/dom/event/eventtarget.rs",
+      "blob_sha": "f35b77036f66bf9ea2bd4fe0b721a10d368caaf0",
+      "lines": [
+        165,
+        167,
+        200
+      ],
+      "finding": "Listeners use TracedCallback<EventListener>, not an engine-neutral callback interface."
+    },
+    {
+      "boundary": "DOM mutation",
+      "path": "components/script/dom/node/node.rs",
+      "blob_sha": "b2f799aaa98976340c66db60400475635958a26c",
+      "lines": [
+        3357,
+        3842
+      ],
+      "finding": "SetTextContent receives a mutable SpiderMonkey JSContext."
+    },
+    {
+      "boundary": "embedding",
+      "path": "components/servo/webview.rs",
+      "blob_sha": "51cea792a1752f9eba58ecc89ef90bc85ebd25ee",
+      "lines": [
+        731
+      ],
+      "finding": "The public embedding method evaluates a JavaScript source string; it does not install a foreign engine."
+    },
+    {
+      "boundary": "generated bindings",
+      "path": "components/script_bindings/codegen/codegen.py",
+      "blob_sha": "b9a1a4086d77264e77d83d00905a7e1119e4900b",
+      "lines": [
+        5461,
+        6970,
+        8301
+      ],
+      "finding": "Generated conversions, tracing and callback wrappers use SpiderMonkey-specific types."
+    }
+  ]
+}

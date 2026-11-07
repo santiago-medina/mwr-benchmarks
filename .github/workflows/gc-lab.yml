@@ -28,3 +28,30 @@ jobs:
           node-version: '24'
       - name: Differential subset corpus
         run: python3 gc-lab/compare_script.py --binary gc-lab/target/release/script_demo
+  servo-integration:
+    runs-on: ubuntu-24.04
+    needs: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Servo runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 libgstreamer-plugins-bad1.0-0 libgstreamer-gl1.0-0 libegl1 libgl1-mesa-dri fonts-dejavu-core
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build Rust interpreter bridge
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin servo_bridge --release --offline
+      - name: Fetch pinned Servo release
+        run: python3 gc-lab/fetch_servo.py
+      - name: Real Servo DOM and native click
+        run: python3 gc-lab/run_servo_bridge.py --servo gc-lab/.servo-test/servo/servoshell
+      - name: Preserve integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: servo-dom-bridge
+          path: |
+            gc-lab/servo-results/report.json
+            gc-lab/servo-results/button.png
+            gc-lab/servo-results/servo.log
+            gc-lab/servo-results/bridge.log

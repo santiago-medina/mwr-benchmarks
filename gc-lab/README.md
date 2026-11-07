@@ -211,3 +211,11 @@ El [intérprete del subconjunto](SCRIPT_ENGINE.md) ejecuta el programa de
 `examples/button.js` con closures reales del AST y el DOM simulado. Incluye
 46 tests en total y un corpus diferencial de diez programas contra Node + mock.
 Ver SCRIPT_ENGINE.md para reproducción y límites exactos.
+
+
+## DOM real de Servo
+
+El [puente experimental](SERVO_INTEGRATION.md) ejecuta nuestro intérprete contra
+un botón renderizado por Servo 0.7.0, con click nativo y retirada de handles.
+SpiderMonkey sigue presente para el transporte DOM; no es un reemplazo interno.
+La suite actual tiene 52 tests y CI conserva el informe y la captura de la prueba.

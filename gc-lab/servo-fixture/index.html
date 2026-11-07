@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Rust y Servo: integración DOM</title>
+<style>
+  body { margin: 0; padding: 64px; background: #f0f4f8; color: #193047; font: 20px sans-serif; }
+  main { max-width: 680px; background: white; border: 1px solid #d8e0e8; border-radius: 18px; padding: 36px; }
+  h1 { font-size: 30px; margin: 0 0 18px; }
+  button { display: block; margin-top: 28px; padding: 18px 36px; font: bold 28px sans-serif; background: #17634c; color: white; border: 0; border-radius: 10px; }
+  p { line-height: 1.5; }
+</style>
+<main>
+  <h1>JavaScript en Rust, DOM en Servo</h1>
+  <p>Una página real y un callback ejecutado por el intérprete experimental.</p>
+  <button id="button">Pulsar</button>
+</main>
+<!-- Inert on purpose: Servo must not execute this program in SpiderMonkey. -->
+<script id="mwr-program" type="application/x-mwr-js">
+const button = document.querySelector("#button");
+button.addEventListener("click", () => {
+  button.textContent = "Funciona";
+});
+</script>

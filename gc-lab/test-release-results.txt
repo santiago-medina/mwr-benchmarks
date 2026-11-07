@@ -1,5 +1,5 @@
    Compiling gc-lab v0.1.0 (/workspace/scratch/e3f46e95421a/gc-lab)
-    Finished `release` profile [optimized] target(s) in 0.47s
+    Finished `release` profile [optimized] target(s) in 1.20s
      Running unittests src/lib.rs (gc-lab/target/release/deps/gc_lab-2ec61517e03cf31e)
 
 running 0 tests
@@ -24,90 +24,108 @@ running 0 tests
 
 test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests/contracts.rs (gc-lab/target/release/deps/contracts-95261ffacb925d3c)
+     Running unittests src/bin/servo_bridge.rs (gc-lab/target/release/deps/servo_bridge-025ec1df7f8a73e4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/contracts.rs (gc-lab/target/release/deps/contracts-9064c7b8160db141)
 
 running 8 tests
-test dead_cycles_and_roots_are_reclaimed ... ok
-test callback_error_keeps_explicit_root_valid_until_owner_releases_it ... ok
-test reused_slots_never_resurrect_a_stale_handle ... ok
-test rooted_graph_survives_reentrant_callbacks ... ok
 test stable_handles_survive_gc_but_compact_handles_need_resolution ... ok
+test reused_slots_never_resurrect_a_stale_handle ... ok
+test callback_error_keeps_explicit_root_valid_until_owner_releases_it ... ok
+test dead_cycles_and_roots_are_reclaimed ... ok
+test rooted_graph_survives_reentrant_callbacks ... ok
 test tokens_from_another_heap_are_rejected ... ok
 test generated_graph_matches_independent_reachability_oracle ... ok
 test long_graph_uses_no_recursive_marking ... ok
 
 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-     Running tests/dual_heap.rs (gc-lab/target/release/deps/dual_heap-1652cdc63aec4cbc)
+     Running tests/dual_heap.rs (gc-lab/target/release/deps/dual_heap-9e62f53c1bd6fa1c)
 
 running 10 tests
 test byte_budget_handles_different_payloads_and_failed_edges_without_mutation ... ok
+test callback_objects_survive_reentrant_collection_in_distinct_heaps ... ok
+test byte_failure_in_nested_callback_reclaims_partial_results_and_retry_succeeds ... ok
 test independent_compaction_keeps_bridge_ids_and_rejects_reused_ids ... ok
 test quota_failure_after_first_cross_edge_does_not_make_a_permanent_root ... ok
-test byte_failure_in_nested_callback_reclaims_partial_results_and_retry_succeeds ... ok
-test callback_objects_survive_reentrant_collection_in_distinct_heaps ... ok
-test roots_in_either_heap_preserve_foreign_cycle_and_both_heaps_reclaim_it ... ok
-test wrong_runtime_domain_and_direct_compaction_are_rejected ... ok
 test partial_bridge_construction_and_panicking_scope_release_both_domains ... ok
 test removing_listener_does_not_drop_externally_rooted_callback_capture ... ok
+test roots_in_either_heap_preserve_foreign_cycle_and_both_heaps_reclaim_it ... ok
+test wrong_runtime_domain_and_direct_compaction_are_rejected ... ok
 test mixed_graphs_match_independent_oracle_across_three_collections ... ok
 
 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
-     Running tests/host_boundary.rs (gc-lab/target/release/deps/host_boundary-693285c052ed23f0)
+     Running tests/external_dom.rs (gc-lab/target/release/deps/external_dom-7ea82fabfb5ff578)
+
+running 6 tests
+test data_wire_roundtrips_without_turning_text_into_source ... ok
+test allocation_and_registration_failures_release_new_foreign_nodes ... ok
+test external_event_runs_our_closure_and_releases_foreign_lease ... ok
+test programmatic_click_and_repeated_lookup_preserve_node_identity ... ok
+test failed_release_is_retained_and_retried_instead_of_forgotten ... ok
+test failed_remote_mutation_is_reported_and_programmatic_path_unwinds ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/host_boundary.rs (gc-lab/target/release/deps/host_boundary-d19decf3f5f9c13b)
 
 running 5 tests
 test detached_listener_survives_only_when_externally_reachable ... ok
-test callback_result_keeps_capture_alive_and_entire_cycle_is_reclaimed ... ok
-test partial_callback_results_are_reclaimed_after_budget_failure_and_retry_works ... ok
 test zero_budget_and_dropped_caller_root_are_rejected ... ok
 test partial_host_construction_releases_its_roots ... ok
+test partial_callback_results_are_reclaimed_after_budget_failure_and_retry_works ... ok
+test callback_result_keeps_capture_alive_and_entire_cycle_is_reclaimed ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests/scopes_and_map.rs (gc-lab/target/release/deps/scopes_and_map-79be94606790c557)
+     Running tests/scopes_and_map.rs (gc-lab/target/release/deps/scopes_and_map-2e536c3c9363a48a)
 
 running 7 tests
+test map_error_and_panic_release_output_and_item_roots ... ok
+test scoped_allocation_stress_preserves_graph_in_all_models ... ok
+test scoped_root_slots_are_reused_without_reviving_escaped_tokens ... ok
 test indirect_tokens_survive_repeated_compaction_and_reuse ... ok
 test scopes_release_on_success_error_and_panic ... ok
 test stress_exposes_unrooted_temporaries_and_empty_map_works ... ok
-test scoped_allocation_stress_preserves_graph_in_all_models ... ok
-test map_error_and_panic_release_output_and_item_roots ... ok
-test scoped_root_slots_are_reused_without_reviving_escaped_tokens ... ok
 test maps_match_scalar_oracle_under_reentrant_gc_and_allocation_stress ... ok
 
 test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests/script_dom.rs (gc-lab/target/release/deps/script_dom-52cb5106938432b3)
+     Running tests/script_dom.rs (gc-lab/target/release/deps/script_dom-31421577fa717794)
 
 running 6 tests
-test listener_snapshot_respects_removal_and_does_not_run_new_listeners_yet ... ok
-test requested_javascript_changes_text_and_releases_the_cross_heap_cycle ... ok
 test handler_can_remove_itself_and_reenter_click_without_leaking_frames ... ok
 test closures_capture_local_objects_and_return_through_multiple_allocating_calls ... ok
+test listener_snapshot_respects_removal_and_does_not_run_new_listeners_yet ... ok
 test fault_injected_quotas_and_step_limits_release_partial_dom_and_callbacks ... ok
+test requested_javascript_changes_text_and_releases_the_cross_heap_cycle ... ok
 test host_and_callback_errors_unwind_all_interpreter_roots ... ok
 
 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests/script_execution.rs (gc-lab/target/release/deps/script_execution-dbbfe3f1969fabad)
+     Running tests/script_execution.rs (gc-lab/target/release/deps/script_execution-6a6067e7fc2c6fda)
 
 running 5 tests
-test object_results_remain_alive_during_later_argument_allocations ... ok
-test closure_returns_a_captured_value_after_its_call_frame_has_gone ... ok
 test lexical_scope_shadowing_and_left_to_right_arguments ... ok
+test closure_returns_a_captured_value_after_its_call_frame_has_gone ... ok
+test object_results_remain_alive_during_later_argument_allocations ... ok
 test runtime_errors_clean_the_realm_and_preserve_no_execution_roots ... ok
 test recursive_closure_is_bounded_and_memory_errors_are_recoverable ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
-     Running tests/script_parser.rs (gc-lab/target/release/deps/script_parser-50a095b805d9a8d8)
+     Running tests/script_parser.rs (gc-lab/target/release/deps/script_parser-6be5b47d05d03de1)
 
 running 5 tests
-test parses_parameters_returns_grouping_and_unicode_strings ... ok
-test rejects_early_errors_even_in_uncalled_functions_and_unsupported_asi ... ok
 test parses_requested_program_without_recognizing_a_hardcoded_source_string ... ok
 test rejects_unsupported_or_malformed_input_with_an_offset ... ok
+test rejects_early_errors_even_in_uncalled_functions_and_unsupported_asi ... ok
+test parses_parameters_returns_grouping_and_unicode_strings ... ok
 test parser_enforces_source_token_and_recursion_limits ... ok
 
 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
