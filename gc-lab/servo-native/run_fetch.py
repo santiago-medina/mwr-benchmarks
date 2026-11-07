@@ -38,7 +38,7 @@ def main():
                     self.close_connection = True
                     return
                 if self.path.startswith('/?after=1'):
-                    data = b'<meta charset="utf-8"><h1>Realm anterior recogido</h1><img src="/hold"><script type="application/x-mwr-js">const ready=1;</script>'
+                    data = b'<meta charset="utf-8"><h1>Realm anterior recogido</h1><script type="application/x-mwr-js">const ready=1;</script>'
                     self.send_response(200)
                     self.send_header('Content-Type', 'text/html; charset=utf-8')
                 elif self.path == '/':
@@ -82,7 +82,7 @@ def main():
         fixture = '''<!doctype html><meta charset="utf-8">''' + policy + '''
 <title>Fetch nativo con async/await</title>
 <style>body{font:24px sans-serif;padding:48px;background:#edf4f2;color:#18362d}#result{background:white;padding:24px}</style>
-<h1>Red nativa y continuaciones Rust</h1><p id="result">Pendiente</p><img src="/hold?old" alt="">
+<h1>Red nativa y continuaciones Rust</h1><p id="result">Pendiente</p>
 <script type="application/x-mwr-js">
 const result=document.querySelector('#result');
 async function run(){

@@ -293,7 +293,7 @@ fn queue_check(doc: &Document) {
         if let Some(result)=result {
             let text=result.upcast::<Node>().GetTextContent().map(|s|s.to_string()).unwrap_or_default();
             eprintln!("MWR_NATIVE_FETCH_OBSERVED {}",serde_json::json!(text));
-            if text==expected { eprintln!("MWR_NATIVE_FETCH_PROOF {}",serde_json::json!({"after":text,"native_fetch":true})); }
+            if text==expected { eprintln!("MWR_NATIVE_FETCH_PROOF {}",serde_json::json!({"after":text,"native_fetch":true}));finish_probe(cx,&doc); }
         }
     }));
 }
@@ -349,7 +349,26 @@ fn begin_navigation_inner(cx: &mut JSContext, doc: &Document, module_source: boo
     eprintln!("MWR_NATIVE_FETCH_NAVIGATING");
     Ok(())
 }
+fn probe_url(doc: &Document) -> servo_url::ServoUrl {
+    let mut url = doc.url();
+    url.set_fragment(Some("mwr-native-network-probe"));
+    url
+}
+fn finish_probe(cx: &mut JSContext, doc: &Document) {
+    doc.finish_load(
+        crate::event_loop::document_loader::LoadType::Script(probe_url(doc)),
+        cx,
+    );
+}
 pub(super) fn on_execute(doc: &Document) {
+    if std::env::var_os("MWR_NATIVE_FETCH_TEST").is_some()
+        || std::env::var_os("MWR_NATIVE_MODULE_NAVIGATION").is_some()
+    {
+        doc.loader_mut()
+            .add_blocking_load(crate::event_loop::document_loader::LoadType::Script(
+                probe_url(doc),
+            ));
+    }
     if std::env::var_os("MWR_NATIVE_FETCH_NAVIGATION").is_some()
         && doc.url().query() == Some("after=1")
     {
@@ -377,5 +396,6 @@ fn poll_navigation(doc: &Document) {
             eprintln!("MWR_NATIVE_ERROR stale fetch: {error}");return;
         }
         eprintln!("MWR_NATIVE_FETCH_PROOF {}",serde_json::json!({"after":"navigated","native_fetch":!probe.module_source,"native_modules":probe.module_source,"old_session_collected":true,"old_document_collected":true,"retired_completion_ignored":true}));
+        finish_probe(&mut cx,&doc);
     }));
 }

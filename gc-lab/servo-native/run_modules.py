@@ -30,7 +30,7 @@ def main():
                 status=200;content_type='application/javascript; charset=utf-8'
                 if self.path=='/':data=fixture.encode();content_type='text/html; charset=utf-8'
                 elif self.path.startswith('/?after=1'):
-                    data=b'<meta charset="utf-8"><h1>Modulo anterior recogido</h1><img src="/hold"><script type="application/x-mwr-js">const ready=1;</script>';content_type='text/html'
+                    data=b'<meta charset="utf-8"><h1>Modulo anterior recogido</h1><script type="application/x-mwr-js">const ready=1;</script>';content_type='text/html'
                 elif self.path in ('/hold','/hold?old'):
                     (old_image if self.path.endswith('?old') else release).wait(45)
                     data=b'<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>';content_type='image/svg+xml'
@@ -54,10 +54,10 @@ def main():
         }.get(case,'')
         csp='<meta http-equiv="Content-Security-Policy" content="'+policy+'">'if policy else ''
         script='<script type="application/x-mwr-module" src="/main.js"></script>'if case=='external-entry'else '<script type="application/x-mwr-module" src="/slow.js"></script>'if case=='navigation'else '<script type="application/x-mwr-module">import "./main.js";</script>'
-        fixture='<meta charset="utf-8">'+csp+'<title>Modulos ES en Rust</title><style>body{font:24px sans-serif;padding:48px;background:#edf4f2;color:#18362d}#result{background:white;padding:24px}</style><h1>Modulos, ciclos y red nativa</h1><p id="result">Pendiente</p>'+(''if case=='disabled'else'<img src="/hold?old" alt="">')+script
+        fixture='<meta charset="utf-8">'+csp+'<title>Modulos ES en Rust</title><style>body{font:24px sans-serif;padding:48px;background:#edf4f2;color:#18362d}#result{background:white;padding:24px}</style><h1>Modulos, ciclos y red nativa</h1><p id="result">Pendiente</p>'+script
         try:
             with tempfile.TemporaryDirectory(prefix='mwr-modules-')as temp:
-                env=dict(os.environ,MWR_NATIVE_JS='1',MWR_NATIVE_MICROTASK_GC_STRESS='1',LIBGL_ALWAYS_SOFTWARE='1',EGL_PLATFORM='surfaceless')
+                env=dict(os.environ,MWR_NATIVE_JS='1',MWR_NATIVE_MODULE_TEST='1',MWR_NATIVE_MICROTASK_GC_STRESS='1',LIBGL_ALWAYS_SOFTWARE='1',EGL_PLATFORM='surfaceless')
                 for key in ('MWR_NATIVE_SELF_TEST','MWR_NATIVE_GC_TEST','MWR_NATIVE_FETCH_TEST','MWR_NATIVE_FETCH_NAVIGATION','MWR_NATIVE_MODULE_NAVIGATION'):env.pop(key,None)
                 if case=='disabled':env.pop('MWR_NATIVE_JS',None)
                 if case=='navigation':env.update(MWR_NATIVE_MODULE_NAVIGATION='1',MWR_NATIVE_FETCH_NAVIGATION='1')

@@ -75,6 +75,10 @@ pub(super) fn begin(
     blocker.set_fragment(Some("mwr-module-loader"));
     doc.loader_mut()
         .add_blocking_load(LoadType::Script(blocker.clone()));
+    if std::env::var_os("MWR_NATIVE_MODULE_TEST").is_some() {
+        doc.loader_mut()
+            .add_blocking_load(LoadType::Script(test_url(doc)));
+    }
     {
         let mut load = state.module_load.borrow_mut();
         load.entry = blocker.to_string();
@@ -336,8 +340,17 @@ pub(super) fn queue_observation(doc: &Document) {
         let target=doc.QuerySelector(cx,DOMString::from("#result")).ok().flatten();
         let text=target.and_then(|e|e.upcast::<Node>().GetTextContent()).map(|s|s.to_string()).unwrap_or_default();
         eprintln!("MWR_NATIVE_MODULE_PROOF {}",serde_json::json!({"status":format!("{status:?}"),"modules":count,"text":text}));
+        if std::env::var_os("MWR_NATIVE_MODULE_TEST").is_some(){
+            let mut realm=crate::realms::enter_auto_realm(cx,doc.window());
+            doc.finish_load(LoadType::Script(test_url(&doc)),&mut realm.current_realm());
+        }
         queue_collection(&doc);
     }));
+}
+fn test_url(doc: &Document) -> ServoUrl {
+    let mut url = doc.url();
+    url.set_fragment(Some("mwr-module-test-probe"));
+    url
 }
 
 fn finish_blocker(cx: &mut JSContext, doc: &Document, state: &Session) {
