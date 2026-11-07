@@ -230,12 +230,7 @@ fn null_body_remains_unused_and_can_be_read_repeatedly() {
         response.has_body = false;
         e.complete_fetch(serial, Ok(response)).unwrap();
         drain(&mut e);
-        let serial = state.borrow().bodies[0].0;
-        e.complete_response_text(serial, Ok(String::new())).unwrap();
-        drain(&mut e);
-        let serial = state.borrow().bodies[1].0;
-        e.complete_response_text(serial, Ok(String::new())).unwrap();
-        drain(&mut e);
+        assert!(state.borrow().bodies.is_empty());
         assert_eq!(e.assertion_count(), 5);
         finish(&mut e);
     }

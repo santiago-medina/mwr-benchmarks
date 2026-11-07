@@ -147,7 +147,7 @@ run();
                 assert 'MWR_NATIVE_ERROR ' not in log, log
                 assert image.exists() and image.stat().st_size > 1000
                 completions = [line.strip() for line in lines if line.startswith('MWR_NATIVE_FETCH_COMPLETION ')]
-                assert len(completions) == (2 if scenario in ('success', 'http404', 'empty') else 1), (scenario, completions)
+                assert len(completions) == (2 if scenario in ('success', 'http404') else 1), (scenario, completions)
                 if scenario == 'csp':
                     assert '/data' not in requests, requests
                 results[scenario] = dict(after=expected, completions=completions,

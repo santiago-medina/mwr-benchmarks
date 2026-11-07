@@ -348,6 +348,10 @@ impl Engine<'_> {
                 self.invoke(cap.reject, vec![error])?;
                 return Ok(cap.promise);
             }
+            if !response.headers.has_body {
+                self.invoke(cap.resolve, vec![Value::String(String::new())])?;
+                return Ok(cap.promise);
+            }
             let serial = self.request(cap.clone(), Some(receiver))?;
             let mut data = self.data(id)?.clone();
             data.response.as_mut().unwrap().used = response.headers.has_body;

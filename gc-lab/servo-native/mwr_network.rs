@@ -89,7 +89,10 @@ impl Completion {
                         let result = FetchResponse {
                             handle: self.serial,
                             status: response.Status(),
-                            has_body: response.GetBody().is_some(),
+                            // Servo can retain an empty placeholder stream for a
+                            // null-body HTTP status. Preserve Fetch's null-body rule.
+                            has_body: !matches!(response.Status(), 101 | 103 | 204 | 205 | 304)
+                                && response.GetBody().is_some(),
                             url: response.Url().to_string(),
                         };
                         state
@@ -256,6 +259,9 @@ fn queue_check(doc: &Document) {
     let document = Trusted::new(doc);
     doc.global().task_manager().dom_manipulation_task_source().queue(task!(MwrFetchCheck: move |cx| {
         let doc=document.root();
+        let mut realm=crate::realms::enter_auto_realm(cx,doc.window());
+        let mut context=realm.current_realm();
+        let cx=&mut context;
         if std::env::var_os("MWR_NATIVE_FETCH_NAVIGATION").is_some() {
             if let Err(error)=begin_navigation(cx,&doc){eprintln!("MWR_NATIVE_ERROR fetch navigation: {error}");}
             return;
@@ -264,6 +270,7 @@ fn queue_check(doc: &Document) {
         let result=doc.QuerySelector(cx,DOMString::from("#result")).ok().flatten();
         if let Some(result)=result {
             let text=result.upcast::<Node>().GetTextContent().map(|s|s.to_string()).unwrap_or_default();
+            eprintln!("MWR_NATIVE_FETCH_OBSERVED {}",serde_json::json!(text));
             if text==expected { eprintln!("MWR_NATIVE_FETCH_PROOF {}",serde_json::json!({"after":text,"native_fetch":true})); }
         }
     }));
