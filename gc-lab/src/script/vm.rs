@@ -186,6 +186,9 @@ impl<'host> Engine<'host> {
     pub fn set_budget(&mut self, bytes: Option<usize>) {
         self.runtime.set_budget(bytes);
     }
+    pub(super) fn steps_for_external_event(&mut self) {
+        self.steps = 0;
+    }
     pub fn set_step_limit(&mut self, steps: usize) {
         self.step_limit = steps;
     }

@@ -195,6 +195,11 @@ impl Engine<'_> {
     /// Deliver a native event already received by the browser; do not synthesize
     /// another DOM click. Unknown/released foreign nodes are rejected.
     pub fn dispatch_remote_click(&mut self, remote: u64) -> Result<()> {
+        // Only a new external invocation gets a budget. Programmatic/reentrant
+        // delivery belongs to its caller and cannot reset that caller's limit.
+        if self.call_depth == 0 && self.native_depth == 0 {
+            self.steps_for_external_event();
+        }
         let id = self
             .remote_nodes
             .iter()

@@ -420,3 +420,16 @@ fn task_list_adds_completes_removes_nodes_and_releases_array_captures() {
         assert!(state.borrow().hooks.is_empty());
     }
 }
+#[test]
+fn each_external_event_gets_a_fresh_execution_budget() {
+    let (mut e, _) = engine();
+    e.execute(include_str!("../examples/object-counter.js"))
+        .unwrap();
+    e.set_step_limit(200);
+    for _ in 0..50 {
+        e.dispatch_remote_click(1).unwrap();
+    }
+    assert_eq!(e.text_content("button").unwrap(), "Cuenta: 50");
+    e.release_globals();
+    assert_eq!(e.live_objects(), 0);
+}
