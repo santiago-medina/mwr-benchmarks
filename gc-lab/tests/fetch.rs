@@ -89,6 +89,7 @@ fn headers(handle: u64, status: u16) -> FetchResponse {
     FetchResponse {
         handle,
         status,
+        has_body: true,
         url: "https://example.test/data".into(),
     }
 }
@@ -203,4 +204,39 @@ fn unsupported_transport_and_options_are_explicit() {
         Err(ScriptError::Unsupported(_))
     ));
     finish(&mut e);
+}
+
+#[test]
+fn cancellation_while_suspended_is_flushed_when_host_reattaches() {
+    let (mut e, state) = engine(Model::Indirect);
+    e.execute("async function run(){await fetch('/slow');assert(false);}run();")
+        .unwrap();
+    let serial = state.borrow().requests[0].0;
+    let mut sleeping = e.suspend();
+    sleeping.cancel_microtasks();
+    assert!(state.borrow().canceled.is_empty());
+    let mut e = sleeping.resume(Box::new(Host(state.clone())));
+    assert_eq!(state.borrow().canceled, vec![serial]);
+    assert_eq!(e.pending_fetches(), 0);
+    finish(&mut e);
+}
+#[test]
+fn null_body_remains_unused_and_can_be_read_repeatedly() {
+    for model in [Model::Stable, Model::Indirect] {
+        let (mut e, state) = engine(model);
+        e.execute("async function run(){const r=await fetch('/empty');assert.sameValue(r.bodyUsed,false);assert.sameValue(await r.text(),'');assert.sameValue(r.bodyUsed,false);assert.sameValue(await r.text(),'');assert.sameValue(r.bodyUsed,false);}run();").unwrap();
+        let serial = state.borrow().requests[0].0;
+        let mut response = headers(204, 204);
+        response.has_body = false;
+        e.complete_fetch(serial, Ok(response)).unwrap();
+        drain(&mut e);
+        let serial = state.borrow().bodies[0].0;
+        e.complete_response_text(serial, Ok(String::new())).unwrap();
+        drain(&mut e);
+        let serial = state.borrow().bodies[1].0;
+        e.complete_response_text(serial, Ok(String::new())).unwrap();
+        drain(&mut e);
+        assert_eq!(e.assertion_count(), 5);
+        finish(&mut e);
+    }
 }

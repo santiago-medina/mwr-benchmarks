@@ -180,7 +180,7 @@ impl<'host> Engine<'host> {
         self,
         adapter: Option<Box<dyn super::adapter::DomAdapter + 'next>>,
     ) -> Engine<'next> {
-        Engine {
+        let mut engine = Engine {
             runtime: self.runtime,
             objects: self.objects,
             roots: self.roots,
@@ -209,7 +209,9 @@ impl<'host> Engine<'host> {
             adapter_error: self.adapter_error,
             pending_release: self.pending_release,
             adapter,
-        }
+        };
+        engine.flush_network();
+        engine
     }
     /// End a host invocation without releasing the persistent VM or DOM leases.
     /// The embedder must keep the same host registry alive until it resumes or

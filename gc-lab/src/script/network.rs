@@ -13,6 +13,7 @@ type Result<T> = std::result::Result<T, ScriptError>;
 pub struct FetchResponse {
     pub handle: u64,
     pub status: u16,
+    pub has_body: bool,
     pub url: String,
 }
 #[derive(Clone)]
@@ -36,6 +37,7 @@ impl Request {
     }
 }
 pub(super) struct Network {
+    canceled: Vec<u64>,
     next: u64,
     pending: HashMap<u64, ExternalRoot>,
     resources: HashMap<Id, u64>,
@@ -45,6 +47,7 @@ pub(super) struct Network {
 impl Default for Network {
     fn default() -> Self {
         Self {
+            canceled: vec![],
             next: 1,
             pending: HashMap::new(),
             resources: HashMap::new(),
@@ -59,11 +62,10 @@ impl Engine<'_> {
     }
     pub(super) fn cancel_fetches(&mut self) {
         for (serial, root) in self.network.pending.drain() {
-            if let Some(host) = self.adapter.as_mut() {
-                host.cancel_fetch(serial);
-            }
+            self.network.canceled.push(serial);
             self.runtime.unroot(root).expect("owned fetch root");
         }
+        self.flush_network();
     }
     pub(super) fn prune_responses(&mut self) {
         self.network.resources.retain(|id, handle| {
@@ -79,6 +81,14 @@ impl Engine<'_> {
             .is_some_and(|id| self.runtime.value(id).is_err())
         {
             self.network.prototype = None;
+        }
+        self.flush_responses();
+    }
+    pub(super) fn flush_network(&mut self) {
+        if let Some(host) = self.adapter.as_mut() {
+            for serial in self.network.canceled.drain(..) {
+                host.cancel_fetch(serial);
+            }
         }
         self.flush_responses();
     }
@@ -344,7 +354,7 @@ impl Engine<'_> {
                     }
                     let serial = self.request(cap.clone(), Some(receiver))?;
                     let mut data = self.data(id)?.clone();
-                    data.response.as_mut().unwrap().used = true;
+                    data.response.as_mut().unwrap().used = response.headers.has_body;
                     self.replace_data(id, data)?;
                     if let Err(message) = self
                         .adapter

@@ -372,6 +372,7 @@ fn execute_inner(cx: &mut JSContext, doc: &Document, source: &str) -> Result<()>
     *state.engine.borrow_mut() = Some(engine.suspend());
     SESSIONS.with(|s| s.borrow_mut().insert(window.pipeline_id(), state));
     eprintln!("MWR_NATIVE_EXECUTED");
+    network::on_execute(doc);
     queue_collection(doc);
     if std::env::var_os("MWR_NATIVE_GC_TEST").is_some_and(|s| s == "1") {
         gc_test::start(doc);

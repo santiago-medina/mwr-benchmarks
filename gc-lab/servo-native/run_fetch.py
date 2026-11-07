@@ -22,7 +22,7 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     results = {}
-    for scenario in ['success', 'http404', 'network-error', 'cors', 'csp']:
+    for scenario in ['success', 'http404', 'empty', 'network-error', 'cors', 'csp', 'navigation']:
         release_load = threading.Event()
         headers_seen = threading.Event()
         requests = []
@@ -36,7 +36,11 @@ def main():
                 if self.path == '/drop':
                     self.close_connection = True
                     return
-                if self.path == '/':
+                if self.path.startswith('/?after=1'):
+                    data = b'<meta charset="utf-8"><h1>Realm anterior recogido</h1><img src="/hold"><script type="application/x-mwr-js">const ready=1;</script>'
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/html; charset=utf-8')
+                elif self.path == '/':
                     data = fixture.encode()
                     self.send_response(200)
                     self.send_header('Content-Type', 'text/html; charset=utf-8')
@@ -48,11 +52,14 @@ def main():
                     self.send_response(200)
                     self.send_header('Content-Type', 'image/svg+xml')
                 else:
-                    data = b'body from native networking'
-                    self.send_response(404 if self.path == '/missing' else 200)
+                    data = b'' if self.path == '/empty' else b'body from native networking'
+                    self.send_response(204 if self.path == '/empty' else 404 if self.path == '/missing' else 200)
                     self.send_header('Content-Type', 'text/plain')
                 self.send_header('Content-Length', str(len(data)))
                 self.end_headers()
+                if self.path == '/slow':
+                    self.wfile.flush()
+                    release_load.wait(45)
                 if self.path in ('/data', '/missing'):
                     self.wfile.flush()
                     # The body cannot arrive before the VM's headers completion.
@@ -66,10 +73,10 @@ def main():
         other = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
         for service in (server, other):
             threading.Thread(target=service.serve_forever, daemon=True).start()
-        url = {'success': '/data', 'http404': '/missing', 'network-error': '/drop',
-               'cors': f'http://127.0.0.1:{other.server_port}/data', 'csp': '/data'}[scenario]
+        url = {'success': '/data', 'http404': '/missing', 'empty': '/empty', 'network-error': '/drop',
+               'cors': f'http://127.0.0.1:{other.server_port}/data', 'csp': '/data', 'navigation': '/slow'}[scenario]
         expected = {'success': '200|true|body from native networking',
-                    'http404': '404|false|body from native networking'}.get(scenario, 'TypeError')
+                    'empty': '204|true|', 'http404': '404|false|body from native networking'}.get(scenario, 'navigated' if scenario == 'navigation' else 'TypeError')
         policy = '<meta http-equiv="Content-Security-Policy" content="connect-src \'none\'">' if scenario == 'csp' else ''
         fixture = '''<!doctype html><meta charset="utf-8">''' + policy + '''
 <title>Fetch nativo con async/await</title>
@@ -82,7 +89,7 @@ async function run(){
     const response=await fetch(''' + json.dumps(url) + ''');
     if(response.bodyUsed){throw new Error('body consumed before text');}
     const body=response.text();
-    if(!response.bodyUsed){throw new Error('body not marked consumed');}
+    if(response.bodyUsed !== (response.status !== 204)){throw new Error('wrong body consumption state');}
     const text=await body;
     result.textContent=String(response.status)+'|'+String(response.ok)+'|'+text;
   }catch(error){result.textContent=error.name;}
@@ -94,6 +101,9 @@ run();
                 env = dict(os.environ, MWR_NATIVE_JS='1', MWR_NATIVE_FETCH_TEST='1',
                            MWR_NATIVE_FETCH_EXPECT=expected, MWR_NATIVE_MICROTASK_GC_STRESS='1',
                            LIBGL_ALWAYS_SOFTWARE='1', EGL_PLATFORM='surfaceless')
+                env.pop('MWR_NATIVE_FETCH_NAVIGATION', None)
+                if scenario == 'navigation':
+                    env['MWR_NATIVE_FETCH_NAVIGATION'] = '1'
                 for key in ('MWR_NATIVE_SELF_TEST', 'MWR_NATIVE_GC_TEST'):
                     env.pop(key, None)
                 for key in ('XDG_RUNTIME_DIR', 'XDG_CACHE_HOME', 'XDG_CONFIG_HOME', 'TMPDIR'):
@@ -130,11 +140,14 @@ run();
                 assert code == 0, (scenario, code, log[-5000:])
                 proofs = [json.loads(line.removeprefix('MWR_NATIVE_FETCH_PROOF '))
                           for line in lines if line.startswith('MWR_NATIVE_FETCH_PROOF ')]
-                assert proofs and all(p == dict(after=expected, native_fetch=True) for p in proofs), (scenario, log)
+                assert proofs and all(p['after'] == expected and p['native_fetch'] for p in proofs), (scenario, log)
+                if scenario == 'navigation':
+                    assert all(proofs[0].get(key) for key in ('old_session_collected','old_document_collected','retired_completion_ignored')), proofs
+                    assert 'MWR_NATIVE_STALE_FETCH' in log, log
                 assert 'MWR_NATIVE_ERROR ' not in log, log
                 assert image.exists() and image.stat().st_size > 1000
                 completions = [line.strip() for line in lines if line.startswith('MWR_NATIVE_FETCH_COMPLETION ')]
-                assert len(completions) == (2 if scenario in ('success', 'http404') else 1), (scenario, completions)
+                assert len(completions) == (2 if scenario in ('success', 'http404', 'empty') else 1), (scenario, completions)
                 if scenario == 'csp':
                     assert '/data' not in requests, requests
                 results[scenario] = dict(after=expected, completions=completions,

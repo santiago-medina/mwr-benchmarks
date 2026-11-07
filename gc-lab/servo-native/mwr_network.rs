@@ -85,6 +85,7 @@ impl Completion {
                         let result = FetchResponse {
                             handle: self.serial,
                             status: response.Status(),
+                            has_body: response.GetBody().is_some(),
                             url: response.Url().to_string(),
                         };
                         state
@@ -192,14 +193,17 @@ impl NativeAdapter<'_> {
                 .ok_or("released native response")?;
             (r.root(), Trusted::new(&*c.root()))
         };
-        let promise = response.Text(self.cx);
+        let global = doc.global();
+        let mut realm = crate::realms::enter_auto_realm(self.cx, &*global);
+        let mut cx = realm.current_realm();
+        let promise = response.Text(&mut cx);
         self.registry
             .borrow_mut()
             .network
             .pending
             .insert(serial, controller);
-        let callback = handler(self.cx, &doc, serial, true);
-        promise.append_native_handler(self.cx, &callback);
+        let callback = handler(&mut cx, &doc, serial, true);
+        promise.append_native_handler(&mut cx, &callback);
         Ok(())
     }
     pub(super) fn cancel_network(&mut self, serial: u64) {
@@ -230,11 +234,86 @@ fn queue_check(doc: &Document) {
     let document = Trusted::new(doc);
     doc.global().task_manager().dom_manipulation_task_source().queue(task!(MwrFetchCheck: move |cx| {
         let doc=document.root();
+        if std::env::var_os("MWR_NATIVE_FETCH_NAVIGATION").is_some() {
+            if let Err(error)=begin_navigation(cx,&doc){eprintln!("MWR_NATIVE_ERROR fetch navigation: {error}");}
+            return;
+        }
         let expected=std::env::var("MWR_NATIVE_FETCH_EXPECT").unwrap_or_default();
         let result=doc.QuerySelector(cx,DOMString::from("#result")).ok().flatten();
         if let Some(result)=result {
             let text=result.upcast::<Node>().GetTextContent().map(|s|s.to_string()).unwrap_or_default();
             if text==expected { eprintln!("MWR_NATIVE_FETCH_PROOF {}",serde_json::json!({"after":text,"native_fetch":true})); }
         }
+    }));
+}
+
+struct NavigationProbe {
+    session: Arc<AtomicBool>,
+    document: Arc<AtomicBool>,
+    pipeline: PipelineId,
+    attempts: usize,
+}
+static NAVIGATION: std::sync::Mutex<Option<NavigationProbe>> = std::sync::Mutex::new(None);
+fn begin_navigation(cx: &mut JSContext, doc: &Document) -> Result<()> {
+    if NAVIGATION.lock().unwrap().is_some() {
+        return Ok(());
+    }
+    let state = session(doc.window()).ok_or("no navigation session")?;
+    if state.registry.borrow().network.pending.is_empty() {
+        return Err("navigation did not interrupt a pending body".into());
+    }
+    let document = state
+        .registry
+        .borrow()
+        .document
+        .alive
+        .upgrade()
+        .ok_or("document finalized too early")?
+        .dead
+        .clone();
+    *NAVIGATION.lock().unwrap() = Some(NavigationProbe {
+        session: state.lifetime.dead.clone(),
+        document,
+        pipeline: doc.window().pipeline_id(),
+        attempts: 0,
+    });
+    let url = doc.url().join("/?after=1").map_err(|e| e.to_string())?;
+    let window = doc.window();
+    let data = window.load_data_for_document(url, window.pipeline_id());
+    crate::navigation::navigate(
+        cx,
+        window,
+        servo_constellation_traits::NavigationHistoryBehavior::Replace,
+        false,
+        data,
+    );
+    eprintln!("MWR_NATIVE_FETCH_NAVIGATING");
+    Ok(())
+}
+pub(super) fn on_execute(doc: &Document) {
+    if std::env::var_os("MWR_NATIVE_FETCH_NAVIGATION").is_some()
+        && doc.url().query() == Some("after=1")
+    {
+        poll_navigation(doc);
+    }
+}
+fn poll_navigation(doc: &Document) {
+    let document = Trusted::new(doc);
+    doc.global().task_manager().dom_manipulation_task_source().queue(task!(MwrFetchNavigationPoll: move |cx| {
+        let doc=document.root();
+        let mut realm=crate::realms::enter_auto_realm(cx,doc.window());let mut cx=realm.current_realm();
+        if let Err(error)=collect_joint(&mut cx,doc.window()){eprintln!("MWR_NATIVE_ERROR fetch navigation GC: {error}");return;}
+        let Some(mut probe)=NAVIGATION.lock().unwrap().take()else{return;};
+        if !(probe.session.load(Ordering::Acquire)&&probe.document.load(Ordering::Acquire)){
+            probe.attempts+=1;
+            if probe.attempts>200{eprintln!("MWR_NATIVE_ERROR pending fetch retained old realm");return;}
+            *NAVIGATION.lock().unwrap()=Some(probe);poll_navigation(&doc);return;
+        }
+        rooted!(&in(&mut cx) let value=UndefinedValue());
+        // Exercise the actual completion dispatcher with a retired pipeline ID.
+        if let Err(error)=(Completion{pipeline:probe.pipeline,serial:u64::MAX,body:true,reject:false}).deliver(&mut cx,value.handle()){
+            eprintln!("MWR_NATIVE_ERROR stale fetch: {error}");return;
+        }
+        eprintln!("MWR_NATIVE_FETCH_PROOF {}",serde_json::json!({"after":"navigated","native_fetch":true,"old_session_collected":true,"old_document_collected":true,"retired_completion_ignored":true}));
     }));
 }
