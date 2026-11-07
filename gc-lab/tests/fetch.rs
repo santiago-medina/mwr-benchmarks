@@ -240,3 +240,15 @@ fn null_body_remains_unused_and_can_be_read_repeatedly() {
         finish(&mut e);
     }
 }
+
+#[test]
+fn missing_url_and_conversion_exceptions_reject_without_starting_transport() {
+    for model in [Model::Stable, Model::Indirect] {
+        let (mut e, state) = engine(model);
+        e.execute("const marker={};fetch().catch(function(e){assert.sameValue(e.constructor,TypeError);});fetch({toString:function(){throw marker;}}).catch(function(e){assert.sameValue(e,marker);});").unwrap();
+        drain(&mut e);
+        assert_eq!(e.assertion_count(), 2);
+        assert!(state.borrow().requests.is_empty());
+        finish(&mut e);
+    }
+}

@@ -123,6 +123,7 @@ impl Engine<'_> {
                 Descriptor {
                     value: Some(Value::Object(function)),
                     writable: Some(true),
+                    enumerable: Some(true),
                     ..Descriptor::default()
                 }
             } else {
@@ -307,6 +308,11 @@ impl Engine<'_> {
                     "fetch requires a native network adapter",
                 ));
             }
+            if args.is_empty() {
+                let error = self.error_value("TypeError", "fetch requires a URL")?;
+                self.invoke(cap.reject, vec![error])?;
+                return Ok(cap.promise);
+            }
             if args.get(1).is_some_and(|v| *v != Value::Undefined) {
                 return Err(ScriptError::Unsupported("fetch RequestInit"));
             }
@@ -334,41 +340,27 @@ impl Engine<'_> {
             };
             let Some((id, response)) = response else {
                 let error = self.error_value("TypeError", "incompatible Response receiver")?;
-                if name == "Response.text" {
-                    self.invoke(cap.reject, vec![error])?;
-                    return Ok(cap.promise);
-                }
-                return Err(self.thrown(error));
+                self.invoke(cap.reject, vec![error])?;
+                return Ok(cap.promise);
             };
-            return match name {
-                "Response.status" => Ok(Value::number(response.headers.status as f64)),
-                "Response.ok" => Ok(Value::Bool((200..300).contains(&response.headers.status))),
-                "Response.url" => Ok(Value::String(response.headers.url)),
-                "Response.bodyUsed" => Ok(Value::Bool(response.used)),
-                "Response.text" => {
-                    if response.used {
-                        let error =
-                            self.error_value("TypeError", "response body already consumed")?;
-                        self.invoke(cap.reject, vec![error])?;
-                        return Ok(cap.promise);
-                    }
-                    let serial = self.request(cap.clone(), Some(receiver))?;
-                    let mut data = self.data(id)?.clone();
-                    data.response.as_mut().unwrap().used = response.headers.has_body;
-                    self.replace_data(id, data)?;
-                    if let Err(message) = self
-                        .adapter
-                        .as_mut()
-                        .ok_or(ScriptError::Runtime("response host detached"))?
-                        .read_response_text(serial, response.headers.handle)
-                    {
-                        let error = self.error_value("TypeError", &message)?;
-                        self.settle_request(serial, error, true)?;
-                    }
-                    Ok(cap.promise)
-                }
-                _ => Err(ScriptError::Unsupported("Response operation")),
-            };
+            if response.used {
+                let error = self.error_value("TypeError", "response body already consumed")?;
+                self.invoke(cap.reject, vec![error])?;
+                return Ok(cap.promise);
+            }
+            let serial = self.request(cap.clone(), Some(receiver))?;
+            let mut data = self.data(id)?.clone();
+            data.response.as_mut().unwrap().used = response.headers.has_body;
+            self.replace_data(id, data)?;
+            if let Err(message) = self
+                .adapter
+                .as_mut()
+                .ok_or(ScriptError::Runtime("response host detached"))?
+                .read_response_text(serial, response.headers.handle)
+            {
+                let error = self.error_value("TypeError", &message)?;
+                self.settle_request(serial, error, true)?;
+            }
         }
         Ok(cap.promise)
     }
