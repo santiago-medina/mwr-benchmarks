@@ -56,14 +56,14 @@ index 82d2779..28e3bfa 100644
          // Step 2.7 Let currentEvent be undefined.
          let mut current_event = None;
 diff --git a/components/script/dom/event/eventtarget.rs b/components/script/dom/event/eventtarget.rs
-index f35b770..db9e4c9 100644
+index f35b770..aa139c0 100644
 --- a/components/script/dom/event/eventtarget.rs
 +++ b/components/script/dom/event/eventtarget.rs
 @@ -165,6 +165,7 @@ fn get_compiled_handler(
  #[cfg_attr(crown, crown::unrooted_must_root_lint::must_root)]
  enum EventListenerType {
      Additive(TracedCallback<EventListener>),
-+    Mwr(u64),
++    Mwr(crate::mwr::Listener),
      Inline(RefCell<InlineEventListener>),
  }
  
@@ -71,7 +71,7 @@ index f35b770..db9e4c9 100644
          ty: &Atom,
      ) -> Option<CompiledEventListener> {
          match *self {
-+            EventListenerType::Mwr(id) => Some(CompiledEventListener::Mwr(id)),
++            EventListenerType::Mwr(ref listener) => Some(CompiledEventListener::Mwr(listener.clone())),
              EventListenerType::Inline(ref inline) => {
                  get_compiled_handler(cx, inline, owner, ty).map(CompiledEventListener::Handler)
              },
@@ -79,7 +79,7 @@ index f35b770..db9e4c9 100644
  #[cfg_attr(crown, crown::unrooted_must_root_lint::must_root)]
  pub(crate) enum CompiledEventListener {
      Listener(TracedCallback<EventListener>),
-+    Mwr(u64),
++    Mwr(crate::mwr::Listener),
      Handler(CommonEventHandler),
  }
  
@@ -98,7 +98,7 @@ index f35b770..db9e4c9 100644
      ) -> Fallible<()> {
          // Step 3
          match *self {
-+            CompiledEventListener::Mwr(id) => crate::mwr::dispatch(cx, object, id).map_err(|e| {
++            CompiledEventListener::Mwr(ref listener) => crate::mwr::dispatch(cx, object, listener.id()).map_err(|e| {
 +                eprintln!("MWR_NATIVE_ERROR {e}");
 +                Error::Operation(Some(e))
 +            }),
@@ -116,7 +116,7 @@ index f35b770..db9e4c9 100644
 +            .entry(ty.clone())
 +            .or_insert_with(|| EventListeners(vec![]));
 +        let index = entries.iter().position(|entry| {
-+            matches!(entry.borrow().listener, EventListenerType::Mwr(existing) if existing == id)
++            matches!(entry.borrow().listener, EventListenerType::Mwr(ref existing) if existing.id() == id)
 +        });
 +        if let Some(index) = index {
 +            if !enabled {
@@ -126,7 +126,7 @@ index f35b770..db9e4c9 100644
 +        } else if enabled {
 +            entries.push(Rc::new(RefCell::new(EventListenerEntry {
 +                phase: ListenerPhase::Bubbling,
-+                listener: EventListenerType::Mwr(id),
++                listener: EventListenerType::Mwr(crate::mwr::Listener::new(self, id)),
 +                once: false,
 +                passive: false,
 +                removed: false,
@@ -172,6 +172,37 @@ index 66b7ade..0ae3253 100644
                  debug!("script type={}", ty);
  
                  if ty
+diff --git a/components/script/dom/node/node.rs b/components/script/dom/node/node.rs
+index a701c38..e2a7082 100644
+--- a/components/script/dom/node/node.rs
++++ b/components/script/dom/node/node.rs
+@@ -715,6 +715,11 @@ impl Node {
+ }
+ 
+ impl Node {
++    pub(crate) fn mwr_lifetime(&self) -> std::rc::Weak<()> {
++        let mut rare = self.ensure_rare_data();
++        std::rc::Rc::downgrade(rare.mwr_lifetime.get_or_insert_with(|| std::rc::Rc::new(())))
++    }
++
+     fn ensure_rare_data(&self) -> RefMut<'_, Box<NodeRareData>> {
+         let mut rare_data = self.rare_data.borrow_mut();
+         if rare_data.is_none() {
+diff --git a/components/script/dom/raredata.rs b/components/script/dom/raredata.rs
+index 583a38c..ac10288 100644
+--- a/components/script/dom/raredata.rs
++++ b/components/script/dom/raredata.rs
+@@ -31,6 +31,10 @@ use crate::dom::window::LayoutValue;
+ #[derive(Default, JSTraceable, MallocSizeOf)]
+ #[cfg_attr(crown, crown::unrooted_must_root_lint::must_root)]
+ pub(crate) struct NodeRareData {
++    /// Opt-in foreign-VM weak-handle liveness; does not contain a DOM edge.
++    #[ignore_malloc_size_of = "shared unit liveness token"]
++    pub(crate) mwr_lifetime: Option<Rc<()>>,
++
+     /// The shadow root the node belongs to.
+     /// This is None if the node is not in a shadow tree or
+     /// if it is a ShadowRoot.
 diff --git a/components/script/dom/window/window.rs b/components/script/dom/window/window.rs
 index 1ab2f91..073ecfd 100644
 --- a/components/script/dom/window/window.rs
@@ -204,3 +235,15 @@ index c6ad274..6d5520b 100644
  mod navigation;
  mod realms;
  mod routed_promise;
+diff --git a/components/script/runtime/script_runtime.rs b/components/script/runtime/script_runtime.rs
+index 04c0ed7..3295696 100644
+--- a/components/script/runtime/script_runtime.rs
++++ b/components/script/runtime/script_runtime.rs
+@@ -1016,6 +1016,7 @@ unsafe extern "C" fn trace_rust_roots(tr: *mut JSTracer, data: *mut os::raw::c_v
+ 
+     unsafe {
+         trace_roots(tr);
++        crate::mwr::trace_roots(tr);
+         trace_refcounted_objects(tr);
+         settings_stack::trace(tr);
+     }

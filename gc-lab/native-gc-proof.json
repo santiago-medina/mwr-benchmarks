@@ -1,0 +1,24 @@
+{
+  "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+  "binary_sha256": "783b1c6c90ecda70634e0ebecf2bc4a4237f5fc64adf6f0557bc67921e1a9414",
+  "patch_sha256": "5e52872b24ad0cfbc225c82988c3ca88cb3437e4dae5904fe772c5047e36c353",
+  "module_sha256": "92d7f62932e381b4c4dbfc6930e2b558424a583b0fa0e5755d1f2dd4699eb53d",
+  "native_finalization_observed": true,
+  "in_process": true,
+  "webdriver": false,
+  "javascript_transport": false,
+  "proof": {
+    "iterations": 1500,
+    "native_buttons_finalized": 3000,
+    "callbacks": 1500,
+    "recovered_errors": 89,
+    "baseline_vm_objects": 4,
+    "final_vm_objects": 4,
+    "persistent_native_handles": 1,
+    "escaped_invocation_pins": 0,
+    "manual_global_release": false,
+    "native_to_vm_to_native_survival": true,
+    "disconnected_js_root_survival": true,
+    "stale_ids_rejected": true
+  }
+}

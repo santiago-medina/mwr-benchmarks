@@ -5,3 +5,4 @@ __pycache__/
 /.servo-native/
 /.servo-native.tar.gz
 /native-results/
+/native-gc-results/

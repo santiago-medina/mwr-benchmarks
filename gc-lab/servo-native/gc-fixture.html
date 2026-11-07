@@ -1,0 +1,23 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Servo y Rust: GC entre heaps reales</title>
+<style>body{font:24px sans-serif;padding:48px;background:#f0f4f8;color:#193047}button{padding:12px}#result{color:#17634c;font-weight:bold}</style>
+<h1>DOM ↔ closures ↔ DOM</h1>
+<p id="result">Comprobando ciclos</p>
+<script type="application/x-mwr-js">
+const detached = document.createElement('button');
+detached.textContent = 'Rooted';
+const make = () => {
+  const button = document.querySelector('#cycle');
+  const companion = document.createElement('button');
+  companion.textContent = 'Captured';
+  button.addEventListener('click', () => {
+    button.textContent = 'Funciona';
+    companion.textContent = 'Callback';
+  });
+};
+const makeError = () => {
+  make();
+  document.querySelector('#missing');
+};
+</script>

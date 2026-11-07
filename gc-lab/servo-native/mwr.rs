@@ -1,12 +1,14 @@
 //! Opt-in experiment. Our AST and closures run on Servo's script thread.
 //! SpiderMonkey still owns Servo's DOM reflectors; this is not a replacement VM.
-use std::cell::RefCell;
-use std::collections::HashMap;
-use std::rc::Rc;
+use std::cell::{Cell, RefCell};
+use std::collections::{HashMap, HashSet};
+use std::rc::{Rc, Weak};
 
+use crate::JSTraceable;
 use gc_lab::Model;
 use gc_lab::script::{DomAdapter, Engine, SuspendedEngine};
 use js::context::JSContext;
+use js::jsapi::JSTracer;
 use servo_base::id::PipelineId;
 
 use crate::dom::bindings::codegen::Bindings::DocumentBinding::DocumentMethods;
@@ -17,7 +19,7 @@ use crate::dom::bindings::codegen::UnionTypes::StringOrElementCreationOptions;
 use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::refcounted::Trusted;
 use crate::dom::bindings::reflector::DomGlobal;
-use crate::dom::bindings::root::DomRoot;
+use crate::dom::bindings::root::{Dom, DomRoot};
 use crate::dom::bindings::str::DOMString;
 use crate::dom::document::Document;
 use crate::dom::element::Element;
@@ -26,6 +28,9 @@ use crate::dom::html::htmlelement::HTMLElement;
 use crate::dom::node::Node;
 use crate::dom::window::Window;
 
+#[path = "mwr_gc_test.rs"]
+mod gc_test;
+
 type Result<T> = std::result::Result<T, String>;
 thread_local! {
     static SESSIONS: RefCell<HashMap<PipelineId, Rc<Session>>> = RefCell::new(HashMap::new());
@@ -33,40 +38,169 @@ thread_local! {
 struct Session {
     engine: RefCell<Option<SuspendedEngine>>,
     registry: Rc<RefCell<Registry>>,
+    marked: RefCell<HashSet<u64>>,
+    collection_queued: Cell<bool>,
+    stress: RefCell<Option<gc_test::Progress>>,
+    callbacks: Cell<usize>,
 }
 struct Registry {
-    document: Trusted<Document>,
-    nodes: HashMap<u64, Trusted<Node>>,
+    document: WeakNode,
+    nodes: HashMap<u64, WeakNode>,
+    pins: Vec<Trusted<Node>>,
     next: u64,
 }
 impl Registry {
     fn intern(&mut self, node: &Node) -> Result<u64> {
         for (id, trusted) in &self.nodes {
-            if &*trusted.root() == node {
+            if trusted.root().is_some_and(|n| &*n == node) {
                 return Ok(*id);
             }
         }
         let id = self.next;
         self.next = id.checked_add(1).ok_or("native ID space exhausted")?;
-        self.nodes.insert(id, Trusted::new(node));
+        self.nodes.insert(id, WeakNode::new(node));
+        self.pins.push(Trusted::new(node));
         Ok(id)
     }
     fn node(&self, id: u64) -> Result<DomRoot<Node>> {
         self.nodes
             .get(&id)
-            .map(Trusted::root)
+            .and_then(WeakNode::root)
             .ok_or("released native node".into())
     }
 }
 // Borrow the ONE current context, only for this invocation. Never manufacture a
 // second JSContext or hold the context across event-loop turns.
+// This token does not own the node. Servo's native finalizer drops its last
+// strong token; a dead handle is then rejected BEFORE touching the Dom pointer.
+// Rust DOM allocations do not move; tracing their reflectors updates JS pointers.
+#[derive(Clone)]
+struct WeakNode {
+    node: Dom<Node>,
+    alive: Weak<()>,
+}
+impl WeakNode {
+    fn new(node: &Node) -> Self {
+        Self {
+            node: Dom::from_ref(node),
+            alive: node.mwr_lifetime(),
+        }
+    }
+    fn root(&self) -> Option<DomRoot<Node>> {
+        // Same script thread. No GC-capable call occurs between the liveness
+        // check and installing this stack root. Never use the bare Dom pointer.
+        self.alive.upgrade()?;
+        Some(self.node.as_rooted())
+    }
+    #[expect(unsafe_code)]
+    unsafe fn trace(&self, tracer: *mut JSTracer) {
+        // Mark phase only; a live token means the native finalizer has not run.
+        if self.alive.upgrade().is_some() {
+            unsafe {
+                self.node.trace(tracer);
+            }
+        }
+    }
+}
+impl Registry {
+    fn document(&self) -> Result<DomRoot<Document>> {
+        let node = self.document.root().ok_or("document finalized")?;
+        node.downcast::<Document>()
+            .map(DomRoot::from_ref)
+            .ok_or("not a document".into())
+    }
+}
+
+#[derive(Clone, PartialEq, MallocSizeOf)]
+pub(crate) struct Listener {
+    pipeline: PipelineId,
+    id: u64,
+}
+impl Listener {
+    pub(crate) fn new(target: &EventTarget, id: u64) -> Self {
+        Self {
+            pipeline: target.global().pipeline_id(),
+            id,
+        }
+    }
+    pub(crate) fn id(&self) -> u64 {
+        self.id
+    }
+}
+#[expect(unsafe_code)]
+unsafe impl JSTraceable for Listener {
+    unsafe fn trace(&self, tracer: *mut JSTracer) {
+        if let Some(state) = SESSIONS.with(|s| s.borrow().get(&self.pipeline).cloned()) {
+            unsafe {
+                trace_state(tracer, &state, Some(self.id));
+            }
+        }
+    }
+}
+#[expect(unsafe_code)]
+unsafe fn trace_state(tracer: *mut JSTracer, state: &Session, listener: Option<u64>) {
+    let remotes = match state.engine.borrow().as_ref() {
+        Some(engine) => engine.trace_native_edges(listener),
+        // Active host invocations temporarily pin their native objects; VM
+        // frames/local foreign pins protect the other half until it suspends.
+        None => return,
+    };
+    state.marked.borrow_mut().extend(remotes.iter().copied());
+    let nodes: Vec<_> = {
+        let registry = state.registry.borrow();
+        remotes
+            .iter()
+            .filter_map(|id| registry.nodes.get(id).cloned())
+            .collect()
+    };
+    // Do not keep a RefCell borrowed across a call to the native tracer.
+    for node in nodes {
+        unsafe {
+            node.trace(tracer);
+        }
+    }
+}
+#[expect(unsafe_code)]
+pub(crate) unsafe fn trace_roots(tracer: *mut JSTracer) {
+    let states: Vec<_> = SESSIONS.with(|s| s.borrow().values().cloned().collect());
+    for state in states {
+        unsafe {
+            trace_state(tracer, &state, None);
+        }
+    }
+}
+
 struct NativeAdapter<'cx> {
     cx: &'cx mut JSContext,
     registry: Rc<RefCell<Registry>>,
 }
+impl<'cx> NativeAdapter<'cx> {
+    fn new(cx: &'cx mut JSContext, registry: Rc<RefCell<Registry>>) -> Self {
+        {
+            let mut r = registry.borrow_mut();
+            assert!(r.pins.is_empty(), "nested native adapter");
+            r.pins = r
+                .nodes
+                .values()
+                .filter_map(WeakNode::root)
+                .map(|node| Trusted::new(&*node))
+                .collect();
+        }
+        Self { cx, registry }
+    }
+}
+impl Drop for NativeAdapter<'_> {
+    fn drop(&mut self) {
+        self.registry.borrow_mut().pins.clear();
+    }
+}
 impl DomAdapter for NativeAdapter<'_> {
+    fn traces_native_edges(&self) -> bool {
+        true
+    }
+
     fn create_element(&mut self, tag: &str) -> Result<u64> {
-        let doc = self.registry.borrow().document.root();
+        let doc = self.registry.borrow().document()?;
         let element = doc
             .CreateElement(
                 self.cx,
@@ -77,7 +211,7 @@ impl DomAdapter for NativeAdapter<'_> {
         self.registry.borrow_mut().intern(element.upcast::<Node>())
     }
     fn query_selector(&mut self, selector: &str) -> Result<u64> {
-        let doc = self.registry.borrow().document.root();
+        let doc = self.registry.borrow().document()?;
         let element = doc
             .QuerySelector(self.cx, DOMString::from(selector))
             .map_err(|e| format!("QuerySelector: {e:?}"))?
@@ -115,9 +249,9 @@ impl DomAdapter for NativeAdapter<'_> {
         for id in ids {
             let node = self.registry.borrow_mut().nodes.remove(id);
             if let Some(node) = node {
-                node.root()
-                    .upcast::<EventTarget>()
-                    .set_mwr_listener(*id, false);
+                if let Some(node) = node.root() {
+                    node.upcast::<EventTarget>().set_mwr_listener(*id, false);
+                }
             }
         }
         Ok(())
@@ -144,22 +278,28 @@ fn execute_inner(cx: &mut JSContext, doc: &Document, source: &str) -> Result<()>
     let state = Rc::new(Session {
         engine: RefCell::new(None),
         registry: Rc::new(RefCell::new(Registry {
-            document: Trusted::new(doc),
+            document: WeakNode::new(doc.upcast::<Node>()),
+            pins: vec![],
             nodes: HashMap::new(),
             next: 1,
         })),
+        marked: RefCell::new(HashSet::new()),
+        collection_queued: Cell::new(false),
+        stress: RefCell::new(None),
+        callbacks: Cell::new(0),
     });
     let mut engine = Engine::new(Model::Indirect, Model::Indirect).map_err(|e| format!("{e:?}"))?;
     engine
-        .set_dom_adapter(Box::new(NativeAdapter {
-            cx,
-            registry: state.registry.clone(),
-        }))
+        .set_dom_adapter(Box::new(NativeAdapter::new(cx, state.registry.clone())))
         .map_err(|e| format!("{e:?}"))?;
     engine.execute(source).map_err(|e| format!("{e:?}"))?;
     *state.engine.borrow_mut() = Some(engine.suspend());
     SESSIONS.with(|s| s.borrow_mut().insert(window.pipeline_id(), state));
     eprintln!("MWR_NATIVE_EXECUTED");
+    queue_collection(doc);
+    if std::env::var_os("MWR_NATIVE_GC_TEST").is_some_and(|s| s == "1") {
+        gc_test::start(doc);
+    }
     if std::env::var_os("MWR_NATIVE_SELF_TEST").is_some_and(|s| s == "1") {
         let document = Trusted::new(doc);
         doc.global()
@@ -186,15 +326,17 @@ pub(crate) fn dispatch(cx: &mut JSContext, target: &EventTarget, id: u64) -> Res
         .borrow_mut()
         .take()
         .ok_or("native callback reentry is not supported")?;
-    let mut engine = dormant.resume(Box::new(NativeAdapter {
-        cx,
-        registry: state.registry.clone(),
-    }));
+    let mut engine = dormant.resume(Box::new(NativeAdapter::new(cx, state.registry.clone())));
     let result = engine
         .dispatch_remote_click(id)
         .map_err(|e| format!("{e:?}"));
     *state.engine.borrow_mut() = Some(engine.suspend());
     result?;
+    state.callbacks.set(state.callbacks.get() + 1);
+    if let Some(state) = session(window) {
+        let doc = state.registry.borrow().document()?;
+        queue_collection(&doc);
+    }
     eprintln!("MWR_NATIVE_CALLBACK");
     Ok(())
 }
@@ -218,31 +360,10 @@ fn self_test(cx: &mut JSContext, doc: &Document) -> Result<()> {
     if after != "Funciona" {
         return Err(format!("native callback failed: {after}"));
     }
-    let state = session(doc.window()).ok_or("test session disappeared")?;
-    let dormant = state.engine.borrow_mut().take().ok_or("test engine busy")?;
-    let mut engine = dormant.resume(Box::new(NativeAdapter {
-        cx,
-        registry: state.registry.clone(),
-    }));
-    engine.release_globals();
-    let objects = engine.live_objects();
-    let roots = engine.live_roots();
-    let wrappers = engine.remote_node_count();
-    let metadata = engine.metadata_objects();
-    if let Some(error) = engine.host_error() {
-        return Err(error.into());
-    }
-    *state.engine.borrow_mut() = Some(engine.suspend());
-    let leases = state.registry.borrow().nodes.len();
-    if (objects, roots, wrappers, metadata, leases) != (0, 0, 0, 0, 0) {
-        return Err("native teardown leaked VM state or DOM leases".into());
-    }
-    // After GC the same dispatcher must no longer invoke a released callback.
-    button.downcast::<HTMLElement>().unwrap().Click(cx);
-    drop(state);
-    clear(doc.window());
+    // This is only the rendering smoke test. The separate GC experiment keeps
+    // the realm alive and proves actual native finalization without dropping it.
     eprintln!(
-        "MWR_NATIVE_PROOF {{\"before\":\"Pulsar\",\"after\":\"Funciona\",\"objects\":0,\"roots\":0,\"wrappers\":0,\"metadata\":0,\"leases\":0,\"click\":\"rust-dom-synthetic\"}}"
+        "MWR_NATIVE_PROOF {{\"before\":\"Pulsar\",\"after\":\"Funciona\",\"click\":\"rust-dom-synthetic\"}}"
     );
     Ok(())
 }
@@ -251,9 +372,9 @@ fn self_test(cx: &mut JSContext, doc: &Document) -> Result<()> {
 pub(crate) fn clear(window: &Window) {
     if let Some(state) = SESSIONS.with(|s| s.borrow_mut().remove(&window.pipeline_id())) {
         for (id, node) in state.registry.borrow_mut().nodes.drain() {
-            node.root()
-                .upcast::<EventTarget>()
-                .set_mwr_listener(id, false);
+            if let Some(node) = node.root() {
+                node.upcast::<EventTarget>().set_mwr_listener(id, false);
+            }
         }
     }
 }
@@ -263,4 +384,60 @@ pub(crate) fn discard(window: &Window) {
     SESSIONS.with(|s| {
         s.borrow_mut().remove(&window.pipeline_id());
     });
+}
+
+fn queue_collection(doc: &Document) {
+    let Some(state) = session(doc.window()) else {
+        return;
+    };
+    if state.collection_queued.replace(true) {
+        return;
+    }
+    let document = Trusted::new(doc);
+    doc.global()
+        .task_manager()
+        .dom_manipulation_task_source()
+        .queue(task!(MwrJointCollection: move |cx| {
+            let document = document.root();
+            if let Some(state) = session(document.window()) {
+                state.collection_queued.set(false);
+                let mut realm = crate::realms::enter_auto_realm(cx, document.window());
+                if let Err(error) = collect_joint(&mut realm.current_realm(), document.window()) {
+                    eprintln!("MWR_NATIVE_ERROR {error}");
+                }
+            }
+        }));
+}
+// JS_GC is a full non-incremental mark/sweep. The native worklist reaches foreign
+// listeners, whose hooks traverse our VM and enqueue further native reflectors.
+// Only after that worklist is exhausted may the VM discard conservative pins.
+fn collect_joint(cx: &mut JSContext, window: &Window) -> Result<()> {
+    let states: Vec<_> = SESSIONS.with(|s| s.borrow().values().cloned().collect());
+    for state in &states {
+        if state.engine.borrow().is_none() {
+            return Err("joint collection during active VM call".into());
+        }
+        if !state.registry.borrow().pins.is_empty() {
+            return Err("native pins escaped an invocation".into());
+        }
+        state.marked.borrow_mut().clear();
+    }
+    window.gc(cx);
+    for state in states {
+        let marked: Vec<_> = state.marked.borrow().iter().copied().collect();
+        let dormant = state
+            .engine
+            .borrow_mut()
+            .take()
+            .ok_or("VM busy after native collection")?;
+        let mut engine = dormant.resume(Box::new(NativeAdapter::new(cx, state.registry.clone())));
+        let result = engine.collect_native(&marked).map_err(|e| format!("{e:?}"));
+        let host_error = engine.host_error().map(str::to_owned);
+        *state.engine.borrow_mut() = Some(engine.suspend());
+        result?;
+        if let Some(error) = host_error {
+            return Err(error);
+        }
+    }
+    Ok(())
 }

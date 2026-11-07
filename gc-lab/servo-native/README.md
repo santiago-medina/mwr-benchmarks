@@ -1,4 +1,7 @@
-# Integración nativa experimental en Servo 0.7.0
+# Integración nativa y marcado conjunto en Servo 0.7.0
+
+El [protocolo de GC conjunto](JOINT_GC.md) ya se ha probado sobre ambos heaps
+reales: 1.500 ciclos y 3.000 finalizaciones nativas sin release_globals.
 
 Este directorio contiene el adaptador dentro del hilo de script y un parche
 mínimo sobre Servo fijado a `aac43a3f31a259f04a574f5ec4e959c943ad7cc7`.
@@ -33,18 +36,18 @@ solo durante la llamada; el adaptador no fabrica contextos ni usa unsafe.
 
 `MWR_NATIVE_SELF_TEST=1` encola una tarea DOM para un turno posterior del
 bucle de eventos. Esa tarea comprueba el texto inicial y pulsa con
-`HTMLElement::Click` desde Rust, verifica «Funciona», suelta las raíces de nuestra
-VM y vuelve a pulsar para comprobar que el listener fue retirado. Es un evento
+`HTMLElement::Click` desde Rust, verifica «Funciona» y la
+VM permanece viva. La recogida de ciclos se comprueba por separado con
+`run_gc.py`, sin retirar las raíces globales. Es un evento
 sintético del DOM real, no un clic físico. El runner solo arranca el navegador y
 recoge logs y PNG; las operaciones y verificaciones DOM ocurren dentro de Servo.
 Los controles adicionales deshabilitan el backend, esperan sin pulsar, bloquean
 la ejecución mediante CSP y prueban sintaxis rechazada por nuestro parser.
 
 Límites: SpiderMonkey sigue siendo necesario para reflectores, contexto y GC de
-Servo. Los leases `Trusted<Node>` son raíces fuertes explícitas y se retiran al
-recoger wrappers o destruir la ventana. Esto no es tracing conjunto de ambos
-heaps. Solo hay click sin objeto Event en la VM; no se soportan scripts externos,
+Servo. Los handles del registro son débiles; los pins `Trusted<Node>` solo duran
+una invocación activa. El marcado conjunto está descrito en JOINT_GC.md. Solo hay click sin objeto Event en la VM; no se soportan scripts externos,
 varios programas por documento, reentrada de callbacks ni `.click()` desde el
-programa experimental. La navegación normal limpia leases/listeners antes de
+programa experimental. La navegación normal limpia handles/listeners antes de
 destruir el runtime; el teardown tras un pánico solo descarta las raíces propias.
 No es un motor JS compatible con la web ni un sandbox para páginas no confiables.

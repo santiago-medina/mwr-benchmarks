@@ -69,9 +69,7 @@ def main():
             assert log.count('MWR_NATIVE_TEST_TASK') == (1 if name == 'callback' else 0)
             assert len(proofs) == (1 if name == 'callback' else 0), (name, log)
             if proofs:
-                assert proofs[0] == dict(before='Pulsar', after='Funciona', objects=0,
-                                         roots=0, wrappers=0, metadata=0, leases=0,
-                                         click='rust-dom-synthetic')
+                assert proofs[0] == dict(before='Pulsar', after='Funciona', click='rust-dom-synthetic')
             results[name] = dict(executions=executed, callbacks=callbacks,
                                  errors=errors, proofs=proofs)
     report = dict(
