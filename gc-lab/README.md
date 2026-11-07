@@ -103,7 +103,7 @@ Para medirlo harían falta revisores y cambios equivalentes con errores sembrado
 
 ## Verificación
 
-15 pruebas de integración pasan en debug y release:
+20 pruebas de integración pasan en debug y release:
 
 * Las ocho pruebas anteriores ahora se ejecutan en los tres modelos: ciclos,
   reentrada, referencias caducadas, tokens de otro heap, cadenas de 20.000 objetos,
@@ -115,7 +115,7 @@ Para medirlo harían falta revisores y cambios equivalentes con errores sembrado
 
 `test-results.txt` y `test-release-results.txt` conservan los registros.
 No hemos usado Miri, sanitizadores ni auditoría externa. No hay pruebas de
-concurrencia, OOM, finalizadores, WeakMap/ephemerons, DOM ni código máquina.
+concurrencia, OOM real, finalizadores, WeakMap/ephemerons, DOM real ni código máquina.
 La ausencia de unsafe en esta crate no constituye auditoría de std ni del compilador.
 
 ## Mediciones
@@ -158,8 +158,40 @@ capacidad respecto a Stable; con todos vivos la tabla cuesta memoria adicional.
 En estas cargas el acceso indirecto también tiene coste de tiempo. No conviene
 compactar siempre por principio, ni suponer que la indirección sale gratis.
 
-Antes de fijar una arquitectura de producción: objetos anfitriones y ciclos
-DOM/JS; callbacks que devuelvan objetos; presupuesto de memoria y recuperación;
-medición del pico; entradas adversariales; y revisión humana independiente de
-las invariantes. La siguiente integración mínima debe mantener ese contrato
-estable sin exponer posiciones físicas.
+Antes de fijar una arquitectura de producción: integración con DOM real y heaps
+separados; presupuesto de bytes y recuperación ante OOM; medición del pico;
+entradas adversariales; y revisión humana independiente de las invariantes.
+El experimento siguiente debe mantener el contrato sin exponer posiciones físicas.
+
+
+## Frontera anfitrión/JS simulada
+
+`src/host.rs` añade una representación mínima de nodo y listener mediante tags
+enteros. Ambos viven en el MISMO grafo trazado: esto prueba las relaciones de
+propiedad y el protocolo de raíces, NO una integración entre dos recolectores ni
+el DOM de Servo. No ejecuta JavaScript.
+
+El nodo referencia al listener; el listener captura al nodo. `dispatch` realiza
+reentrada sincrónica, recolecta y devuelve un objeto que conserva su captura y el
+resultado de la llamada anidada. Su profundidad está limitada a 32 en este demo.
+El código es idéntico para los tres modelos gracias a resolver raíces en safepoints.
+
+Cinco pruebas nuevas cubren: resultado objeto que conserva el ciclo hasta perder
+la última raíz; listener retirado pero retenido por una raíz externa; agotamiento
+después de construir resultados parciales con recuperación y reintento; fallo
+parcial al construir el ciclo; y presupuesto cero/raíz del llamador caducada.
+Se ejecutan con los tres modelos, con estrés activado en las rutas de éxito y con
+estrés tanto activado como desactivado en el fallo de resultados parciales.
+
+`set_object_limit` limita el NÚMERO DE OBJETOS VIVOS y `try_allocate` devuelve
+`ObjectLimit` cuando el GC no puede recuperar espacio suficiente. NO limita bytes,
+aristas, tablas, stack o asignaciones del sistema. `allocate` sigue siendo una
+comodidad infalible para las pruebas antiguas: hace panic si se configura una cuota
+y se agota. El módulo host usa exclusivamente `try_allocate` y propaga el error.
+Cualquier llamada que pueda recolectar invalida los handles Compact incluso si
+termina en error. Las raíces sobreviven mientras su ámbito continúe activo.
+
+Aprendizaje: los ciclos son recuperables si TODAS las referencias relevantes son
+visibles para un trazado común. Usar raíces permanentes para cada listener habría
+impedido esa recuperación. Llevar esta propiedad a dos heaps reales requiere un
+protocolo adicional de tracing o colección de ciclos que este laboratorio no valida.

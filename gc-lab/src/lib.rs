@@ -36,6 +36,8 @@ struct RootEntry {
 pub enum Error {
     InvalidHandle,
     InvalidRoot,
+    ObjectLimit,
+    ReentryLimit,
 }
 
 #[derive(Debug)]
@@ -67,6 +69,7 @@ pub struct Heap {
     free_roots: Vec<usize>,
     locations: Vec<Option<usize>>,
     stress: bool,
+    object_limit: Option<usize>,
 }
 
 impl Heap {
@@ -86,6 +89,7 @@ impl Heap {
             free_roots: vec![],
             locations: vec![],
             stress: false,
+            object_limit: None,
         }
     }
 
@@ -121,10 +125,26 @@ impl Heap {
     }
 
     pub fn allocate(&mut self, value: i64) -> Handle {
+        self.try_allocate(value).expect("object budget exhausted")
+    }
+
+    /// The budget is a count of live lab objects, NOT bytes or allocator OOM.
+    /// Even a failed allocation may collect and invalidate direct compact handles.
+    pub fn try_allocate(&mut self, value: i64) -> Result<Handle, Error> {
         // Collect BEFORE allocation so the freshly returned object is usable until
         // the next safepoint. Callers must root it before another allocation.
         if self.stress {
             self.collect();
+        }
+        if let Some(limit) = self.object_limit {
+            if self.live_objects() >= limit {
+                if !self.stress {
+                    self.collect();
+                }
+                if self.live_objects() >= limit {
+                    return Err(Error::ObjectLimit);
+                }
+            }
         }
         let serial = self.serial();
         if self.model == Model::Indirect {
@@ -139,11 +159,11 @@ impl Heap {
                 value,
                 edges: vec![],
             }));
-            return Handle {
+            return Ok(Handle {
                 heap: self.id,
                 index,
                 serial,
-            };
+            });
         }
         let index = if let Some(index) = self.free.pop() {
             index
@@ -157,11 +177,24 @@ impl Heap {
             value,
             edges: vec![],
         });
-        Handle {
+        Ok(Handle {
             heap: self.id,
             index,
             serial,
-        }
+        })
+    }
+
+    pub fn set_object_limit(&mut self, limit: Option<usize>) {
+        self.object_limit = limit;
+    }
+    pub fn live_objects(&self) -> usize {
+        self.slots.iter().flatten().count()
+    }
+
+    pub fn clear_edges(&mut self, h: Handle) -> Result<(), Error> {
+        let position = self.position(h)?;
+        self.slots[position].as_mut().unwrap().edges.clear();
+        Ok(())
     }
 
     pub fn value(&self, h: Handle) -> Result<i64, Error> {
@@ -403,4 +436,5 @@ impl Drop for RootScope<'_> {
     }
 }
 
+pub mod host;
 pub mod operations;

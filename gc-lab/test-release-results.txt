@@ -1,5 +1,5 @@
    Compiling gc-lab v0.1.0 (/workspace/scratch/e3f46e95421a/gc-lab)
-    Finished `release` profile [optimized] target(s) in 0.53s
+    Finished `release` profile [optimized] target(s) in 0.57s
      Running unittests src/lib.rs (gc-lab/target/release/deps/gc_lab-2ec61517e03cf31e)
 
 running 0 tests
@@ -18,22 +18,33 @@ running 8 tests
 test callback_error_keeps_explicit_root_valid_until_owner_releases_it ... ok
 test dead_cycles_and_roots_are_reclaimed ... ok
 test reused_slots_never_resurrect_a_stale_handle ... ok
-test stable_handles_survive_gc_but_compact_handles_need_resolution ... ok
 test rooted_graph_survives_reentrant_callbacks ... ok
+test stable_handles_survive_gc_but_compact_handles_need_resolution ... ok
 test tokens_from_another_heap_are_rejected ... ok
 test generated_graph_matches_independent_reachability_oracle ... ok
 test long_graph_uses_no_recursive_marking ... ok
 
 test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
 
+     Running tests/host_boundary.rs (gc-lab/target/release/deps/host_boundary-fbc96e09ddc9811a)
+
+running 5 tests
+test detached_listener_survives_only_when_externally_reachable ... ok
+test partial_callback_results_are_reclaimed_after_budget_failure_and_retry_works ... ok
+test partial_host_construction_releases_its_roots ... ok
+test callback_result_keeps_capture_alive_and_entire_cycle_is_reclaimed ... ok
+test zero_budget_and_dropped_caller_root_are_rejected ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
      Running tests/scopes_and_map.rs (gc-lab/target/release/deps/scopes_and_map-cfebdf122dc9f716)
 
 running 7 tests
 test indirect_tokens_survive_repeated_compaction_and_reuse ... ok
-test stress_exposes_unrooted_temporaries_and_empty_map_works ... ok
-test scopes_release_on_success_error_and_panic ... ok
-test scoped_allocation_stress_preserves_graph_in_all_models ... ok
 test map_error_and_panic_release_output_and_item_roots ... ok
+test scopes_release_on_success_error_and_panic ... ok
+test stress_exposes_unrooted_temporaries_and_empty_map_works ... ok
+test scoped_allocation_stress_preserves_graph_in_all_models ... ok
 test scoped_root_slots_are_reused_without_reviving_escaped_tokens ... ok
 test maps_match_scalar_oracle_under_reentrant_gc_and_allocation_stress ... ok
 
