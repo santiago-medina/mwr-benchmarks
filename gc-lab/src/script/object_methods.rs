@@ -92,10 +92,7 @@ impl Engine<'_> {
         self.protect(&Value::Object(out))?;
         if map {
             let mut data = self.data(out)?.clone();
-            data.collection = Some(Table {
-                set: false,
-                entries: vec![],
-            });
+            data.collection = Some(Table::new(false));
             self.replace_data(out, data)?;
         }
         let mut index = 0u64;
@@ -123,7 +120,7 @@ impl Engine<'_> {
                 } else {
                     let array = e.new_array(0)?;
                     e.protect(&Value::Object(array))?;
-                    table.entries.push(Some((key, Value::Object(array))));
+                    table.write(key, Value::Object(array));
                     e.replace_data(out, data)?;
                     array
                 }

@@ -44,7 +44,7 @@ pub struct Exception {
 }
 type Result<T> = std::result::Result<T, ScriptError>;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(super) enum Value {
     Undefined,
     Null,

@@ -10,6 +10,7 @@ type Result<T> = std::result::Result<T, ScriptError>;
 pub(super) struct Table {
     pub set: bool,
     pub entries: Vec<Option<(Value, Value)>>,
+    index: HashMap<Value, usize>,
 }
 impl Table {
     pub fn edges(&self) -> Vec<Id> {
@@ -20,10 +21,47 @@ impl Table {
             .flatten()
             .collect()
     }
+    pub(super) fn new(set: bool) -> Self {
+        Self {
+            set,
+            entries: vec![],
+            index: HashMap::new(),
+        }
+    }
+    fn fingerprint(key: &Value) -> Value {
+        match key {
+            Value::Number(bits) if f64::from_bits(*bits).is_nan() => Value::number(f64::NAN),
+            Value::Number(bits) if f64::from_bits(*bits) == 0.0 => Value::number(0.0),
+            _ => key.clone(),
+        }
+    }
     pub(super) fn find(&self, key: &Value) -> Option<usize> {
-        self.entries
-            .iter()
-            .position(|entry| entry.as_ref().is_some_and(|(k, _)| k.same_value_zero(key)))
+        self.index.get(&Self::fingerprint(key)).copied()
+    }
+    pub(super) fn len(&self) -> usize {
+        self.index.len()
+    }
+    pub(super) fn write(&mut self, mut key: Value, value: Value) {
+        if matches!(&key,Value::Number(bits) if f64::from_bits(*bits)==0.0) {
+            key = Value::number(0.0);
+        }
+        let fingerprint = Self::fingerprint(&key);
+        if let Some(at) = self.index.get(&fingerprint).copied() {
+            self.entries[at] = Some((key, value));
+        } else {
+            let at = self.entries.len();
+            self.entries.push(Some((key, value)));
+            self.index.insert(fingerprint, at);
+        }
+    }
+    pub(super) fn remove_at(&mut self, at: usize) {
+        if let Some((key, _)) = self.entries[at].take() {
+            self.index.remove(&Self::fingerprint(&key));
+        }
+    }
+    pub(super) fn clear(&mut self) {
+        self.entries.fill(None);
+        self.index.clear();
     }
 }
 #[derive(Clone)]
@@ -86,7 +124,21 @@ impl Engine<'_> {
                 ]
             } else {
                 &[
-                    "add", "has", "delete", "clear", "forEach", "values", "entries", "size",
+                    "add",
+                    "has",
+                    "delete",
+                    "clear",
+                    "forEach",
+                    "values",
+                    "entries",
+                    "size",
+                    "union",
+                    "intersection",
+                    "difference",
+                    "symmetricDifference",
+                    "isSubsetOf",
+                    "isSupersetOf",
+                    "isDisjointFrom",
                 ]
             };
             let mut functions = HashMap::new();
@@ -198,9 +250,21 @@ impl Engine<'_> {
         mut accept: impl FnMut(&mut Self, Value) -> Result<()>,
     ) -> Result<()> {
         let (iterator, next) = self.open_iterator(source, method)?;
+        self.visit_iterator(iterator, next, |e, v| {
+            accept(e, v)?;
+            Ok(true)
+        })
+        .map(|_| ())
+    }
+    pub(super) fn visit_iterator(
+        &mut self,
+        iterator: Value,
+        next: Value,
+        mut accept: impl FnMut(&mut Self, Value) -> Result<bool>,
+    ) -> Result<bool> {
         loop {
             self.tick()?;
-            let value = self.frame(|e| {
+            let outcome = self.frame(|e| {
                 let step = e.invoke_this(next.clone(), iterator.clone(), vec![])?;
                 e.protect(&step)?;
                 if !matches!(step, Value::Object(_)) {
@@ -212,15 +276,21 @@ impl Engine<'_> {
                 let value = e.get_member(step, "value")?;
                 e.protect(&value)?;
                 match accept(e, value) {
-                    Ok(()) => Ok(Some(())),
+                    Ok(true) => Ok(Some(true)),
+                    Ok(false) => {
+                        e.close_iterator(iterator.clone(), Ok(None))?;
+                        Ok(Some(false))
+                    }
                     Err(error) => match e.close_iterator(iterator.clone(), Err(error)) {
                         Err(error) => Err(error),
                         _ => unreachable!(),
                     },
                 }
             })?;
-            if value.is_none() {
-                return Ok(());
+            match outcome {
+                None => return Ok(true),
+                Some(false) => return Ok(false),
+                Some(true) => {}
             }
         }
     }
@@ -240,10 +310,7 @@ impl Engine<'_> {
         let result = Value::Object(id);
         self.protect(&result)?;
         let mut data = self.data(id)?.clone();
-        data.collection = Some(Table {
-            set: name == "Set",
-            entries: vec![],
-        });
+        data.collection = Some(Table::new(name == "Set"));
         self.replace_data(id, data)?;
         if matches!(source, Value::Null | Value::Undefined) {
             return Ok(result);
@@ -345,7 +412,7 @@ impl Engine<'_> {
         let key = args.first().cloned().unwrap_or(Value::Undefined);
         let at = table.find(&key);
         match op {
-            "size" => Ok(Value::number(table.entries.iter().flatten().count() as f64)),
+            "size" => Ok(Value::number(table.len() as f64)),
             "has" => Ok(Value::Bool(at.is_some())),
             "get" => Ok(at
                 .map(|i| table.entries[i].as_ref().unwrap().1.clone())
@@ -363,11 +430,7 @@ impl Engine<'_> {
                 };
                 let mut data = self.data(id)?.clone();
                 let table = data.collection.as_mut().unwrap();
-                if let Some(at) = at {
-                    table.entries[at] = Some((key, value));
-                } else {
-                    table.entries.push(Some((key, value)));
-                }
+                table.write(key, value);
                 self.replace_data(id, data)?;
                 Ok(receiver)
             }
@@ -375,11 +438,9 @@ impl Engine<'_> {
                 let mut data = self.data(id)?.clone();
                 let table = data.collection.as_mut().unwrap();
                 if op == "clear" {
-                    for entry in &mut table.entries {
-                        *entry = None;
-                    }
+                    table.clear();
                 } else if let Some(at) = at {
-                    table.entries[at] = None;
+                    table.remove_at(at);
                 }
                 self.replace_data(id, data)?;
                 Ok(if op == "clear" {
@@ -444,6 +505,7 @@ impl Engine<'_> {
                 }
                 Ok(Value::Undefined)
             }
+            _ if set => self.set_algebra(op, id, key),
             _ => Err(ScriptError::Unsupported("collection operation")),
         }
     }

@@ -48,3 +48,5 @@ mod object_methods;
 
 mod dynamic_functions;
 mod uri;
+
+mod set_methods;
