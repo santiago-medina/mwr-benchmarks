@@ -366,6 +366,10 @@ impl Engine<'_> {
             "Symbol",
             "parseInt",
             "parseFloat",
+            "encodeURI",
+            "encodeURIComponent",
+            "decodeURI",
+            "decodeURIComponent",
             "isNaN",
             "isFinite",
             "Promise",
@@ -830,6 +834,12 @@ impl Engine<'_> {
     ) -> Result<Value> {
         if matches!(
             name,
+            "encodeURI" | "encodeURIComponent" | "decodeURI" | "decodeURIComponent"
+        ) {
+            return self.uri_builtin(name, args);
+        }
+        if matches!(
+            name,
             "Object.hasOwn"
                 | "Object.values"
                 | "Object.entries"
@@ -989,11 +999,10 @@ impl Engine<'_> {
                 return self.invoke_this(receiver, arg(0), args.iter().skip(1).cloned().collect())
             }
             "Function.prototype.bind" => return self.bind_function(receiver, args),
-            "AsyncFunction" | "Function" | "Function.prototype.toString" => {
-                return Err(ScriptError::Unsupported(
-                    "dynamic function or function source",
-                ))
+            "AsyncFunction" | "Function" => {
+                return self.dynamic_function(name == "AsyncFunction", args, None)
             }
+            "Function.prototype.toString" => return self.function_source(receiver),
             "String" => {
                 return Ok(Value::String(if args.is_empty() {
                     String::new()

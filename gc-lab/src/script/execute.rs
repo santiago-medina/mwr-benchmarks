@@ -822,14 +822,15 @@ impl Engine<'_> {
                         args.first().cloned().unwrap_or(Value::Undefined),
                     );
                 }
+                if name == "Function" || name == "AsyncFunction" {
+                    return self.dynamic_function(name == "AsyncFunction", args, Some(new_target));
+                }
                 if new_target != f {
                     return Err(ScriptError::Unsupported("custom newTarget for builtin"));
                 }
                 if matches!(name.as_str(), "String" | "Number" | "Boolean") {
                     let v = self.builtin(&name, Value::Undefined, args)?;
                     self.box_value(v).map(Value::Object)
-                } else if name == "Function" || name == "AsyncFunction" {
-                    Err(ScriptError::Unsupported("dynamic Function constructor"))
                 } else if name == "Object"
                     || name == "Array"
                     || self.intrinsics.as_ref().unwrap().errors.contains_key(&name)

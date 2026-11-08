@@ -45,3 +45,6 @@ mod symbols;
 
 mod array_copy;
 mod object_methods;
+
+mod dynamic_functions;
+mod uri;
