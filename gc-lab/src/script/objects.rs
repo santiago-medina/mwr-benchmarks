@@ -97,6 +97,8 @@ pub(super) struct Data {
     pub internal: Option<super::promises::Internal>,
     pub cell: Option<super::promises::Cell>,
     pub job: Option<super::promises::Job>,
+    pub collection: Option<super::collections::Table>,
+    pub collection_cursor: Option<super::collections::Cursor>,
     pub iterator: Option<super::arrays::IteratorState>,
 }
 impl Data {
@@ -110,6 +112,8 @@ impl Data {
             arguments: false,
             array: false,
             iterator: None,
+            collection: None,
+            collection_cursor: None,
             activation: None,
             response: None,
             request: None,
@@ -122,6 +126,8 @@ impl Data {
     fn edges(&self) -> Vec<Id> {
         self.prototype
             .into_iter()
+            .chain(self.collection.as_ref().into_iter().flat_map(|t| t.edges()))
+            .chain(self.collection_cursor.as_ref().and_then(|c| c.target))
             .chain(self.boxed.as_ref().and_then(Value::id))
             .chain(self.iterator.as_ref().and_then(|i| i.target))
             .chain(self.request.as_ref().into_iter().flat_map(|r| r.edges()))

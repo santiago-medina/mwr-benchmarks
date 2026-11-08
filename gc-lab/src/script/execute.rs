@@ -22,6 +22,10 @@ impl Value {
             _ => true,
         }
     }
+    pub(super) fn same_value_zero(&self, b: &Self) -> bool {
+        self.strict_equal(b)
+            || matches!((self,b),(Self::Number(a),Self::Number(b))if f64::from_bits(*a).is_nan()&&f64::from_bits(*b).is_nan())
+    }
     pub(super) fn same_value(&self, b: &Self) -> bool {
         match (self, b) {
             (Self::Number(a), Self::Number(b)) => {
@@ -388,7 +392,7 @@ impl Engine<'_> {
             }
         }
     }
-    fn close_iterator(
+    pub(super) fn close_iterator(
         &mut self,
         iterator: Value,
         pending: Result<Option<Value>>,
@@ -753,6 +757,8 @@ impl Engine<'_> {
                     name.as_str(),
                     "Promise"
                         | "Array"
+                        | "Map"
+                        | "Set"
                         | "Object"
                         | "Function"
                         | "AsyncFunction"
@@ -793,6 +799,13 @@ impl Engine<'_> {
                 )
             }
             Some(Object::Builtin { name, .. }) => {
+                if name == "Map" || name == "Set" {
+                    return self.construct_collection(
+                        &name,
+                        new_target,
+                        args.first().cloned().unwrap_or(Value::Undefined),
+                    );
+                }
                 if name == "Promise" {
                     return self.promise_constructor_target(
                         new_target,

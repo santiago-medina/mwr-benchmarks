@@ -155,7 +155,7 @@ impl Engine<'_> {
         self.replace_data(id, d)?;
         Ok(Value::Object(id))
     }
-    fn iterator_result(&mut self, value: Value, done: bool) -> Result<Value> {
+    pub(super) fn iterator_result(&mut self, value: Value, done: bool) -> Result<Value> {
         self.protect(&value)?;
         let id = self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;
         self.protect(&Value::Object(id))?;
@@ -163,7 +163,7 @@ impl Engine<'_> {
         self.put_data(id, "done", Value::Bool(done))?;
         Ok(Value::Object(id))
     }
-    fn array_species_create(&mut self, original: Id, len: u32) -> Result<Id> {
+    pub(super) fn array_species_create(&mut self, original: Id, len: u32) -> Result<Id> {
         let mut constructor = Value::Undefined;
         if self.data(original)?.array {
             constructor = self.get_member(Value::Object(original), "constructor")?;

@@ -17,6 +17,7 @@ pub(super) struct Intrinsics {
     pub global: Id,
     pub functions: HashMap<String, Id>,
     pub errors: HashMap<String, Id>,
+    pub collection: HashMap<String, Id>,
 }
 const ERRORS: &[&str] = &[
     "Error",
@@ -96,7 +97,12 @@ const METHODS: &[(&str, &[&str])] = &[
     ("assert", &["sameValue", "notSameValue", "throws"]),
 ];
 impl Engine<'_> {
-    fn hidden(&mut self, id: Id, key: impl Into<super::objects::Key>, v: Value) -> Result<()> {
+    pub(super) fn hidden(
+        &mut self,
+        id: Id,
+        key: impl Into<super::objects::Key>,
+        v: Value,
+    ) -> Result<()> {
         self.define(
             id,
             key,
@@ -212,6 +218,7 @@ impl Engine<'_> {
             global,
             functions: HashMap::new(),
             errors: HashMap::new(),
+            collection: HashMap::new(),
         });
         let async_function = self.new_object(Some(function))?;
         self.runtime.link(env, async_function)?;
@@ -254,6 +261,8 @@ impl Engine<'_> {
         let mut names = vec![
             "Object",
             "Array",
+            "Map",
+            "Set",
             "Symbol",
             "parseInt",
             "Promise",
@@ -333,6 +342,7 @@ impl Engine<'_> {
                 self.replace_data(ctor, d)?;
             }
         }
+        self.bootstrap_collections(env, &mut objects, iterator)?;
         let constructors: Vec<_> = self
             .intrinsics
             .as_ref()
@@ -711,6 +721,15 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name == "Map"
+            || name == "Set"
+            || name.starts_with("Map.")
+            || name.starts_with("Set.")
+            || name.starts_with("%MapIterator")
+            || name.starts_with("%SetIterator")
+        {
+            return self.collection_builtin(name, receiver, args);
+        }
         if name == "Promise"
             || name.starts_with("Promise.")
             || name == "queueMicrotask"
