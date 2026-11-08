@@ -221,6 +221,8 @@ impl Engine<'_> {
                 self.next_symbol += 1;
                 return Ok(Value::Symbol(id));
             }
+            "Array.from" => return self.array_from(receiver, args, false),
+            "Array.of" => return self.array_from(receiver, args, true),
             "Array" => {
                 let single = matches!(args.as_slice(), [Value::Number(_)]);
                 let length = if single {
@@ -453,7 +455,7 @@ impl Engine<'_> {
                     _ => Value::Undefined,
                 })
             }
-            _ => Err(ScriptError::Unsupported("array method")),
+            _ => self.array_extended(name, id, length, args),
         }
     }
 }

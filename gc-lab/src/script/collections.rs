@@ -175,10 +175,18 @@ impl Engine<'_> {
     pub(super) fn consume_iterable(
         &mut self,
         source: Value,
-        mut accept: impl FnMut(&mut Self, Value) -> Result<()>,
+        accept: impl FnMut(&mut Self, Value) -> Result<()>,
     ) -> Result<()> {
         let method = self.get_member(source.clone(), Key::Symbol(0))?;
         self.protect(&method)?;
+        self.consume_iterator(source, method, accept)
+    }
+    pub(super) fn consume_iterator(
+        &mut self,
+        source: Value,
+        method: Value,
+        mut accept: impl FnMut(&mut Self, Value) -> Result<()>,
+    ) -> Result<()> {
         let iterator = self.invoke_this(method, source, vec![])?;
         self.protect(&iterator)?;
         if !matches!(iterator, Value::Object(_)) {
