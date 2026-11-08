@@ -213,14 +213,6 @@ impl Engine<'_> {
     ) -> Result<Value> {
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Undefined);
         match name {
-            "Symbol" => {
-                if !args.is_empty() && arg(0) != Value::Undefined {
-                    return Err(ScriptError::Unsupported("symbol descriptions"));
-                }
-                let id = self.next_symbol;
-                self.next_symbol += 1;
-                return Ok(Value::Symbol(id));
-            }
             "Array.from" => return self.array_from(receiver, args, false),
             "Array.of" => return self.array_from(receiver, args, true),
             "Array" => {

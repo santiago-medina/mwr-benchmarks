@@ -78,6 +78,7 @@ impl Engine<'_> {
             Value::String(_) => "String",
             Value::Number(_) => "Number",
             Value::Bool(_) => "Boolean",
+            Value::Symbol(_) => "Symbol",
             Value::Null | Value::Undefined => {
                 return self.throw_error("TypeError", "null or undefined")
             }

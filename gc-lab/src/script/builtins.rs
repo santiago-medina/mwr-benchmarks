@@ -178,7 +178,13 @@ impl Engine<'_> {
             },
         );
         self.replace_data(id, Data::new(prototype))?;
-        let short = if matches!(
+        let short = if name == "Symbol.prototype.description" {
+            "get description"
+        } else if name == "Symbol.prototype.toPrimitive" {
+            "[Symbol.toPrimitive]"
+        } else if name == "Function.prototype.hasInstance" {
+            "[Symbol.hasInstance]"
+        } else if matches!(
             name,
             "%IteratorPrototype%.iterator" | "String.prototype.iterator"
         ) {
@@ -191,6 +197,9 @@ impl Engine<'_> {
             name.rsplit('.').next().unwrap()
         };
         let arity = match name {
+            "Symbol.prototype.description"
+            | "Symbol.prototype.toString"
+            | "Symbol.prototype.valueOf" => 0,
             "AggregateError" => 2,
             "Promise.withResolvers" | "Error.prototype.toString" => 0,
             "Math.random"
@@ -431,6 +440,7 @@ impl Engine<'_> {
         self.bootstrap_collections(env, &mut objects, iterator)?;
         self.bootstrap_math(env, &mut objects)?;
         self.bootstrap_strings(env, &mut objects, iterator)?;
+        self.bootstrap_symbols(env, &mut objects)?;
         let constructors: Vec<_> = self
             .intrinsics
             .as_ref()
@@ -512,17 +522,6 @@ impl Engine<'_> {
                 ..Descriptor::default()
             },
         )?;
-        let symbol = objects["Symbol"];
-        for (key, id) in [("iterator", 0), ("toStringTag", 1), ("species", 2)] {
-            self.define(
-                symbol,
-                key,
-                Descriptor {
-                    value: Some(Value::Symbol(id)),
-                    ..Descriptor::default()
-                },
-            )?;
-        }
         let entries: Vec<_> = objects
             .iter()
             .filter(|(n, _)| !n.contains('.'))
@@ -644,7 +643,7 @@ impl Engine<'_> {
             Value::Number(_) => "Number",
             Value::Bool(_) => "Boolean",
             Value::Object(id) => return Ok(*id),
-            Value::Symbol(_) => return Err(ScriptError::Unsupported("symbol boxing")),
+            Value::Symbol(_) => "Symbol",
             _ => return self.throw_error("TypeError", "cannot box value"),
         };
         let ctor = self.intrinsics.as_ref().unwrap().functions[name];
@@ -809,6 +808,14 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name == "Symbol" || name.starts_with("Symbol.") {
+            return self.symbol_builtin(name, receiver, args);
+        }
+        if name == "Function.prototype.hasInstance" {
+            return self
+                .ordinary_has_instance(args.first().cloned().unwrap_or(Value::Undefined), receiver)
+                .map(Value::Bool);
+        }
         if name == "%StringIteratorPrototype%.next"
             || name.starts_with("String.")
                 && !matches!(
@@ -852,7 +859,6 @@ impl Engine<'_> {
             return self.promise_builtin(name, receiver, args);
         }
         if name == "Array"
-            || name == "Symbol"
             || name.starts_with("Array.")
             || name.starts_with("%ArrayIteratorPrototype%")
             || name.starts_with("%IteratorPrototype%")
@@ -959,6 +965,8 @@ impl Engine<'_> {
             "String" => {
                 return Ok(Value::String(if args.is_empty() {
                     String::new()
+                } else if let Value::Symbol(id) = arg(0) {
+                    self.symbol_string(id)
                 } else {
                     self.to_string(arg(0))?
                 }))
@@ -1007,6 +1015,7 @@ impl Engine<'_> {
                     Value::String(_) => "String",
                     Value::Number(_) => "Number",
                     Value::Bool(_) => "Boolean",
+                    Value::Symbol(_) => "Symbol",
                     _ if self.callable(&receiver) => "Function",
                     Value::Object(id) => {
                         let d = self.data(*id)?;
@@ -1028,6 +1037,16 @@ impl Engine<'_> {
                         }
                     }
                     _ => return Err(ScriptError::Unsupported("host object brand")),
+                };
+                let tag = if matches!(receiver, Value::Null | Value::Undefined) {
+                    Value::Undefined
+                } else {
+                    self.get_member(receiver.clone(), super::objects::Key::Symbol(1))?
+                };
+                let brand = if let Value::String(tag) = tag {
+                    tag
+                } else {
+                    brand.into()
                 };
                 return Ok(Value::String(format!("[object {brand}]")));
             }

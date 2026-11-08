@@ -968,9 +968,10 @@ impl Engine<'_> {
             }
             "instanceof" => self.instanceof(a, b).map(Value::Bool),
             _ => {
-                let a = self.to_primitive(a, false)?;
+                let hint = if op == "+" { "default" } else { "number" };
+                let a = self.to_primitive_hint(a, hint)?;
                 self.protect(&a)?;
-                let b = self.to_primitive(b, false)?;
+                let b = self.to_primitive_hint(b, hint)?;
                 self.protect(&b)?;
                 if op == "+" && (matches!(a, Value::String(_)) || matches!(b, Value::String(_))) {
                     return Ok(Value::String(self.to_string(a)? + &self.to_string(b)?));
@@ -1029,8 +1030,27 @@ impl Engine<'_> {
         }
     }
     fn instanceof(&mut self, value: Value, ctor: Value) -> Result<bool> {
+        if !matches!(ctor, Value::Object(_)) {
+            return self.throw_error("TypeError", "instanceof requires an object");
+        }
+        let method = self.get_member(ctor.clone(), Key::Symbol(super::symbols::HAS_INSTANCE))?;
+        self.protect(&method)?;
+        if !matches!(method, Value::Null | Value::Undefined) {
+            if !self.callable(&method) {
+                return self.throw_error("TypeError", "Symbol.hasInstance is not callable");
+            }
+            return self
+                .invoke_this(method, ctor, vec![value])
+                .map(|v| v.truthy());
+        }
         if !self.callable(&ctor) {
             return self.throw_error("TypeError", "instanceof requires callable");
+        }
+        self.ordinary_has_instance(value, ctor)
+    }
+    pub(super) fn ordinary_has_instance(&mut self, value: Value, ctor: Value) -> Result<bool> {
+        if !self.callable(&ctor) {
+            return Ok(false);
         }
         if let Value::Object(id) = &ctor {
             if let Some(Object::Bound { target, .. }) = self.objects.get(id) {
@@ -1055,10 +1075,26 @@ impl Engine<'_> {
         Err(ScriptError::Runtime("prototype traversal limit"))
     }
     pub(super) fn to_primitive(&mut self, v: Value, string: bool) -> Result<Value> {
+        self.to_primitive_hint(v, if string { "string" } else { "number" })
+    }
+    pub(super) fn to_primitive_hint(&mut self, v: Value, hint: &str) -> Result<Value> {
         if !matches!(v, Value::Object(_)) {
             return Ok(v);
         }
-        for name in if string {
+        self.protect(&v)?;
+        let exotic = self.get_member(v.clone(), Key::Symbol(super::symbols::PRIMITIVE))?;
+        self.protect(&exotic)?;
+        if !matches!(exotic, Value::Null | Value::Undefined) {
+            if !self.callable(&exotic) {
+                return self.throw_error("TypeError", "Symbol.toPrimitive is not callable");
+            }
+            let value = self.invoke_this(exotic, v.clone(), vec![Value::String(hint.into())])?;
+            if matches!(value, Value::Object(_)) {
+                return self.throw_error("TypeError", "Symbol.toPrimitive returned an object");
+            }
+            return Ok(value);
+        }
+        for name in if hint == "string" {
             ["toString", "valueOf"]
         } else {
             ["valueOf", "toString"]

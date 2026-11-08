@@ -40,3 +40,5 @@ mod promise_combinators;
 mod references;
 
 mod loops;
+
+mod symbols;
