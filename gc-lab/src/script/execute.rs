@@ -368,13 +368,25 @@ impl Engine<'_> {
                 finally,
             } => {
                 let mut pending = self.scoped(body, env, can_return);
-                if let (Err(ScriptError::Thrown(ex)), Some((name, b))) = (&pending, catch) {
+                if let (Err(ScriptError::Thrown(ex)), Some((pattern, b))) = (&pending, catch) {
                     let value = ex.value.clone();
                     self.protect(&value)?;
-                    let local = self.new_environment(Some(env), b, false)?;
-                    self.protect(&Value::Object(local))?;
-                    self.mutable_binding(local, name, value)?;
-                    pending = self.block(b, local, can_return);
+                    pending = (|| {
+                        let declarations = pattern
+                            .iter()
+                            .map(|pattern| Stmt::Bind {
+                                kind: "let".into(),
+                                pattern: pattern.clone(),
+                                init: Some(Expr::Undefined),
+                            })
+                            .collect::<Vec<_>>();
+                        let local = self.new_environment(Some(env), &declarations, false)?;
+                        self.protect(&Value::Object(local))?;
+                        if let Some(pattern) = pattern {
+                            self.bind_pattern(pattern, value, local, local)?;
+                        }
+                        self.scoped(b, local, can_return)
+                    })();
                 }
                 if matches!(
                     pending,

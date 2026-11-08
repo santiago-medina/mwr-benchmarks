@@ -52,7 +52,7 @@ pub(super) enum Op {
         finally: Option<usize>,
         end: usize,
     },
-    Catch(String, Vec<Stmt>),
+    Catch(Option<super::parser::Pattern>, Vec<Stmt>),
     EndTry,
     EndFinally,
     Sync(Stmt),
@@ -111,9 +111,10 @@ pub(super) fn stmt_await(s: &Stmt) -> bool {
             finally,
         } => {
             body.iter().any(stmt_await)
-                || catch
-                    .as_ref()
-                    .is_some_and(|(_, b)| b.iter().any(stmt_await))
+                || catch.as_ref().is_some_and(|(pattern, b)| {
+                    pattern.iter().flat_map(|p| p.expressions()).any(expr_await)
+                        || b.iter().any(stmt_await)
+                })
                 || finally.as_ref().is_some_and(|b| b.iter().any(stmt_await))
         }
         Stmt::Switch(value, cases) => {
@@ -649,8 +650,13 @@ impl Compiler {
                 });
                 self.body(body, true)?;
                 self.emit(Op::EndTry);
-                let catch_ip = if let Some((name, body)) = catch {
-                    let at = self.emit(Op::Catch(name.clone(), body.clone()));
+                let catch_ip = if let Some((pattern, body)) = catch {
+                    if pattern.iter().flat_map(|p| p.expressions()).any(expr_await) {
+                        return Err(ScriptError::Unsupported(
+                            "resumable catch binding expressions",
+                        ));
+                    }
+                    let at = self.emit(Op::Catch(pattern.clone(), body.clone()));
                     for s in body {
                         self.statement(s)?;
                     }
@@ -1350,14 +1356,27 @@ impl Engine<'_> {
                             phase: Phase::Try,
                             pending: Completion::Normal,
                         }),
-                        Op::Catch(n, body) => {
+                        Op::Catch(pattern, body) => {
                             let value = frame.incoming.take().unwrap();
                             e.protect(&value)?;
-                            let scope = e.new_environment(Some(env), &body, false)?;
+                            let declarations = pattern
+                                .iter()
+                                .map(|pattern| Stmt::Bind {
+                                    kind: "let".into(),
+                                    pattern: pattern.clone(),
+                                    init: Some(Expr::Undefined),
+                                })
+                                .collect::<Vec<_>>();
+                            let scope = e.new_environment(Some(env), &declarations, false)?;
                             e.protect(&Value::Object(scope))?;
-                            e.mutable_binding(scope, &n, value)?;
-                            e.hoist_functions(&body, scope)?;
+                            if let Some(pattern) = pattern {
+                                e.bind_pattern(&pattern, value, scope, scope)?;
+                            }
                             frame.envs.push(scope);
+                            let body_scope = e.new_environment(Some(scope), &body, false)?;
+                            e.protect(&Value::Object(body_scope))?;
+                            e.hoist_functions(&body, body_scope)?;
+                            frame.envs.push(body_scope);
                         }
                         Op::EndTry => {
                             let h = frame.handlers.last_mut().unwrap();

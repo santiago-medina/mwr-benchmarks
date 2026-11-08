@@ -129,7 +129,7 @@ pub enum Stmt {
     },
     Try {
         body: Vec<Stmt>,
-        catch: Option<(String, Vec<Stmt>)>,
+        catch: Option<(Option<Pattern>, Vec<Stmt>)>,
         finally: Option<Vec<Stmt>>,
     },
 }
@@ -604,7 +604,7 @@ impl Parser<'_> {
                     None
                 };
                 params.push(Param {
-                    name,
+                    binding,
                     default,
                     rest,
                 });
@@ -816,10 +816,14 @@ impl Parser<'_> {
         if self.word("try") {
             let body = self.block()?;
             let catch = if self.word("catch") {
-                self.expect('(')?;
-                let n = self.name()?;
-                self.expect(')')?;
-                Some((n, self.block()?))
+                let binding = if self.punct('(') {
+                    let pattern = self.binding_pattern()?;
+                    self.expect(')')?;
+                    Some(pattern)
+                } else {
+                    None
+                };
+                Some((binding, self.block()?))
             } else {
                 None
             };
@@ -1815,10 +1819,18 @@ fn validate_loop(
                     in_switch,
                     in_generator,
                 )?;
-                if let Some((n, b)) = catch {
+                if let Some((pattern, b)) = catch {
+                    let bindings = pattern.as_ref().map(Pattern::names).unwrap_or_default();
+                    let mut unique = std::collections::HashSet::new();
+                    if bindings.iter().any(|name| !unique.insert(name)) {
+                        return Err(err("duplicate catch binding"));
+                    }
+                    if let Some(pattern) = pattern {
+                        work.extend(pattern.expressions().into_iter().map(|e| (e, depth)));
+                    }
                     validate_loop(
                         b,
-                        std::slice::from_ref(n),
+                        &bindings,
                         can_return,
                         depth + 1,
                         in_loop,

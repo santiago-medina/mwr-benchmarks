@@ -65,3 +65,7 @@ Binding-pattern additions (unverified): array/object destructuring declarations 
 ### Destructuring loop headers (unverified)
 
 Classic `for` declarations and `for…in`/`for…of` declaration headers now share binding patterns with declarations and parameters. Lexical loop environments declare every bound name; per-iteration `let` copies include destructured names. Ordinary iteration preserves the enclosing lexical scope for `var`, and binding failures use the existing iterator-close path. Async lowering accepts non-suspending patterns; suspension inside pattern defaults/computed keys remains unsupported. No compilation or tests were run.
+
+### Catch binding forms (unverified)
+
+`catch` now supports omitted bindings and object/array binding patterns through the shared initializer. Catch parameter and body lexical environments are separate, and exceptions during destructuring become pending completions so `finally` can execute. Resumable catch scopes use the same environment split; suspension inside catch patterns is explicitly unsupported. Corrected a stale parameter-record field in the parser left by the earlier binding-pattern refactor. Formatting only; no compilation or tests were run.
