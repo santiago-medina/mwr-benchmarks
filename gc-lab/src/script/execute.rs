@@ -521,18 +521,8 @@ impl Engine<'_> {
                 },
                 name.is_some(),
             ),
-            Expr::Array(elements) => {
-                let id = self.new_array(elements.len() as u32)?;
-                self.protect(&Value::Object(id))?;
-                for (i, x) in elements.iter().enumerate() {
-                    if let Some(x) = x {
-                        let v = self.eval(x, env)?;
-                        self.protect(&v)?;
-                        self.put_data(id, i.to_string(), v)?;
-                    }
-                }
-                Ok(Value::Object(id))
-            }
+            Expr::Array(elements) => self.array_literal(elements, env),
+            Expr::Spread(_) => Err(ScriptError::Runtime("spread outside accumulation")),
             Expr::Object(p) => self.eval_object(p, env),
             Expr::Member(a, k) => {
                 let a = self.eval(a, env)?;
@@ -589,6 +579,11 @@ impl Engine<'_> {
     }
     pub(super) fn literal_property(&mut self, id: Id, k: &str, p: &Literal, env: Id) -> Result<()> {
         let d = match p {
+            Literal::Spread(expression) => {
+                let source = self.eval(expression, env)?;
+                return self.copy_properties(id, source, &[]);
+            }
+
             Literal::Prototype(x) => {
                 let v = self.eval(x, env)?;
                 match v {
@@ -666,12 +661,17 @@ impl Engine<'_> {
             (Value::Undefined, self.eval(f, env)?)
         };
         self.protect(&callee)?;
-        let mut values = vec![];
-        for x in args {
-            let v = self.eval(x, env)?;
-            self.protect(&v)?;
-            values.push(v);
-        }
+        let values = if args.iter().any(|e| matches!(e, Expr::Spread(_))) {
+            self.spread_arguments(args, env)?
+        } else {
+            let mut values = vec![];
+            for expression in args {
+                let value = self.eval(expression, env)?;
+                self.protect(&value)?;
+                values.push(value);
+            }
+            values
+        };
         if new {
             self.construct(callee, values)
         } else {

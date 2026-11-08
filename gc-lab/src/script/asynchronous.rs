@@ -24,6 +24,14 @@ pub(super) enum Op {
         new: bool,
         out: usize,
     },
+    InvokeList {
+        callee: usize,
+        receiver: Option<usize>,
+        args: usize,
+        new: bool,
+        out: usize,
+    },
+    Append(usize, Option<usize>, bool),
     Init(String, usize, bool),
     Enter(Vec<Stmt>),
     Exit,
@@ -36,7 +44,6 @@ pub(super) enum Op {
     Object(usize),
     Array(usize, u32),
     Property(usize, String, Property),
-    Item(usize, String, usize),
     Try {
         catch: Option<usize>,
         finally: Option<usize>,
@@ -66,7 +73,7 @@ fn expr_await(e: &Expr) -> bool {
         | Expr::AsyncFunction { .. }
         | Expr::AsyncArrow { .. } => false,
         Expr::Conditional(a, b, c) => expr_await(a) || expr_await(b) || expr_await(c),
-        Expr::Member(a, _) | Expr::Unary(_, a) | Expr::Update(a, ..) => expr_await(a),
+        Expr::Member(a, _) | Expr::Unary(_, a) | Expr::Update(a, ..) | Expr::Spread(a) => expr_await(a),
         Expr::Computed(a, b)
         | Expr::Binary(_, a, b)
         | Expr::Assign(a, b)
@@ -75,7 +82,7 @@ fn expr_await(e: &Expr) -> bool {
         Expr::Array(e) => e.iter().flatten().any(expr_await),
         Expr::Object(props) => props
             .iter()
-            .any(|(_, p)| matches!(p,Property::Value(e)|Property::Prototype(e)if expr_await(e))),
+            .any(|(_, p)| matches!(p,Property::Value(e)|Property::Prototype(e)|Property::Spread(e) if expr_await(e))),
         _ => false,
     }
 }
@@ -207,18 +214,38 @@ impl Compiler {
                     } else {
                         (None, self.expression(callee)?)
                     };
-                let args = args
-                    .iter()
-                    .map(|e| self.expression(e))
-                    .collect::<Result<Vec<_>>>()?;
                 let out = self.reg();
-                self.emit(Op::Invoke {
-                    callee,
-                    receiver,
-                    args,
-                    new,
-                    out,
-                });
+                if args.iter().any(|e| matches!(e, Expr::Spread(_))) {
+                    let list = self.reg();
+                    self.emit(Op::Array(list, 0));
+                    for expression in args {
+                        let (expression, spread) = match expression {
+                            Expr::Spread(inner) => (inner.as_ref(), true),
+                            expression => (expression, false),
+                        };
+                        let value = self.expression(expression)?;
+                        self.emit(Op::Append(list, Some(value), spread));
+                    }
+                    self.emit(Op::InvokeList {
+                        callee,
+                        receiver,
+                        args: list,
+                        new,
+                        out,
+                    });
+                } else {
+                    let args = args
+                        .iter()
+                        .map(|e| self.expression(e))
+                        .collect::<Result<Vec<_>>>()?;
+                    self.emit(Op::Invoke {
+                        callee,
+                        receiver,
+                        args,
+                        new,
+                        out,
+                    });
+                }
                 out
             }
             Expr::Member(..) | Expr::Computed(..) => {
@@ -347,12 +374,14 @@ impl Compiler {
             }
             Expr::Array(elements) => {
                 let out = self.reg();
-                self.emit(Op::Array(out, elements.len() as u32));
-                for (i, e) in elements.iter().enumerate() {
-                    if let Some(e) = e {
-                        let value = self.expression(e)?;
-                        self.emit(Op::Item(out, i.to_string(), value));
-                    }
+                self.emit(Op::Array(out, 0));
+                for expression in elements {
+                    let (value, spread) = match expression {
+                        None => (None, false),
+                        Some(Expr::Spread(inner)) => (Some(self.expression(inner)?), true),
+                        Some(expression) => (Some(self.expression(expression)?), false),
+                    };
+                    self.emit(Op::Append(out, value, spread));
                 }
                 out
             }
@@ -363,6 +392,7 @@ impl Compiler {
                     let p = match p {
                         Property::Value(e) => Property::Value(read(self.expression(e)?)),
                         Property::Prototype(e) => Property::Prototype(read(self.expression(e)?)),
+                        Property::Spread(e) => Property::Spread(read(self.expression(e)?)),
                         p => p.clone(),
                     };
                     self.emit(Op::Property(out, key.clone(), p));
@@ -985,6 +1015,37 @@ impl Engine<'_> {
                             let v = e.eval(&expr, env)?;
                             e.store(&frame, out, v)?;
                         }
+                        Op::Append(array, value, spread) => {
+                            let Value::Object(array) = e.register(&frame, array)? else {
+                                unreachable!()
+                            };
+                            let value = value.map(|r| e.register(&frame, r)).transpose()?;
+                            e.append_array(array, value, spread)?;
+                        }
+                        Op::InvokeList {
+                            callee,
+                            receiver,
+                            args,
+                            new,
+                            out,
+                        } => {
+                            let f = e.register(&frame, callee)?;
+                            let this = if let Some(r) = receiver {
+                                e.register(&frame, r)?
+                            } else {
+                                Value::Undefined
+                            };
+                            let Value::Object(array) = e.register(&frame, args)? else {
+                                unreachable!()
+                            };
+                            let args = e.argument_values(array)?;
+                            let value = if new {
+                                e.construct(f, args)?
+                            } else {
+                                e.invoke_this(f, this, args)?
+                            };
+                            e.store(&frame, out, value)?;
+                        }
                         Op::Invoke {
                             callee,
                             receiver,
@@ -1079,13 +1140,6 @@ impl Engine<'_> {
                                 unreachable!()
                             };
                             e.literal_property(object, &key, &p, env)?;
-                        }
-                        Op::Item(r, key, v) => {
-                            let Value::Object(object) = e.register(&frame, r)? else {
-                                unreachable!()
-                            };
-                            let value = e.register(&frame, v)?;
-                            e.put_data(object, &key, value)?;
                         }
                         Op::Try {
                             catch,

@@ -35,3 +35,5 @@ Set/index additions (unverified): union/intersection/difference/symmetricDiffere
 For-in additions (unverified): declaration-based enumeration loops, prototype-level key snapshots, non-enumerable shadowing, deletion checks, nullish empty enumeration, per-iteration lexical bindings and async bodies. Internal enumeration captures its own next function and bypasses user iterator/return hooks. For-in/of assignment targets and destructuring remain pending.
 
 Switch additions (unverified): case/default parsing and fallthrough, shared lexical case scope and hoisting, strict-equality selection, separate break/continue validation contexts, and resumable case expressions/bodies. Switch breaks and loop continues route through existing finally handlers.
+
+Spread additions (unverified): array/call/new spread, sparse array literal accumulation, object spread with symbol/enumerability handling, trailing call commas, and resumable spread expressions. Array and argument accumulation share rooted iterable ingestion; object spread shares a descriptor-based CopyDataProperties path suitable for future object rest bindings.

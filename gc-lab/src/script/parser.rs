@@ -34,6 +34,7 @@ pub enum Expr {
         body: Vec<Stmt>,
     },
     Await(Box<Expr>),
+    Spread(Box<Expr>),
     Sequence(Vec<Expr>),
     Object(Vec<(String, Property)>),
     Array(Vec<Option<Expr>>),
@@ -50,6 +51,7 @@ pub enum Expr {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Property {
+    Spread(Expr),
     Value(Expr),
     Prototype(Expr),
     Getter(Vec<Stmt>),
@@ -226,6 +228,11 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
                     return Err(error("unterminated string"));
                 }
                 Token::String(s)
+            }
+            '.' if source[offset..].starts_with("...") => {
+                chars.next();
+                chars.next();
+                Token::Op("...".into())
             }
             '(' | ')' | '{' | '}' | '[' | ']' | '.' | ',' | ';' | ':' => Token::Punct(c),
             '?' if !chars.peek().is_some_and(|(_, c)| *c == '?') => Token::Punct('?'),
@@ -959,7 +966,11 @@ impl Parser<'_> {
                         elements.push(None);
                         continue;
                     }
-                    elements.push(Some(self.expression()?));
+                    elements.push(Some(if self.op("...") {
+                        Expr::Spread(Box::new(self.expression()?))
+                    } else {
+                        self.expression()?
+                    }));
                     if self.punct(']') {
                         break;
                     }
@@ -972,6 +983,18 @@ impl Parser<'_> {
                 let mut prototype = false;
                 if !self.punct('}') {
                     loop {
+                        if self.op("...") {
+                            let value = self.expression()?;
+                            props.push((String::new(), Property::Spread(value)));
+                            if self.punct('}') {
+                                break;
+                            }
+                            self.expect(',')?;
+                            if self.punct('}') {
+                                break;
+                            }
+                            continue;
+                        }
                         let key = self.key()?;
                         if key == "async"
                             && matches!(
@@ -1056,11 +1079,18 @@ impl Parser<'_> {
         let mut a = vec![];
         if !self.punct(')') {
             loop {
-                a.push(self.expression()?);
+                a.push(if self.op("...") {
+                    Expr::Spread(Box::new(self.expression()?))
+                } else {
+                    self.expression()?
+                });
                 if self.punct(')') {
                     break;
                 }
                 self.expect(',')?;
+                if self.punct(')') {
+                    break;
+                }
             }
         }
         Ok(a)
@@ -1369,7 +1399,9 @@ fn validate_loop(
             Expr::Object(p) => {
                 for (_, p) in p {
                     match p {
-                        Property::Value(e) | Property::Prototype(e) => work.push((e, d + 1)),
+                        Property::Value(e) | Property::Prototype(e) | Property::Spread(e) => {
+                            work.push((e, d + 1))
+                        }
                         Property::Getter(b) => validate(b, &[], true, d + 1)?,
                         Property::Setter(n, b) => {
                             validate(b, std::slice::from_ref(n), true, d + 1)?
@@ -1381,7 +1413,9 @@ fn validate_loop(
                 work.push((a, d + 1));
                 work.extend(b.iter().map(|e| (e, d + 1)));
             }
-            Expr::Member(a, _) | Expr::Unary(_, a) | Expr::Update(a, ..) => work.push((a, d + 1)),
+            Expr::Member(a, _) | Expr::Unary(_, a) | Expr::Update(a, ..) | Expr::Spread(a) => {
+                work.push((a, d + 1))
+            }
             Expr::Conditional(a, b, c) => {
                 work.push((a, d + 1));
                 work.push((b, d + 1));
