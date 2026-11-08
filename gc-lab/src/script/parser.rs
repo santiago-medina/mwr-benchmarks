@@ -117,13 +117,13 @@ pub enum Stmt {
     Continue,
     ForIn {
         kind: String,
-        name: String,
+        binding: Pattern,
         iterable: Expr,
         body: Box<Stmt>,
     },
     ForOf {
         kind: String,
-        name: String,
+        binding: Pattern,
         iterable: Expr,
         body: Box<Stmt>,
     },
@@ -687,13 +687,13 @@ impl Parser<'_> {
                 None
             };
             let init = if let Some(kind) = kind {
-                let name = self.name()?;
+                let binding = self.binding_pattern()?;
                 if self.word("in") {
                     let iterable = self.sequence()?;
                     self.expect(')')?;
                     return Ok(Stmt::ForIn {
                         kind: kind.into(),
-                        name,
+                        binding,
                         iterable,
                         body: Box::new(self.statement()?),
                     });
@@ -703,7 +703,7 @@ impl Parser<'_> {
                     self.expect(')')?;
                     return Ok(Stmt::ForOf {
                         kind: kind.into(),
-                        name,
+                        binding,
                         iterable,
                         body: Box::new(self.statement()?),
                     });
@@ -713,14 +713,10 @@ impl Parser<'_> {
                 } else {
                     None
                 };
-                let stmt = match kind {
-                    "const" => Stmt::Const(
-                        name,
-                        value.ok_or_else(|| self.error("const requires initializer"))?,
-                    ),
-                    "let" => Stmt::Let(name, value.unwrap_or(Expr::Undefined)),
-                    _ => Stmt::Var(name, value),
-                };
+                if value.is_none() && (kind == "const" || !matches!(binding, Pattern::Name(_))) {
+                    return Err(self.error("loop binding requires initializer"));
+                }
+                let stmt = Self::binding_statement(kind, binding, value);
                 self.expect(';')?;
                 Some(Box::new(stmt))
             } else if self.punct(';') {
@@ -1698,12 +1694,15 @@ fn validate_loop(
                         false,
                         in_generator,
                     )?;
-                    if let Stmt::Let(name, _) | Stmt::Const(name, _) = init.as_ref() {
-                        let mut vars = vec![];
-                        var_names(std::slice::from_ref(body), &mut vars);
-                        if vars.contains(name) {
-                            return Err(err("loop var conflicts with lexical initializer"));
-                        }
+                    let bindings = match init.as_ref() {
+                        Stmt::Let(name, _) | Stmt::Const(name, _) => vec![name.clone()],
+                        Stmt::Bind { kind, pattern, .. } if kind != "var" => pattern.names(),
+                        _ => vec![],
+                    };
+                    let mut vars = vec![];
+                    var_names(std::slice::from_ref(body), &mut vars);
+                    if bindings.iter().any(|name| vars.contains(name)) {
+                        return Err(err("loop var conflicts with lexical initializer"));
                     }
                 }
                 if let Some(test) = test {
@@ -1723,7 +1722,37 @@ fn validate_loop(
                     in_generator,
                 )?;
             }
-            Stmt::ForOf { iterable, body, .. } | Stmt::ForIn { iterable, body, .. } => {
+            Stmt::ForOf {
+                kind,
+                binding,
+                iterable,
+                body,
+            }
+            | Stmt::ForIn {
+                kind,
+                binding,
+                iterable,
+                body,
+            } => {
+                work.extend(
+                    binding
+                        .expressions()
+                        .into_iter()
+                        .map(|expression| (expression, depth)),
+                );
+                if kind != "var" {
+                    let mut names = std::collections::HashSet::new();
+                    for name in binding.names() {
+                        if !names.insert(name) {
+                            return Err(err("duplicate loop binding"));
+                        }
+                    }
+                    let mut vars = vec![];
+                    var_names(std::slice::from_ref(body), &mut vars);
+                    if vars.iter().any(|name| names.contains(name)) {
+                        return Err(err("var conflicts with loop binding"));
+                    }
+                }
                 work.push((iterable, depth));
                 validate_loop(
                     std::slice::from_ref(body),
@@ -1903,13 +1932,19 @@ pub(super) fn var_names(body: &[Stmt], out: &mut Vec<String>) {
             }
             Stmt::Var(n, _) => out.push(n.clone()),
             Stmt::ForOf {
-                kind, name, body, ..
+                kind,
+                binding,
+                body,
+                ..
             }
             | Stmt::ForIn {
-                kind, name, body, ..
+                kind,
+                binding,
+                body,
+                ..
             } => {
                 if kind == "var" {
-                    out.push(name.clone());
+                    out.extend(binding.names());
                 }
                 var_names(std::slice::from_ref(body), out);
             }

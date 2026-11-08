@@ -134,8 +134,21 @@ pub(super) fn stmt_await(s: &Stmt) -> bool {
                 || update.as_ref().is_some_and(expr_await)
                 || stmt_await(body)
         }
-        Stmt::ForOf { iterable, body, .. } | Stmt::ForIn { iterable, body, .. } => {
-            expr_await(iterable) || stmt_await(body)
+        Stmt::ForOf {
+            binding,
+            iterable,
+            body,
+            ..
+        }
+        | Stmt::ForIn {
+            binding,
+            iterable,
+            body,
+            ..
+        } => {
+            expr_await(iterable)
+                || stmt_await(body)
+                || binding.expressions().into_iter().any(expr_await)
         }
         _ => false,
     }
@@ -532,9 +545,10 @@ impl Compiler {
                 update,
                 body,
             } => {
-                let lexical = init
-                    .as_ref()
-                    .is_some_and(|s| matches!(s.as_ref(), Stmt::Let(..) | Stmt::Const(..)));
+                let lexical = init.as_ref().is_some_and(|s| {
+                    matches!(s.as_ref(), Stmt::Let(..) | Stmt::Const(..))
+                        || matches!(s.as_ref(),Stmt::Bind{kind,..} if kind!="var")
+                });
                 if lexical {
                     self.emit(Op::Enter(vec![init.as_ref().unwrap().as_ref().clone()]));
                 }
@@ -543,6 +557,7 @@ impl Compiler {
                 }
                 let names = match init.as_deref() {
                     Some(Stmt::Let(name, _)) => vec![name.clone()],
+                    Some(Stmt::Bind { kind, pattern, .. }) if kind == "let" => pattern.names(),
                     _ => vec![],
                 };
                 if !names.is_empty() {
@@ -661,21 +676,30 @@ impl Compiler {
             }
             Stmt::ForOf {
                 kind,
-                name,
+                binding,
                 iterable,
                 body,
             }
             | Stmt::ForIn {
                 kind,
-                name,
+                binding,
                 iterable,
                 body,
             } => {
                 let enumeration = matches!(s, Stmt::ForIn { .. });
-                let declaration = if kind == "const" {
-                    Stmt::Const(name.clone(), Expr::Undefined)
-                } else {
-                    Stmt::Let(name.clone(), Expr::Undefined)
+                if binding.expressions().into_iter().any(expr_await) {
+                    return Err(ScriptError::Unsupported(
+                        "resumable loop binding expressions",
+                    ));
+                }
+                let declaration = Stmt::Bind {
+                    kind: if kind == "var" {
+                        "let".into()
+                    } else {
+                        kind.clone()
+                    },
+                    pattern: binding.clone(),
+                    init: Some(Expr::Undefined),
                 };
                 if kind != "var" {
                     self.emit(Op::Enter(vec![declaration.clone()]));
@@ -701,7 +725,7 @@ impl Compiler {
                 if kind != "var" {
                     self.emit(Op::Enter(vec![declaration]));
                 }
-                self.emit(Op::Init(name.clone(), value, kind == "var"));
+                self.emit(Op::Bind(binding.clone(), value, kind == "var"));
                 self.statement(body)?;
                 if kind != "var" {
                     self.emit(Op::Exit);

@@ -61,3 +61,7 @@ Generator delegation additions (unverified): yield-star caches next, forwards ex
 Date additions (unverified): Date construction/copy/call, now/parse/UTC, ISO and engine-format round trips, getters/setters, legacy year/GMT aliases, generic toJSON and toPrimitive. Gregorian component arithmetic reuses exact integer operations before TimeClip. The current host time zone is explicitly UTC, and non-ECMA-402 locale methods use host-defined UTC formats; named-zone/DST integration and ECMA-402 localization remain pending.
 
 Binding-pattern additions (unverified): array/object destructuring declarations and parameters, defaults, elisions, computed property keys, array/object rest, bound-name/TDZ validation, module exports and iterator closing. Ordinary/async parameter setup shares the same binder. Async initializers are lowered before binding; suspension inside pattern defaults/keys is explicitly still unsupported. Assignment patterns and loop-header patterns follow separately.
+
+### Destructuring loop headers (unverified)
+
+Classic `for` declarations and `for…in`/`for…of` declaration headers now share binding patterns with declarations and parameters. Lexical loop environments declare every bound name; per-iteration `let` copies include destructured names. Ordinary iteration preserves the enclosing lexical scope for `var`, and binding failures use the existing iterator-close path. Async lowering accepts non-suspending patterns; suspension inside pattern defaults/computed keys remains unsupported. No compilation or tests were run.

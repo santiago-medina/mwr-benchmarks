@@ -1,7 +1,7 @@
 //! Evaluation and completion propagation. Every allocating operation runs under a root frame.
 use super::{
     objects::{Data, Descriptor, Key, Kind},
-    parser::{Expr, Param, Property as Literal, Stmt},
+    parser::{Expr, Param, Pattern, Property as Literal, Stmt},
     vm::{Engine, Exception, FunctionKind, Object, ScriptError, Value},
 };
 use crate::dual::{Domain, Id};
@@ -322,16 +322,16 @@ impl Engine<'_> {
             Stmt::Continue => return Err(ScriptError::LoopContinue),
             Stmt::ForOf {
                 kind,
-                name,
+                binding,
                 iterable,
                 body,
-            } => return self.for_of(kind, name, iterable, body, env, can_return, false),
+            } => return self.for_of(kind, binding, iterable, body, env, can_return, false),
             Stmt::ForIn {
                 kind,
-                name,
+                binding,
                 iterable,
                 body,
-            } => return self.for_of(kind, name, iterable, body, env, can_return, true),
+            } => return self.for_of(kind, binding, iterable, body, env, can_return, true),
             Stmt::Function(..) | Stmt::AsyncFunction(..) | Stmt::GeneratorFunction(..) => {}
             Stmt::Expr(x) => {
                 self.eval(x, env)?;
@@ -404,7 +404,7 @@ impl Engine<'_> {
     fn for_of(
         &mut self,
         kind: &str,
-        name: &str,
+        binding: &Pattern,
         source: &Expr,
         body: &Stmt,
         env: Id,
@@ -414,11 +414,12 @@ impl Engine<'_> {
         let scope = if kind == "var" {
             env
         } else {
-            let id = self.new_environment(
-                Some(env),
-                &[Stmt::Const(name.into(), Expr::Undefined)],
-                false,
-            )?;
+            let declaration = Stmt::Bind {
+                kind: "const".into(),
+                pattern: binding.clone(),
+                init: Some(Expr::Undefined),
+            };
+            let id = self.new_environment(Some(env), &[declaration], false)?;
             self.protect(&Value::Object(id))?;
             id
         };
@@ -451,18 +452,23 @@ impl Engine<'_> {
                 e.protect(&value)?;
                 let pending = e.frame(|e| {
                     let local = if kind == "var" {
-                        e.var_environment(env)?
+                        env
                     } else {
-                        let stmt = if kind == "const" {
-                            Stmt::Const(name.into(), Expr::Undefined)
-                        } else {
-                            Stmt::Let(name.into(), Expr::Undefined)
+                        let declaration = Stmt::Bind {
+                            kind: kind.into(),
+                            pattern: binding.clone(),
+                            init: Some(Expr::Undefined),
                         };
-                        let id = e.new_environment(Some(scope), &[stmt], false)?;
+                        let id = e.new_environment(Some(scope), &[declaration], false)?;
                         e.protect(&Value::Object(id))?;
                         id
                     };
-                    e.initialize(local, name, value)?;
+                    let target = if kind == "var" {
+                        e.var_environment(env)?
+                    } else {
+                        local
+                    };
+                    e.bind_pattern(binding, value, local, target)?;
                     e.statement(body, local, can_return)
                 });
                 match pending {
