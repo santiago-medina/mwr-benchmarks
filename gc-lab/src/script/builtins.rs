@@ -156,6 +156,7 @@ const METHODS: &[(&str, &[&str])] = &[
     ("Number.prototype", &["valueOf", "toString"]),
     ("Boolean.prototype", &["valueOf", "toString"]),
     ("assert", &["sameValue", "notSameValue", "throws"]),
+    ("Test262Error", &["thrower"]),
 ];
 impl Engine<'_> {
     pub(super) fn hidden(
@@ -514,7 +515,7 @@ impl Engine<'_> {
             },
         )?;
         for (owner, methods) in METHODS {
-            if *owner == "assert" && !self.test_harness {
+            if matches!(*owner, "assert" | "Test262Error") && !self.test_harness {
                 continue;
             }
             for method in *methods {
@@ -971,6 +972,15 @@ impl Engine<'_> {
         }
         if name == "Error.prototype.toString" {
             return self.error_to_string(receiver);
+        }
+        if name == "Test262Error.thrower" {
+            let message = match args.first() {
+                Some(Value::String(s)) => s.clone(),
+                _ => String::new(),
+            };
+            let error =
+                self.error_constructor("Test262Error", vec![Value::String(message)], None)?;
+            return Err(self.thrown(error));
         }
         if name == "assert" || name.starts_with("assert.") || name == "$ERROR" {
             return self.assert_builtin(name, args);

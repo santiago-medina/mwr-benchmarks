@@ -161,7 +161,21 @@ impl Engine<'_> {
             }
             Pattern::Default(pattern, default) => {
                 let value = if value == Value::Undefined {
-                    self.eval(default, env)?
+                    let value = self.eval(default, env)?;
+                    if let (Pattern::Name(name), Value::Object(function)) = (&**pattern, &value) {
+                        if default.anonymous_function() {
+                            self.protect(&value)?;
+                            self.define(
+                                *function,
+                                "name",
+                                super::objects::Descriptor {
+                                    value: Some(Value::String(name.clone())),
+                                    ..Default::default()
+                                },
+                            )?;
+                        }
+                    }
+                    value
                 } else {
                     value
                 };
