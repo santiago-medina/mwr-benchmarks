@@ -805,6 +805,44 @@ impl Parser<'_> {
         }
         Ok(params)
     }
+    fn iteration_assignment_head(&mut self) -> Result<Option<(Pattern, bool)>, SyntaxError> {
+        let start = self.cursor;
+        let mut depth = 0usize;
+        for index in start..self.tokens.len() {
+            match &self.tokens[index].0 {
+                Token::Punct('(') | Token::Punct('[') | Token::Punct('{') => depth += 1,
+                Token::Punct(')') if depth == 0 => break,
+                Token::Punct(')') | Token::Punct(']') | Token::Punct('}') => {
+                    depth = depth.saturating_sub(1)
+                }
+                Token::Punct(';') if depth == 0 => break,
+                Token::Name(word)
+                    if depth == 0 && index > start && (word == "in" || word == "of") =>
+                {
+                    let enumeration = word == "in";
+                    let mut tokens = self.tokens[start..index].to_vec();
+                    tokens.push((Token::End, self.tokens[index].1));
+                    let mut head = Parser {
+                        tokens,
+                        cursor: 0,
+                        depth: self.depth,
+                        source: self.source,
+                    };
+                    if let Ok(expression) = head.sequence() {
+                        if head.current() == &Token::End {
+                            if let Ok(pattern) = head.assignment_pattern(expression) {
+                                self.cursor = index + 1;
+                                return Ok(Some((pattern, enumeration)));
+                            }
+                        }
+                    }
+                }
+                Token::End => break,
+                _ => {}
+            }
+        }
+        Ok(None)
+    }
     fn statement(&mut self) -> Result<Stmt, SyntaxError> {
         if self.depth >= 64 {
             return Err(self.error("syntax nesting limit"));
@@ -896,6 +934,29 @@ impl Parser<'_> {
                 Some(Box::new(stmt))
             } else if self.punct(';') {
                 None
+            } else if let Some((binding, enumeration)) = self.iteration_assignment_head()? {
+                let iterable = if enumeration {
+                    self.sequence()?
+                } else {
+                    self.expression()?
+                };
+                self.expect(')')?;
+                let body = Box::new(self.statement()?);
+                return Ok(if enumeration {
+                    Stmt::ForIn {
+                        kind: "assignment".into(),
+                        binding,
+                        iterable,
+                        body,
+                    }
+                } else {
+                    Stmt::ForOf {
+                        kind: "assignment".into(),
+                        binding,
+                        iterable,
+                        body,
+                    }
+                });
             } else {
                 let value = self.sequence()?;
                 self.expect(';')?;
@@ -1884,7 +1945,7 @@ fn validate_loop(
                         .into_iter()
                         .map(|expression| (expression, depth)),
                 );
-                if kind != "var" {
+                if kind == "let" || kind == "const" {
                     let mut names = std::collections::HashSet::new();
                     for name in binding.names() {
                         if !names.insert(name) {

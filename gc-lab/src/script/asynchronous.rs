@@ -725,6 +725,7 @@ impl Compiler {
                 body,
             } => {
                 let enumeration = matches!(s, Stmt::ForIn { .. });
+                let lexical = kind == "let" || kind == "const";
                 if binding.expressions().into_iter().any(expr_await) {
                     return Err(ScriptError::Unsupported(
                         "resumable loop binding expressions",
@@ -739,7 +740,7 @@ impl Compiler {
                     pattern: binding.clone(),
                     init: Some(Expr::Undefined),
                 };
-                if kind != "var" {
+                if lexical {
                     self.emit(Op::Enter(vec![declaration.clone()]));
                 }
                 let source = self.expression(iterable)?;
@@ -750,7 +751,7 @@ impl Compiler {
                 } else {
                     Op::Iterator(source, iterator, next)
                 });
-                if kind != "var" {
+                if lexical {
                     self.emit(Op::Exit);
                 }
                 let handler = self.emit(Op::Loop(0, 0));
@@ -760,12 +761,19 @@ impl Compiler {
                 self.emit(Op::IteratorNext(iterator, next, value, done, !enumeration));
                 let branch = self.emit(Op::Branch(done, 0, 0));
                 let body_start = self.ops.len();
-                if kind != "var" {
+                if lexical {
                     self.emit(Op::Enter(vec![declaration]));
                 }
-                self.emit(Op::Bind(binding.clone(), value, kind == "var"));
+                if kind == "assignment" {
+                    self.eval(Expr::Destructure(
+                        Box::new(binding.clone()),
+                        Box::new(read(value)),
+                    ));
+                } else {
+                    self.emit(Op::Bind(binding.clone(), value, kind == "var"));
+                }
                 self.statement(body)?;
-                if kind != "var" {
+                if lexical {
                     self.emit(Op::Exit);
                 }
                 self.emit(Op::Jump(again));

@@ -85,3 +85,7 @@ Object literals now accept computed data, method, generator-method, async-method
 ### Destructuring assignments (unverified)
 
 Assignment expressions now convert array/object cover forms to shared patterns, including nested defaults, computed keys, array/object rest and member-expression targets. Initialized shorthand cover forms are accepted for assignment conversion and rejected as ordinary object expressions. The shared initializer switches between binding initialization and reference assignment; element/property destination references are evaluated before reading the corresponding iterator/property value. Existing iterator closing and object rest copying are reused. Awaiting the RHS is lowered; suspension inside targets/defaults/keys remains explicitly unsupported. Cover-grammar restrictions, including trailing commas after assignment rest and duplicate prototype-named properties, still need completion. No compilation or tests were run.
+
+### Existing iteration destinations (unverified)
+
+`for…of` and `for…in` now accept existing identifier/member destinations and destructuring assignment patterns, in ordinary and resumable bodies. Header recognition respects nested delimiters and parses candidate targets independently; iteration reuses the surrounding environment and the common reference-assignment path instead of creating declaration bindings. Abrupt assignments retain existing iterator closing. Existing declaration-header `NoIn` grammar limitations remain pending. No compilation or tests were run.

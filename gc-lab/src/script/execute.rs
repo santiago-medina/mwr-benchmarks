@@ -428,7 +428,7 @@ impl Engine<'_> {
         can_return: bool,
         enumeration: bool,
     ) -> Result<Option<Value>> {
-        let scope = if kind == "var" {
+        let scope = if kind == "var" || kind == "assignment" {
             env
         } else {
             let declaration = Stmt::Bind {
@@ -468,7 +468,7 @@ impl Engine<'_> {
                 let value = e.get_member(result, "value")?;
                 e.protect(&value)?;
                 let pending = e.frame(|e| {
-                    let local = if kind == "var" {
+                    let local = if kind == "var" || kind == "assignment" {
                         env
                     } else {
                         let declaration = Stmt::Bind {
@@ -480,12 +480,16 @@ impl Engine<'_> {
                         e.protect(&Value::Object(id))?;
                         id
                     };
-                    let target = if kind == "var" {
-                        e.var_environment(env)?
+                    if kind == "assignment" {
+                        e.assign_pattern(binding, value, local)?;
                     } else {
-                        local
-                    };
-                    e.bind_pattern(binding, value, local, target)?;
+                        let target = if kind == "var" {
+                            e.var_environment(env)?
+                        } else {
+                            local
+                        };
+                        e.bind_pattern(binding, value, local, target)?;
+                    }
                     e.statement(body, local, can_return)
                 });
                 match pending {
