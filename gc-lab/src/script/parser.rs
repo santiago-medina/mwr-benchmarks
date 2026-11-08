@@ -43,6 +43,8 @@ pub enum Expr {
     Unary(String, Box<Expr>),
     Binary(String, Box<Expr>, Box<Expr>),
     Assign(Box<Expr>, Box<Expr>),
+    Compound(String, Box<Expr>, Box<Expr>),
+    Update(Box<Expr>, bool, bool),
     Conditional(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -205,11 +207,14 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
                 }
                 Token::String(s)
             }
-            '(' | ')' | '{' | '}' | '[' | ']' | '.' | ',' | ';' | ':' | '?' => Token::Punct(c),
-            '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^' | '~' => {
+            '(' | ')' | '{' | '}' | '[' | ']' | '.' | ',' | ';' | ':' => Token::Punct(c),
+            '?' if !chars.peek().is_some_and(|(_, c)| *c == '?') => Token::Punct('?'),
+            '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^' | '~' | '?' => {
                 let mut op = c.to_string();
                 const OPS: &[&str] = &[
-                    "===", "!==", ">>>", "**", "<<", ">>", "==", "!=", "<=", ">=", "&&", "||", "=>",
+                    "===", "!==", ">>>", "**", "<<", ">>", "==", "!=", "<=", ">=", "&&", "||",
+                    "=>", "++", "--", "+=", "-=", "*=", "/=", "%=", "**=", "<<=", ">>=", ">>>=",
+                    "&=", "|=", "^=", "&&=", "||=", "??=",
                 ];
                 loop {
                     let Some((_, next)) = chars.peek() else { break };
@@ -555,15 +560,47 @@ impl Parser<'_> {
             let no = self.expression()?;
             a = Expr::Conditional(Box::new(a), Box::new(yes), Box::new(no));
         }
-        if self.op("=") {
+        let assignment = match self.current() {
+            Token::Op(op)
+                if matches!(
+                    op.as_str(),
+                    "=" | "+="
+                        | "-="
+                        | "*="
+                        | "/="
+                        | "%="
+                        | "**="
+                        | "<<="
+                        | ">>="
+                        | ">>>="
+                        | "&="
+                        | "|="
+                        | "^="
+                        | "&&="
+                        | "||="
+                        | "??="
+                ) =>
+            {
+                Some(op.clone())
+            }
+            _ => None,
+        };
+        if let Some(op) = assignment {
+            self.take();
             if !matches!(a, Expr::Name(_) | Expr::Member(..) | Expr::Computed(..)) {
                 return Err(self.error("invalid assignment target"));
             }
-            Ok(Expr::Assign(Box::new(a), Box::new(self.expression()?)))
+            let rhs = self.expression()?;
+            Ok(if op == "=" {
+                Expr::Assign(Box::new(a), Box::new(rhs))
+            } else {
+                Expr::Compound(op[..op.len() - 1].into(), Box::new(a), Box::new(rhs))
+            })
         } else {
             Ok(a)
         }
     }
+
     fn binary(&mut self, min: u8) -> Result<Expr, SyntaxError> {
         if self.depth >= 64 {
             return Err(self.error("syntax nesting limit"));
@@ -574,6 +611,7 @@ impl Parser<'_> {
         result
     }
     fn binary_inner(&mut self, min: u8) -> Result<Expr, SyntaxError> {
+        let start = self.cursor;
         let unary_left = matches!(self.current(), Token::Op(s) if matches!(s.as_str(), "+"|"-"|"!"|"~"))
             || matches!(self.current(), Token::Name(s) if matches!(s.as_str(), "typeof"|"void"|"delete"|"await"));
         let mut a = self.unary()?;
@@ -584,7 +622,7 @@ impl Parser<'_> {
                 _ => break,
             };
             let p = match op.as_str() {
-                "||" => 1,
+                "||" | "??" => 1,
                 "&&" => 2,
                 "|" => 3,
                 "^" => 4,
@@ -607,9 +645,46 @@ impl Parser<'_> {
             let b = self.binary(if op == "**" { p } else { p + 1 })?;
             a = Expr::Binary(op, Box::new(a), Box::new(b));
         }
+        let mut nesting = 0usize;
+        let mut nullish = false;
+        let mut logical = false;
+        for (token, _) in &self.tokens[start..self.cursor] {
+            match token {
+                Token::Punct('(' | '[' | '{') => nesting += 1,
+                Token::Punct(')' | ']' | '}') => nesting = nesting.saturating_sub(1),
+                Token::Op(op) if nesting == 0 => {
+                    nullish |= op == "??";
+                    logical |= op == "&&" || op == "||";
+                }
+                _ => {}
+            }
+        }
+        if nullish && logical {
+            return Err(self.error("nullish and logical operators require parentheses"));
+        }
         Ok(a)
     }
     fn unary(&mut self) -> Result<Expr, SyntaxError> {
+        if matches!(self.current(),Token::Op(op) if op=="++"||op=="--") {
+            let increment = self.op("++");
+            if !increment {
+                self.op("--");
+            }
+            if self.depth >= 64 {
+                return Err(self.error("syntax nesting limit"));
+            }
+            self.depth += 1;
+            let target = self.unary();
+            self.depth -= 1;
+            let target = target?;
+            if !matches!(
+                target,
+                Expr::Name(_) | Expr::Member(..) | Expr::Computed(..)
+            ) {
+                return Err(self.error("invalid update target"));
+            }
+            return Ok(Expr::Update(Box::new(target), increment, true));
+        }
         if self.word("await") {
             if self.depth >= 64 {
                 return Err(self.error("syntax nesting limit"));
@@ -853,6 +928,17 @@ impl Parser<'_> {
                 e = Expr::Computed(Box::new(e), Box::new(k));
             } else if self.punct('(') {
                 e = Expr::Call(Box::new(e), self.arguments()?);
+            } else if !self.newline()
+                && matches!(self.current(),Token::Op(op) if op=="++"||op=="--")
+            {
+                if !matches!(e, Expr::Name(_) | Expr::Member(..) | Expr::Computed(..)) {
+                    return Err(self.error("invalid update target"));
+                }
+                let increment = self.op("++");
+                if !increment {
+                    self.op("--");
+                }
+                return Ok(Expr::Update(Box::new(e), increment, false));
             } else {
                 return Ok(e);
             }
@@ -1062,13 +1148,16 @@ fn validate_loop(
                 work.push((a, d + 1));
                 work.extend(b.iter().map(|e| (e, d + 1)));
             }
-            Expr::Member(a, _) | Expr::Unary(_, a) => work.push((a, d + 1)),
+            Expr::Member(a, _) | Expr::Unary(_, a) | Expr::Update(a, ..) => work.push((a, d + 1)),
             Expr::Conditional(a, b, c) => {
                 work.push((a, d + 1));
                 work.push((b, d + 1));
                 work.push((c, d + 1));
             }
-            Expr::Computed(a, b) | Expr::Assign(a, b) | Expr::Binary(_, a, b) => {
+            Expr::Computed(a, b)
+            | Expr::Assign(a, b)
+            | Expr::Binary(_, a, b)
+            | Expr::Compound(_, a, b) => {
                 work.push((a, d + 1));
                 work.push((b, d + 1));
             }

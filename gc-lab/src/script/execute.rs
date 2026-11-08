@@ -520,36 +520,18 @@ impl Engine<'_> {
                 let c = self.eval(condition, env)?;
                 self.eval(if c.truthy() { yes } else { no }, env)
             }
-            Expr::Assign(a, b) => match a.as_ref() {
-                Expr::Name(n) => {
-                    let v = self.eval(b, env)?;
-                    self.assign_binding(env, n, v.clone())?;
-                    Ok(v)
-                }
-                Expr::Member(r, k) => {
-                    let r = self.eval(r, env)?;
-                    self.protect(&r)?;
-                    let v = self.eval(b, env)?;
-                    self.protect(&v)?;
-                    self.set_member(r, k, v.clone())?;
-                    Ok(v)
-                }
-                Expr::Computed(r, k) => {
-                    let r = self.eval(r, env)?;
-                    self.protect(&r)?;
-                    let k = self.eval(k, env)?;
-                    self.protect(&k)?;
-                    let v = self.eval(b, env)?;
-                    self.protect(&v)?;
-                    let k = self.member_key(&r, k)?;
-                    self.set_member(r, &k, v.clone())?;
-                    Ok(v)
-                }
-                _ => Err(ScriptError::Runtime("invalid assignment")),
-            },
+            Expr::Compound(op, target, rhs) => self.compound(op, target, rhs, env),
+            Expr::Update(target, increment, prefix) => {
+                self.update(target, *increment, *prefix, env)
+            }
+            Expr::Assign(a, b) => {
+                let reference = self.eval_reference(a, env)?;
+                let value = self.eval(b, env)?;
+                self.reference_set(reference, value)
+            }
         }
     }
-    fn member_key(&mut self, receiver: &Value, key: Value) -> Result<Key> {
+    pub(super) fn member_key(&mut self, receiver: &Value, key: Value) -> Result<Key> {
         if matches!(receiver, Value::Null | Value::Undefined) {
             return self.throw_error("TypeError", "nullish property receiver");
         }
@@ -926,13 +908,16 @@ impl Engine<'_> {
     fn eval_binary(&mut self, op: &str, a: &Expr, b: &Expr, env: Id) -> Result<Value> {
         let a = self.eval(a, env)?;
         self.protect(&a)?;
-        if op == "&&" && !a.truthy() || op == "||" && a.truthy() {
+        if super::references::assignment_skips(op, &a) {
             return Ok(a);
         }
         let b = self.eval(b, env)?;
         self.protect(&b)?;
+        self.binary_values(op, a, b)
+    }
+    pub(super) fn binary_values(&mut self, op: &str, a: Value, b: Value) -> Result<Value> {
         match op {
-            "&&" | "||" => Ok(b),
+            "&&" | "||" | "??" => Ok(b),
             "===" | "!==" => Ok(Value::Bool(a.strict_equal(&b) ^ (op == "!=="))),
             "==" | "!=" => {
                 let equal = if a.strict_equal(&b)

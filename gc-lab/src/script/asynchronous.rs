@@ -9,6 +9,8 @@ type Result<T> = std::result::Result<T, ScriptError>;
 #[derive(Clone)]
 pub(super) enum Op {
     Eval(Expr, usize),
+    CheckBase(usize),
+    PropertyKey(usize, usize, usize),
     Invoke {
         callee: usize,
         receiver: Option<usize>,
@@ -57,10 +59,11 @@ fn expr_await(e: &Expr) -> bool {
         | Expr::AsyncFunction { .. }
         | Expr::AsyncArrow { .. } => false,
         Expr::Conditional(a, b, c) => expr_await(a) || expr_await(b) || expr_await(c),
-        Expr::Member(a, _) | Expr::Unary(_, a) => expr_await(a),
-        Expr::Computed(a, b) | Expr::Binary(_, a, b) | Expr::Assign(a, b) => {
-            expr_await(a) || expr_await(b)
-        }
+        Expr::Member(a, _) | Expr::Unary(_, a) | Expr::Update(a, ..) => expr_await(a),
+        Expr::Computed(a, b)
+        | Expr::Binary(_, a, b)
+        | Expr::Assign(a, b)
+        | Expr::Compound(_, a, b) => expr_await(a) || expr_await(b),
         Expr::Call(a, b) | Expr::New(a, b) => expr_await(a) || b.iter().any(expr_await),
         Expr::Array(e) => e.iter().flatten().any(expr_await),
         Expr::Object(props) => props
@@ -115,18 +118,36 @@ impl Compiler {
         self.emit(Op::Eval(e, r));
         r
     }
+    fn nullish(&mut self, value: usize) -> usize {
+        self.eval(Expr::Binary(
+            "||".into(),
+            Box::new(Expr::Binary(
+                "===".into(),
+                Box::new(read(value)),
+                Box::new(Expr::Null),
+            )),
+            Box::new(Expr::Binary(
+                "===".into(),
+                Box::new(read(value)),
+                Box::new(Expr::Undefined),
+            )),
+        ))
+    }
     fn reference(&mut self, e: &Expr) -> Result<(usize, Expr)> {
         match e {
             Expr::Member(base, key) => {
                 let base = self.expression(base)?;
+                self.emit(Op::CheckBase(base));
                 Ok((base, Expr::Member(Box::new(read(base)), key.clone())))
             }
             Expr::Computed(base, key) => {
                 let base = self.expression(base)?;
                 let key = self.expression(key)?;
+                let canonical = self.reg();
+                self.emit(Op::PropertyKey(base, key, canonical));
                 Ok((
                     base,
-                    Expr::Computed(Box::new(read(base)), Box::new(read(key))),
+                    Expr::Computed(Box::new(read(base)), Box::new(read(canonical))),
                 ))
             }
             _ => Err(ScriptError::Unsupported("async reference")),
@@ -170,6 +191,60 @@ impl Compiler {
                 let (_, reference) = self.reference(e)?;
                 self.eval(reference)
             }
+            Expr::Update(target, increment, prefix) => {
+                let target = if matches!(target.as_ref(), Expr::Name(_)) {
+                    target.as_ref().clone()
+                } else {
+                    self.reference(target)?.1
+                };
+                self.eval(Expr::Update(Box::new(target), *increment, *prefix))
+            }
+            Expr::Compound(op, target, value) => {
+                let target = if matches!(target.as_ref(), Expr::Name(_)) {
+                    target.as_ref().clone()
+                } else {
+                    self.reference(target)?.1
+                };
+                let old = self.eval(target.clone());
+                let logical = matches!(op.as_str(), "&&" | "||" | "??");
+                let out = self.reg();
+                let branch = if logical {
+                    let test = if op == "??" { self.nullish(old) } else { old };
+                    Some(self.emit(Op::Branch(test, 0, 0)))
+                } else {
+                    None
+                };
+                let write = self.ops.len();
+                let right = self.expression(value)?;
+                let value = if logical {
+                    read(right)
+                } else {
+                    Expr::Binary(op.clone(), Box::new(read(old)), Box::new(read(right)))
+                };
+                self.emit(Op::Eval(
+                    Expr::Assign(Box::new(target), Box::new(value)),
+                    out,
+                ));
+                if let Some(branch) = branch {
+                    let jump = self.emit(Op::Jump(0));
+                    let short = self.ops.len();
+                    self.emit(Op::Eval(read(old), out));
+                    let end = self.ops.len();
+                    self.ops[jump] = Op::Jump(end);
+                    self.ops[branch] = if op == "||" {
+                        let Op::Branch(test, _, _) = self.ops[branch] else {
+                            unreachable!()
+                        };
+                        Op::Branch(test, short, write)
+                    } else {
+                        let Op::Branch(test, _, _) = self.ops[branch] else {
+                            unreachable!()
+                        };
+                        Op::Branch(test, write, short)
+                    };
+                }
+                out
+            }
             Expr::Assign(target, value) => {
                 let target = if matches!(target.as_ref(), Expr::Name(_)) {
                     target.as_ref().clone()
@@ -207,10 +282,11 @@ impl Compiler {
                 self.ops[jump] = Op::Jump(end);
                 out
             }
-            Expr::Binary(op, a, b) if op == "&&" || op == "||" => {
+            Expr::Binary(op, a, b) if matches!(op.as_str(), "&&" | "||" | "??") => {
                 let left = self.expression(a)?;
+                let test = if op == "??" { self.nullish(left) } else { left };
                 let out = self.reg();
-                let branch = self.emit(Op::Branch(left, 0, 0));
+                let branch = self.emit(Op::Branch(test, 0, 0));
                 let right_start = self.ops.len();
                 let right = self.expression(b)?;
                 self.emit(Op::Eval(read(right), out));
@@ -219,10 +295,10 @@ impl Compiler {
                 self.emit(Op::Eval(read(left), out));
                 let end = self.ops.len();
                 self.ops[jump] = Op::Jump(end);
-                self.ops[branch] = if op == "&&" {
-                    Op::Branch(left, right_start, short)
+                self.ops[branch] = if op == "&&" || op == "??" {
+                    Op::Branch(test, right_start, short)
                 } else {
-                    Op::Branch(left, short, right_start)
+                    Op::Branch(test, short, right_start)
                 };
                 out
             }
@@ -593,6 +669,25 @@ impl Engine<'_> {
                 let env = *frame.envs.last().unwrap();
                 let step = (|| -> Result<Option<Completion>> {
                     match op {
+                        Op::CheckBase(r) => {
+                            let base = e.register(&frame, r)?;
+                            if matches!(base, Value::Null | Value::Undefined) {
+                                return e.throw_error("TypeError", "nullish property receiver");
+                            }
+                        }
+                        Op::PropertyKey(base, key, out) => {
+                            let base = e.register(&frame, base)?;
+                            let key = e.register(&frame, key)?;
+                            let key = e.member_key(&base, key)?;
+                            e.store(
+                                &frame,
+                                out,
+                                match key {
+                                    super::objects::Key::String(s) => Value::String(s),
+                                    super::objects::Key::Symbol(s) => Value::Symbol(s),
+                                },
+                            )?;
+                        }
                         Op::Eval(expr, out) => {
                             let v = e.eval(&expr, env)?;
                             e.store(&frame, out, v)?;
