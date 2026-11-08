@@ -16,14 +16,34 @@ impl Engine<'_> {
         args: &[Value],
     ) -> Result<Id> {
         let names: Vec<_> = params.iter().flat_map(|p| p.binding.names()).collect();
-        let declarations: Vec<_> = names
+        let mut declarations: Vec<_> = names
             .iter()
             .map(|name| Stmt::Let(name.clone(), Expr::Undefined))
             .collect();
+        let pending = if matches!(
+            kind,
+            FunctionKind::Ordinary | FunctionKind::ClassConstructor | FunctionKind::DerivedConstructor
+        ) {
+            self.pending_construct.take()
+        } else {
+            None
+        };
+        if kind == FunctionKind::DerivedConstructor {
+            declarations.push(Stmt::Let("this".into(), Expr::Undefined));
+        }
         let parameters = self.new_environment(Some(parent), &declarations, false)?;
         self.protect(&Value::Object(parameters))?;
         if !matches!(kind, FunctionKind::Arrow | FunctionKind::AsyncArrow) {
-            self.initialize(parameters, "this", receiver)?;
+            match pending {
+                Some((new_target, func)) => {
+                    self.initialize(parameters, "%newtarget", new_target)?;
+                    self.initialize(parameters, "%func", func)?;
+                }
+                None => self.initialize(parameters, "%newtarget", Value::Undefined)?,
+            }
+            if kind != FunctionKind::DerivedConstructor {
+                self.initialize(parameters, "this", receiver)?;
+            }
             if !names.iter().any(|name| name == "arguments") {
                 let arguments = self.arguments_object(args)?;
                 self.mutable_binding(parameters, "arguments", arguments)?;

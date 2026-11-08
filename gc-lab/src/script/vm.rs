@@ -78,6 +78,8 @@ pub(super) enum FunctionKind {
     AsyncMethod,
     Generator,
     GeneratorMethod,
+    ClassConstructor,
+    DerivedConstructor,
 }
 #[derive(Clone)]
 pub(super) enum Object {
@@ -149,6 +151,8 @@ pub struct Engine<'host> {
     pub(super) remote_nodes: HashMap<Id, u64>,
     pub(super) adapter_error: Option<String>,
     pub(super) pending_release: Vec<u64>,
+    pub(super) private_symbols: HashSet<u64>,
+    pub(super) pending_construct: Option<(Value, Value)>,
 }
 
 impl<'host> Engine<'host> {
@@ -187,6 +191,8 @@ impl<'host> Engine<'host> {
             remote_nodes: HashMap::new(),
             adapter_error: None,
             pending_release: vec![],
+            private_symbols: HashSet::new(),
+            pending_construct: None,
         })
     }
     // Move all VM state while changing only the lifetime of the borrowed host.
@@ -227,6 +233,8 @@ impl<'host> Engine<'host> {
             remote_nodes: self.remote_nodes,
             adapter_error: self.adapter_error,
             pending_release: self.pending_release,
+            private_symbols: self.private_symbols,
+            pending_construct: self.pending_construct,
             adapter,
         };
         engine.flush_network();

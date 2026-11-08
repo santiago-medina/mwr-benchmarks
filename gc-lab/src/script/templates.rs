@@ -184,6 +184,11 @@ impl Engine<'_> {
                 let function = self.get_member(receiver.clone(), key)?;
                 Ok((receiver, function))
             }
+            Expr::SuperMember(_) | Expr::SuperComputed(_) => {
+                let (this, target, key) = self.super_key(callee, env)?;
+                let function = self.super_get(this.clone(), target, &key)?;
+                Ok((this, function))
+            }
             _ => Ok((Value::Undefined, self.eval(callee, env)?)),
         }
     }

@@ -9,6 +9,7 @@ type Result<T> = std::result::Result<T, ScriptError>;
 pub(super) enum Reference {
     Binding(Id, String),
     Property(Value, Key),
+    Super(Value, Option<Id>, Key),
 }
 pub(super) fn assignment_skips(op: &str, value: &Value) -> bool {
     match op {
@@ -36,6 +37,10 @@ impl Engine<'_> {
                 let key = self.member_key(&base, key)?;
                 Ok(Reference::Property(base, key))
             }
+            Expr::SuperMember(_) | Expr::SuperComputed(_) => {
+                let (this, target, key) = self.super_key(target, env)?;
+                Ok(Reference::Super(this, target, key))
+            }
             _ => Err(ScriptError::Runtime("invalid reference")),
         }
     }
@@ -43,6 +48,7 @@ impl Engine<'_> {
         match reference {
             Reference::Binding(env, name) => self.lookup(*env, name),
             Reference::Property(base, key) => self.get_member(base.clone(), key),
+            Reference::Super(this, target, key) => self.super_get(this.clone(), *target, key),
         }
     }
     pub(super) fn reference_set(&mut self, reference: Reference, value: Value) -> Result<Value> {
@@ -50,6 +56,9 @@ impl Engine<'_> {
         match reference {
             Reference::Binding(env, name) => self.assign_binding(env, &name, value.clone())?,
             Reference::Property(base, key) => self.set_member(base, key, value.clone())?,
+            Reference::Super(this, target, key) => {
+                self.super_set(this, target, key, value.clone())?
+            }
         }
         Ok(value)
     }

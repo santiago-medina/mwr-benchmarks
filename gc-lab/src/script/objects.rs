@@ -596,7 +596,7 @@ impl Engine<'_> {
                 self.data(id)?
                     .properties
                     .iter()
-                    .filter(|(key, _)| matches!(key, Key::Symbol(_)))
+                    .filter(|(key, _)| matches!(key, Key::Symbol(_)) && !self.is_private(key))
                     .map(|(key, _)| key.clone()),
             );
             return Ok(keys);
@@ -610,6 +610,7 @@ impl Engine<'_> {
             } else {
                 match k {
                     Key::String(_) => strings.push(k.clone()),
+                    Key::Symbol(_) if self.is_private(k) => {}
                     Key::Symbol(_) => symbols.push(k.clone()),
                 }
             }

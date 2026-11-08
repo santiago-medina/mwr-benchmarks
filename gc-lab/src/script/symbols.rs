@@ -27,7 +27,7 @@ pub(super) const WELL_KNOWN: &[&str] = &[
     "asyncDispose",
 ];
 impl Engine<'_> {
-    fn new_symbol(&mut self, description: Option<String>) -> Result<Value> {
+    pub(super) fn new_symbol(&mut self, description: Option<String>) -> Result<Value> {
         let id = self.next_symbol;
         self.next_symbol = id
             .checked_add(1)

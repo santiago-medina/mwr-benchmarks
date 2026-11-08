@@ -58,6 +58,9 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
         cursor: 0,
         depth: 0,
         source,
+        private_refs: vec![],
+        super_property: false,
+        super_call: false,
     };
     let mut module = Module {
         body: vec![],

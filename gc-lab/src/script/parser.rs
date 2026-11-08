@@ -74,6 +74,48 @@ pub enum Expr {
     Compound(String, Box<Expr>, Box<Expr>),
     Update(Box<Expr>, bool, bool),
     Conditional(Box<Expr>, Box<Expr>, Box<Expr>),
+    Class(Box<Class>),
+    PrivateName(String),
+    SuperMember(String),
+    SuperComputed(Box<Expr>),
+    SuperCall(Vec<Expr>),
+    NewTarget,
+    ClassInit(Box<ClassInit>),
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Class {
+    pub name: Option<String>,
+    pub heritage: Option<Expr>,
+    pub constructor: Option<(Vec<Param>, Vec<Stmt>)>,
+    pub members: Vec<ClassMember>,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClassMember {
+    pub is_static: bool,
+    pub key: ClassKey,
+    pub kind: MemberKind,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ClassKey {
+    Named(String),
+    Computed(Expr),
+    Private(String),
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MemberKind {
+    Method(Expr),
+    Getter(Vec<Stmt>),
+    Setter(Param, Vec<Stmt>),
+    Field(Option<Expr>),
+    Block(Vec<Stmt>),
+}
+/// Internal statements of the synthesized field-initializer functions.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ClassInit {
+    /// Key is Named, Private, or Computed(Name("%k{n}")) read from the class scope.
+    Field(ClassKey, Option<Expr>),
+    /// Install the private method or accessor "#x" from the class scope.
+    PrivateMethod(String),
 }
 impl Expr {
     pub fn anonymous_function(&self) -> bool {
@@ -84,7 +126,7 @@ impl Expr {
                 | Self::Function { name: None, .. }
                 | Self::AsyncFunction { name: None, .. }
                 | Self::GeneratorFunction { name: None, .. }
-        )
+        ) || matches!(self, Self::Class(class) if class.name.is_none())
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -198,6 +240,7 @@ enum Token {
     BigInt(String),
     Punct(char),
     Op(String),
+    PrivateName(String),
     End,
 }
 struct Parser<'a> {
@@ -205,6 +248,10 @@ struct Parser<'a> {
     cursor: usize,
     depth: usize,
     source: &'a str,
+    /// Per enclosing class body: private names referenced inside it.
+    private_refs: Vec<Vec<String>>,
+    super_property: bool,
+    super_call: bool,
 }
 fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
     if source.len() > 65536 {
@@ -293,6 +340,19 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
                     n.push(chars.next().unwrap().1);
                 }
                 Token::Name(n)
+            }
+            '#' if chars
+                .peek()
+                .is_some_and(|(_, c)| c.is_ascii_alphabetic() || *c == '_' || *c == '$') =>
+            {
+                let mut n = c.to_string();
+                while chars
+                    .peek()
+                    .is_some_and(|(_, c)| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
+                {
+                    n.push(chars.next().unwrap().1);
+                }
+                Token::PrivateName(n)
             }
             '0'..='9' | '.'
                 if c != '.' || chars.peek().is_some_and(|(_, c)| c.is_ascii_digit()) =>
@@ -471,6 +531,9 @@ pub fn parse(source: &str) -> Result<Vec<Stmt>, SyntaxError> {
         cursor: 0,
         depth: 0,
         source,
+        private_refs: vec![],
+        super_property: false,
+        super_call: false,
     };
     let body = p.statements(false)?;
     validate(&body, &[], false, 0)?;
@@ -763,8 +826,7 @@ impl Parser<'_> {
         {
             let getter = key == "get";
             (key, computed) = self.literal_key()?;
-            let params = self.params()?;
-            let body = self.block()?;
+            let (params, body) = self.function_rest(true, false)?;
             match (getter, params.as_slice()) {
                 (true, []) => Property::Getter(body),
                 (false, [param]) if !param.rest && param.default.is_none() => {
@@ -773,8 +835,7 @@ impl Parser<'_> {
                 _ => return Err(self.error("invalid accessor parameters")),
             }
         } else if generator || asynchronous || self.current() == &Token::Punct('(') {
-            let params = self.params()?;
-            let body = self.block()?;
+            let (params, body) = self.function_rest(true, false)?;
             Property::Value(if generator {
                 Expr::GeneratorFunction {
                     name: None,
@@ -815,6 +876,271 @@ impl Parser<'_> {
                 property
             },
         ))
+    }
+    /// Parameters and body of a function, with the given super context.
+    fn function_rest(
+        &mut self,
+        super_property: bool,
+        super_call: bool,
+    ) -> Result<(Vec<Param>, Vec<Stmt>), SyntaxError> {
+        let saved = (self.super_property, self.super_call);
+        self.super_property = super_property;
+        self.super_call = super_call;
+        let result = self.params().and_then(|params| Ok((params, self.block()?)));
+        (self.super_property, self.super_call) = saved;
+        result
+    }
+    fn private_reference(&mut self, name: &str) -> Result<(), SyntaxError> {
+        match self.private_refs.last_mut() {
+            Some(refs) => {
+                refs.push(name.to_string());
+                Ok(())
+            }
+            None => Err(self.error("undeclared private name")),
+        }
+    }
+    fn member_after_dot(&mut self, e: Expr) -> Result<Expr, SyntaxError> {
+        if let Token::PrivateName(name) = self.current().clone() {
+            self.take();
+            self.private_reference(&name)?;
+            return Ok(Expr::Computed(Box::new(e), Box::new(Expr::PrivateName(name))));
+        }
+        Ok(Expr::Member(Box::new(e), self.key()?))
+    }
+    fn class_tail(&mut self, name: Option<String>) -> Result<Class, SyntaxError> {
+        let heritage = if self.word("extends") {
+            let saved = (self.super_property, self.super_call);
+            let base = self.primary()?;
+            let heritage = self.postfix(base);
+            (self.super_property, self.super_call) = saved;
+            Some(heritage?)
+        } else {
+            None
+        };
+        let derived = heritage.is_some();
+        self.expect('{')?;
+        if self.depth >= 64 {
+            return Err(self.error("syntax nesting limit"));
+        }
+        self.depth += 1;
+        self.private_refs.push(vec![]);
+        let body = self.class_body(derived);
+        self.depth -= 1;
+        let refs = self.private_refs.pop().unwrap_or_default();
+        let (constructor, members) = body?;
+        let declared: Vec<&str> = members
+            .iter()
+            .filter_map(|m| match &m.key {
+                ClassKey::Private(n) => Some(n.as_str()),
+                _ => None,
+            })
+            .collect();
+        for name in refs {
+            if !declared.contains(&name.as_str()) {
+                match self.private_refs.last_mut() {
+                    Some(outer) => outer.push(name),
+                    None => return Err(self.error("undeclared private name")),
+                }
+            }
+        }
+        Ok(Class {
+            name,
+            heritage,
+            constructor,
+            members,
+        })
+    }
+    #[allow(clippy::type_complexity)]
+    fn class_body(
+        &mut self,
+        derived: bool,
+    ) -> Result<(Option<(Vec<Param>, Vec<Stmt>)>, Vec<ClassMember>), SyntaxError> {
+        let mut constructor = None;
+        let mut members: Vec<ClassMember> = vec![];
+        // (name, static, 0 = other, 1 = getter, 2 = setter)
+        let mut privates: Vec<(String, bool, u8)> = vec![];
+        let starts_key = |t: &Token| {
+            matches!(
+                t,
+                Token::Name(_)
+                    | Token::String(_)
+                    | Token::Number(_)
+                    | Token::BigInt(_)
+                    | Token::PrivateName(_)
+                    | Token::Punct('[')
+            ) || t == &Token::Op("*".into())
+        };
+        loop {
+            if self.punct('}') {
+                break;
+            }
+            if self.punct(';') {
+                continue;
+            }
+            if self.current() == &Token::End {
+                return Err(self.error("unterminated class body"));
+            }
+            let next = self.tokens.get(self.cursor + 1).map(|t| t.0.clone());
+            let mut is_static = false;
+            if self.current() == &Token::Name("static".into())
+                && next
+                    .as_ref()
+                    .is_some_and(|t| starts_key(t) || t == &Token::Punct('{'))
+            {
+                self.take();
+                is_static = true;
+                if self.current() == &Token::Punct('{') {
+                    let saved = (self.super_property, self.super_call);
+                    self.super_property = true;
+                    self.super_call = false;
+                    let body = self.block();
+                    (self.super_property, self.super_call) = saved;
+                    members.push(ClassMember {
+                        is_static: true,
+                        key: ClassKey::Named(String::new()),
+                        kind: MemberKind::Block(body?),
+                    });
+                    continue;
+                }
+            }
+            let next = self.tokens.get(self.cursor + 1).map(|t| t.0.clone());
+            let generator = self.op("*");
+            let mut asynchronous = false;
+            let mut accessor = None;
+            if !generator
+                && self.current() == &Token::Name("async".into())
+                && next.as_ref().is_some_and(starts_key)
+                && !self.source[self.tokens[self.cursor].1..self.tokens[self.cursor + 1].1]
+                    .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
+            {
+                self.take();
+                asynchronous = true;
+                if self.op("*") {
+                    return Err(self.error("async generator methods are not implemented"));
+                }
+            } else if !generator
+                && matches!(self.current(), Token::Name(n) if n == "get" || n == "set")
+                && next
+                    .as_ref()
+                    .is_some_and(|t| starts_key(t) && t != &Token::Op("*".into()))
+            {
+                accessor = Some(self.take() == Token::Name("get".into()));
+            }
+            let key = match self.current().clone() {
+                Token::PrivateName(n) => {
+                    self.take();
+                    if n == "#constructor" {
+                        return Err(self.error("invalid private name #constructor"));
+                    }
+                    ClassKey::Private(n)
+                }
+                Token::Punct('[') => {
+                    self.take();
+                    let saved = (self.super_property, self.super_call);
+                    let key = self.expression();
+                    (self.super_property, self.super_call) = saved;
+                    let key = key?;
+                    self.expect(']')?;
+                    ClassKey::Computed(key)
+                }
+                _ => ClassKey::Named(self.key()?),
+            };
+            let named = |k: &ClassKey, n: &str| matches!(k, ClassKey::Named(s) if s == n);
+            let method = generator
+                || asynchronous
+                || accessor.is_some()
+                || self.current() == &Token::Punct('(');
+            if let ClassKey::Private(n) = &key {
+                let tag = match accessor {
+                    Some(true) => 1,
+                    Some(false) => 2,
+                    None => 0,
+                };
+                if privates
+                    .iter()
+                    .any(|(m, s, t)| m == n && (tag == 0 || *t == 0 || *t == tag || *s != is_static))
+                {
+                    return Err(self.error("duplicate private name"));
+                }
+                privates.push((n.clone(), is_static, tag));
+            }
+            if method {
+                if !is_static && named(&key, "constructor") {
+                    if generator || asynchronous || accessor.is_some() {
+                        return Err(self.error("invalid special constructor method"));
+                    }
+                    if constructor.is_some() {
+                        return Err(self.error("duplicate class constructor"));
+                    }
+                    constructor = Some(self.function_rest(true, derived)?);
+                    continue;
+                }
+                if is_static && named(&key, "prototype") {
+                    return Err(self.error("static prototype method"));
+                }
+                let (params, body) = self.function_rest(true, false)?;
+                let kind = match accessor {
+                    Some(true) => {
+                        if !params.is_empty() {
+                            return Err(self.error("invalid accessor parameters"));
+                        }
+                        MemberKind::Getter(body)
+                    }
+                    Some(false) => match params.as_slice() {
+                        [param] if !param.rest => MemberKind::Setter(param.clone(), body),
+                        _ => return Err(self.error("invalid accessor parameters")),
+                    },
+                    None => MemberKind::Method(if generator {
+                        Expr::GeneratorFunction {
+                            name: None,
+                            params,
+                            body,
+                            method: true,
+                        }
+                    } else if asynchronous {
+                        Expr::AsyncFunction {
+                            name: None,
+                            params,
+                            body,
+                            method: true,
+                        }
+                    } else {
+                        Expr::Function {
+                            name: None,
+                            params,
+                            body,
+                            method: true,
+                        }
+                    }),
+                };
+                members.push(ClassMember {
+                    is_static,
+                    key,
+                    kind,
+                });
+            } else {
+                if named(&key, "constructor") || (is_static && named(&key, "prototype")) {
+                    return Err(self.error("invalid class field name"));
+                }
+                let init = if self.op("=") {
+                    let saved = (self.super_property, self.super_call);
+                    self.super_property = true;
+                    self.super_call = false;
+                    let value = self.expression();
+                    (self.super_property, self.super_call) = saved;
+                    Some(value?)
+                } else {
+                    None
+                };
+                self.semi()?;
+                members.push(ClassMember {
+                    is_static,
+                    key,
+                    kind: MemberKind::Field(init),
+                });
+            }
+        }
+        Ok((constructor, members))
     }
     fn params(&mut self) -> Result<Vec<Param>, SyntaxError> {
         self.expect('(')?;
@@ -880,10 +1206,22 @@ impl Parser<'_> {
                         cursor: 0,
                         depth: self.depth,
                         source: self.source,
+                        private_refs: if self.private_refs.is_empty() {
+                            vec![]
+                        } else {
+                            vec![vec![]]
+                        },
+                        super_property: self.super_property,
+                        super_call: self.super_call,
                     };
                     if let Ok(expression) = head.sequence() {
                         if head.current() == &Token::End {
                             if let Ok(pattern) = head.assignment_pattern(expression) {
+                                if let (Some(outer), Some(inner)) =
+                                    (self.private_refs.last_mut(), head.private_refs.pop())
+                                {
+                                    outer.extend(inner);
+                                }
                                 self.cursor = index + 1;
                                 return Ok(Some((pattern, enumeration)));
                             }
@@ -1076,14 +1414,18 @@ impl Parser<'_> {
             self.take();
             self.take();
             let name = self.name()?;
-            let params = self.params()?;
-            return Ok(Stmt::AsyncFunction(name, params, self.block()?));
+            let (params, body) = self.function_rest(false, false)?;
+            return Ok(Stmt::AsyncFunction(name, params, body));
+        }
+        if self.word("class") {
+            let name = self.name()?;
+            let class = self.class_tail(Some(name.clone()))?;
+            return Ok(Stmt::Let(name, Expr::Class(Box::new(class))));
         }
         if self.word("function") {
             let generator = self.op("*");
             let n = self.name()?;
-            let p = self.params()?;
-            let body = self.block()?;
+            let (p, body) = self.function_rest(false, false)?;
             return Ok(if generator {
                 Stmt::GeneratorFunction(n, p, body)
             } else {
@@ -1219,6 +1561,7 @@ impl Parser<'_> {
             return Ok(Expr::Yield(Some(Box::new(self.expression()?)), delegate));
         }
 
+        let covered = matches!(self.current(), Token::Punct('('));
         let mut a = self.binary(1)?;
         if self.punct('?') {
             let yes = self.expression()?;
@@ -1264,6 +1607,12 @@ impl Parser<'_> {
                 return Err(self.error("invalid assignment target"));
             }
             let rhs = self.expression()?;
+            // A parenthesized name is not an IdentifierRef: no function-name inference.
+            let rhs = if covered && matches!(a, Expr::Name(_)) && rhs.anonymous_function() {
+                Expr::Sequence(vec![rhs])
+            } else {
+                rhs
+            };
             Ok(if op == "=" {
                 Expr::Assign(Box::new(a), Box::new(rhs))
             } else {
@@ -1455,12 +1804,31 @@ impl Parser<'_> {
             if op == "delete" && matches!(e, Expr::Name(_)) {
                 return Err(self.error("delete binding in strict mode"));
             }
+            if op == "delete"
+                && matches!(&e, Expr::Computed(_, key) if matches!(**key, Expr::PrivateName(_)))
+            {
+                return Err(self.error("delete of private field"));
+            }
             return Ok(Expr::Unary(op, Box::new(e)));
         }
         if self.word("new") {
+            if self.punct('.') {
+                if !self.word("target") {
+                    return Err(self.error("expected new.target"));
+                }
+                return self.postfix(Expr::NewTarget);
+            }
             let mut f = self.primary()?;
-            while self.punct('.') {
-                f = Expr::Member(Box::new(f), self.key()?);
+            loop {
+                if self.punct('.') {
+                    f = self.member_after_dot(f)?;
+                } else if self.punct('[') {
+                    let k = self.sequence()?;
+                    self.expect(']')?;
+                    f = Expr::Computed(Box::new(f), Box::new(k));
+                } else {
+                    break;
+                }
             }
             let a = if self.punct('(') {
                 self.arguments()?
@@ -1588,11 +1956,11 @@ impl Parser<'_> {
                 } else {
                     Some(self.name()?)
                 };
-                let params = self.params()?;
+                let (params, body) = self.function_rest(false, false)?;
                 return Ok(Expr::AsyncFunction {
                     name,
                     params,
-                    body: self.block()?,
+                    body,
                     method: false,
                 });
             }
@@ -1616,8 +1984,7 @@ impl Parser<'_> {
             } else {
                 Some(self.name()?)
             };
-            let params = self.params()?;
-            let body = self.block()?;
+            let (params, body) = self.function_rest(false, false)?;
             return Ok(if generator {
                 Expr::GeneratorFunction {
                     name,
@@ -1643,6 +2010,42 @@ impl Parser<'_> {
                 vec![Stmt::Return(self.expression()?)]
             };
             return Ok(Expr::Arrow { params, body });
+        }
+        if self.word("class") {
+            let name = match self.current() {
+                Token::Name(n) if n != "extends" => Some(self.name()?),
+                _ => None,
+            };
+            return Ok(Expr::Class(Box::new(self.class_tail(name)?)));
+        }
+        if self.word("super") {
+            if self.current() == &Token::Punct('(') {
+                if !self.super_call {
+                    return Err(self.error("super call outside derived constructor"));
+                }
+                self.take();
+                return Ok(Expr::SuperCall(self.arguments()?));
+            }
+            if !self.super_property {
+                return Err(self.error("super property outside method"));
+            }
+            if self.punct('.') {
+                return Ok(Expr::SuperMember(self.key()?));
+            }
+            if self.punct('[') {
+                let key = self.sequence()?;
+                self.expect(']')?;
+                return Ok(Expr::SuperComputed(Box::new(key)));
+            }
+            return Err(self.error("invalid super expression"));
+        }
+        if let Token::PrivateName(name) = self.current().clone() {
+            if self.tokens.get(self.cursor + 1).map(|t| &t.0) == Some(&Token::Name("in".into())) {
+                self.take();
+                self.private_reference(&name)?;
+                return Ok(Expr::PrivateName(name));
+            }
+            return Err(self.error("unexpected private name"));
         }
         match self.take() {
             Token::Name(n) => match n.as_str() {
@@ -1723,7 +2126,7 @@ impl Parser<'_> {
     fn postfix(&mut self, mut e: Expr) -> Result<Expr, SyntaxError> {
         for _ in 0..64 {
             if self.punct('.') {
-                e = Expr::Member(Box::new(e), self.key()?);
+                e = self.member_after_dot(e)?;
             } else if self.punct('[') {
                 let k = self.sequence()?;
                 self.expect(']')?;
@@ -2214,6 +2617,33 @@ fn validate_loop(
                     }
                 }
             }
+            Expr::Class(class) => {
+                if let Some(heritage) = &class.heritage {
+                    work.push((heritage, d + 1));
+                }
+                if let Some((params, body)) = &class.constructor {
+                    validate_function(body, params, d + 1, false, false)?;
+                }
+                for member in &class.members {
+                    if let ClassKey::Computed(key) = &member.key {
+                        work.push((key, d + 1));
+                    }
+                    match &member.kind {
+                        MemberKind::Method(e) => work.push((e, d + 1)),
+                        MemberKind::Getter(b) => validate_function(b, &[], d + 1, false, false)?,
+                        MemberKind::Setter(n, b) => {
+                            validate_function(b, std::slice::from_ref(n), d + 1, false, false)?
+                        }
+                        MemberKind::Field(Some(e)) => {
+                            validate(&[Stmt::Expr(e.clone())], &[], false, d + 1)?
+                        }
+                        MemberKind::Field(None) => {}
+                        MemberKind::Block(b) => validate(b, &[], false, d + 1)?,
+                    }
+                }
+            }
+            Expr::SuperComputed(a) => work.push((a, d + 1)),
+            Expr::SuperCall(b) => work.extend(b.iter().map(|e| (e, d + 1))),
             Expr::Call(a, b) | Expr::New(a, b) => {
                 work.push((a, d + 1));
                 work.extend(b.iter().map(|e| (e, d + 1)));

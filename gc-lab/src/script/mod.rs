@@ -1,5 +1,6 @@
 //! A small executable JavaScript subset, not an ECMAScript-compatible engine.
 mod builtins;
+mod classes;
 mod execute;
 mod host;
 mod objects;

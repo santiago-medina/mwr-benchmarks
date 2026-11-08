@@ -279,7 +279,11 @@ impl Engine<'_> {
                 init,
             } => {
                 if let Some(init) = init {
-                    let value = self.eval(init, env)?;
+                    let value = if let super::parser::Pattern::Name(n) = pattern {
+                        self.eval_named(init, env, n)?
+                    } else {
+                        self.eval(init, env)?
+                    };
                     self.protect(&value)?;
                     let target = if kind == "var" {
                         self.var_environment(env)?
@@ -313,12 +317,12 @@ impl Engine<'_> {
             }
 
             Stmt::Const(n, x) | Stmt::Let(n, x) => {
-                let v = self.eval(x, env)?;
+                let v = self.eval_named(x, env, n)?;
                 self.initialize(env, n, v)?;
             }
             Stmt::Var(n, x) => {
                 if let Some(x) = x {
-                    let v = self.eval(x, env)?;
+                    let v = self.eval_named(x, env, n)?;
                     let local = self.var_environment(env)?;
                     self.initialize(local, n, v)?;
                 }
@@ -554,6 +558,15 @@ impl Engine<'_> {
     fn eval_inner(&mut self, x: &Expr, env: Id) -> Result<Value> {
         match x {
             Expr::Template(t) => self.eval_template(t, env),
+            Expr::Class(c) => self.eval_class(c, env, None),
+            Expr::PrivateName(n) => self.lookup(env, n),
+            Expr::NewTarget => self.lookup(env, "%newtarget"),
+            Expr::ClassInit(init) => self.eval_class_init(init, env),
+            Expr::SuperCall(args) => self.super_call(args, env),
+            Expr::SuperMember(_) | Expr::SuperComputed(_) => {
+                let (this, target, key) = self.super_key(x, env)?;
+                self.super_get(this, target, &key)
+            }
             Expr::Name(n) => self.lookup(env, n),
             Expr::This => self.lookup(env, "this"),
             Expr::String(s) => Ok(Value::String(s.clone())),
@@ -666,7 +679,11 @@ impl Engine<'_> {
             }
             Expr::Assign(a, b) => {
                 let reference = self.eval_reference(a, env)?;
-                let value = self.eval(b, env)?;
+                let value = if let Expr::Name(n) = &**a {
+                    self.eval_named(b, env, n)?
+                } else {
+                    self.eval(b, env)?
+                };
                 self.reference_set(reference, value)
             }
         }
@@ -680,6 +697,14 @@ impl Engine<'_> {
     fn eval_object(&mut self, props: &[(String, Literal)], env: Id) -> Result<Value> {
         let id = self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;
         self.protect(&Value::Object(id))?;
+        let env = if props.iter().any(|(_, p)| literal_method(p)) {
+            let home = self.new_environment(Some(env), &[], false)?;
+            self.protect(&Value::Object(home))?;
+            self.initialize(home, "%home", Value::Object(id))?;
+            home
+        } else {
+            env
+        };
         for (k, p) in props {
             self.literal_property(id, k, p, env)?;
         }
@@ -728,20 +753,8 @@ impl Engine<'_> {
                 return Ok(());
             }
             Literal::Value(x) => {
-                let v = self.eval(x, env)?;
+                let v = self.eval_named(x, env, &display)?;
                 self.protect(&v)?;
-                if x.anonymous_function() {
-                    if let Value::Object(function) = &v {
-                        self.define(
-                            *function,
-                            "name",
-                            Descriptor {
-                                value: Some(Value::String(display.clone())),
-                                ..Descriptor::default()
-                            },
-                        )?;
-                    }
-                }
                 Descriptor {
                     value: Some(v),
                     writable: Some(true),
@@ -899,9 +912,27 @@ impl Engine<'_> {
                         program,
                     );
                 }
+                let class = matches!(
+                    kind,
+                    FunctionKind::ClassConstructor | FunctionKind::DerivedConstructor
+                );
+                if class && self.pending_construct.is_none() {
+                    return self.throw_error("TypeError", "class constructor requires new");
+                }
                 let local =
                     self.function_environment(environment, &params, &body, kind, receiver, &args)?;
-                Ok(self.block(&body, local, true)?.unwrap_or(Value::Undefined))
+                let result = self.block(&body, local, true)?;
+                if kind == FunctionKind::DerivedConstructor {
+                    return match result {
+                        Some(v @ Value::Object(_)) => Ok(v),
+                        Some(Value::Undefined) | None => self.lookup(local, "this"),
+                        Some(_) => self.throw_error(
+                            "TypeError",
+                            "derived constructor returned a non-object",
+                        ),
+                    };
+                }
+                Ok(result.unwrap_or(Value::Undefined))
             }
             _ => self.throw_error("TypeError", "value is not callable"),
         }
@@ -912,7 +943,10 @@ impl Engine<'_> {
         };
         match self.objects.get(id) {
             Some(Object::Closure {
-                kind: FunctionKind::Ordinary,
+                kind:
+                    FunctionKind::Ordinary
+                    | FunctionKind::ClassConstructor
+                    | FunctionKind::DerivedConstructor,
                 ..
             }) => true,
             Some(Object::Bound { target, .. }) => self.constructible(target),
@@ -1010,6 +1044,33 @@ impl Engine<'_> {
                 if name == "Function" || name == "AsyncFunction" {
                     return self.dynamic_function(name == "AsyncFunction", args, Some(new_target));
                 }
+                if new_target != f
+                    && matches!(
+                        name.as_str(),
+                        "Object" | "Array" | "String" | "Number" | "Boolean"
+                    )
+                {
+                    let p = self.get_member(new_target, "prototype")?;
+                    self.protect(&p)?;
+                    if name == "Object" {
+                        let p = match p {
+                            Value::Object(p) => p,
+                            _ => self.intrinsics.as_ref().unwrap().object,
+                        };
+                        return self.new_object(Some(p)).map(Value::Object);
+                    }
+                    let v = if name == "Array" {
+                        self.builtin(&name, Value::Undefined, args)?
+                    } else {
+                        let v = self.builtin(&name, Value::Undefined, args)?;
+                        Value::Object(self.box_value(v)?)
+                    };
+                    self.protect(&v)?;
+                    if let (Value::Object(id), Value::Object(p)) = (&v, p) {
+                        self.set_prototype(*id, Some(p))?;
+                    }
+                    return Ok(v);
+                }
                 if new_target != f {
                     return Err(ScriptError::Unsupported("custom newTarget for builtin"));
                 }
@@ -1029,7 +1090,7 @@ impl Engine<'_> {
                 kind: FunctionKind::Ordinary,
                 ..
             }) => {
-                let p = self.get_member(new_target, "prototype")?;
+                let p = self.get_member(new_target.clone(), "prototype")?;
                 let p = if let Value::Object(p) = p {
                     p
                 } else {
@@ -1038,17 +1099,36 @@ impl Engine<'_> {
                 let id = self.new_object(Some(p))?;
                 let receiver = Value::Object(id);
                 self.protect(&receiver)?;
-                let result = self.invoke_this(f, receiver.clone(), args)?;
+                self.pending_construct = Some((new_target, f.clone()));
+                let result = self.invoke_this(f, receiver.clone(), args);
+                self.pending_construct = None;
+                let result = result?;
                 Ok(if matches!(result, Value::Object(_)) {
                     result
                 } else {
                     receiver
                 })
             }
+            Some(Object::Closure {
+                kind: kind @ (FunctionKind::ClassConstructor | FunctionKind::DerivedConstructor),
+                ..
+            }) => self.construct_class(
+                f,
+                args,
+                new_target,
+                kind == FunctionKind::DerivedConstructor,
+            ),
             _ => self.throw_error("TypeError", "not a constructor"),
         }
     }
     fn eval_unary(&mut self, op: &str, x: &Expr, env: Id) -> Result<Value> {
+        if op == "delete" && matches!(x, Expr::SuperMember(_) | Expr::SuperComputed(_)) {
+            self.lookup(env, "this")?;
+            if let Expr::SuperComputed(k) = x {
+                self.eval(k, env)?;
+            }
+            return self.throw_error("ReferenceError", "delete of a super property");
+        }
         if op == "delete" {
             let target = match x {
                 Expr::Member(r, k) => Some((self.eval(r, env)?, Key::from(k))),
@@ -1126,6 +1206,11 @@ impl Engine<'_> {
         }
     }
     fn eval_binary(&mut self, op: &str, a: &Expr, b: &Expr, env: Id) -> Result<Value> {
+        if let ("in", Expr::PrivateName(n)) = (op, a) {
+            let object = self.eval(b, env)?;
+            self.protect(&object)?;
+            return self.private_in(n, object, env);
+        }
         let a = self.eval(a, env)?;
         self.protect(&a)?;
         if super::references::assignment_skips(op, &a) {
@@ -1370,5 +1455,18 @@ impl Engine<'_> {
             }
             _ => return Err(ScriptError::Unsupported("host numeric conversion")),
         })
+    }
+}
+
+fn literal_method(p: &Literal) -> bool {
+    match p {
+        Literal::Getter(_) | Literal::Setter(..) => true,
+        Literal::Computed(_, p) => literal_method(p),
+        Literal::Value(
+            Expr::Function { method: true, .. }
+            | Expr::GeneratorFunction { method: true, .. }
+            | Expr::AsyncFunction { method: true, .. },
+        ) => true,
+        _ => false,
     }
 }

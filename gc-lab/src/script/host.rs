@@ -105,7 +105,10 @@ impl Engine<'_> {
         property: impl Into<Key>,
     ) -> Result<Value> {
         let property = property.into();
-        if let Key::Symbol(_) = property {
+        if let Key::Symbol(symbol) = property {
+            if self.private_symbols.contains(&symbol) {
+                return self.private_get(receiver, symbol);
+            }
             return if let Value::Object(id) = receiver.clone() {
                 self.ordinary_get(id, &property, receiver)
             } else {
@@ -180,7 +183,10 @@ impl Engine<'_> {
         value: Value,
     ) -> Result<()> {
         let property = property.into();
-        if let Key::Symbol(_) = property {
+        if let Key::Symbol(symbol) = property {
+            if self.private_symbols.contains(&symbol) {
+                return self.private_set(receiver, symbol, value);
+            }
             return if let Value::Object(id) = receiver.clone() {
                 if self.ordinary_set(id, &property, value, receiver)? {
                     Ok(())

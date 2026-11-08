@@ -1370,7 +1370,11 @@ impl Engine<'_> {
                 let mut d = self.data(id)?.clone();
                 d.extensible = false;
                 if method != "preventExtensions" {
-                    for (_, p) in &mut d.properties {
+                    let private = self.private_symbols.clone();
+                    for (k, p) in &mut d.properties {
+                        if matches!(k, super::objects::Key::Symbol(s) if private.contains(s)) {
+                            continue;
+                        }
                         p.configurable = false;
                         if method == "freeze" {
                             if let Kind::Data { writable, .. } = &mut p.kind {
@@ -1395,8 +1399,9 @@ impl Engine<'_> {
                 let d = self.data(id)?;
                 Ok(Value::Bool(
                     !d.extensible
-                        && d.properties.iter().all(|(_, p)| {
-                            !p.configurable
+                        && d.properties.iter().all(|(k, p)| {
+                            self.is_private(k)
+                                || !p.configurable
                                 && (method != "isFrozen"
                                     || !matches!(p.kind, Kind::Data { writable: true, .. }))
                         }),
