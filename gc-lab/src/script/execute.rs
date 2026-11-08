@@ -827,6 +827,9 @@ impl Engine<'_> {
                 )
             }
             Some(Object::Builtin { name, .. }) => {
+                if name == "%TypedArray%" {
+                    return self.throw_error("TypeError", "abstract TypedArray constructor");
+                }
                 if super::typed_arrays::kind(&name).is_some() {
                     return self.construct_typed(&name, new_target, args);
                 }

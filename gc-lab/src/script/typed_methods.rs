@@ -47,7 +47,41 @@ impl Engine<'_> {
             )?;
             self.hidden(proto, method, Value::Object(f))?;
         }
-        let _ = base;
+        for (method, length) in [
+            ("set", 1),
+            ("subarray", 2),
+            ("slice", 2),
+            ("reverse", 0),
+            ("fill", 1),
+            ("copyWithin", 2),
+            ("with", 2),
+            ("toReversed", 0),
+        ] {
+            let full = format!("%TypedArray%.prototype.{method}");
+            let f = self.intrinsic_function(env, &full, Some(function))?;
+            self.define(
+                f,
+                "length",
+                Descriptor {
+                    value: Some(Value::number(length as f64)),
+                    ..Default::default()
+                },
+            )?;
+            self.hidden(proto, method, Value::Object(f))?;
+        }
+        for (method, length) in [("from", 1), ("of", 0)] {
+            let full = format!("%TypedArray%.{method}");
+            let f = self.intrinsic_function(env, &full, Some(function))?;
+            self.define(
+                f,
+                "length",
+                Descriptor {
+                    value: Some(Value::number(length as f64)),
+                    ..Default::default()
+                },
+            )?;
+            self.hidden(base, method, Value::Object(f))?;
+        }
         Ok(())
     }
     pub(super) fn typed_default(&mut self, kind: Element, length: u64) -> Result<Value> {
@@ -98,6 +132,19 @@ impl Engine<'_> {
         args: Vec<Value>,
     ) -> Result<Value> {
         let arg = |i| args.get(i).cloned().unwrap_or(Value::Undefined);
+        if matches!(
+            method,
+            "set"
+                | "subarray"
+                | "slice"
+                | "reverse"
+                | "fill"
+                | "copyWithin"
+                | "with"
+                | "toReversed"
+        ) {
+            return self.typed_copy_method(method, receiver, args);
+        }
         let (id, typed, length) = self.typed_record(receiver.clone())?;
         let len = length as u64;
         match method {

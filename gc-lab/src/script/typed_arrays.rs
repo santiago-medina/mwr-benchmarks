@@ -485,6 +485,9 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if matches!(name, "%TypedArray%.from" | "%TypedArray%.of") {
+            return self.typed_static(name, receiver, args);
+        }
         if kind(name).is_some() || name == "%TypedArray%" {
             return self.throw_error(
                 "TypeError",
