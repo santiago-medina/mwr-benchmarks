@@ -98,6 +98,7 @@ pub(super) struct Data {
     pub response: Option<super::network::Response>,
     pub request: Option<super::network::Request>,
     pub activation: Option<super::asynchronous::Activation>,
+    pub generator: Option<super::generators::Generator>,
     pub promise: Option<super::promises::PromiseState>,
     pub internal: Option<super::promises::Internal>,
     pub cell: Option<super::promises::Cell>,
@@ -127,6 +128,7 @@ impl Data {
             collection_cursor: None,
             string_cursor: None,
             activation: None,
+            generator: None,
             response: None,
             request: None,
             promise: None,
@@ -147,6 +149,7 @@ impl Data {
             .chain(self.iterator.as_ref().and_then(|i| i.target))
             .chain(self.request.as_ref().into_iter().flat_map(|r| r.edges()))
             .chain(self.activation.as_ref().into_iter().flat_map(|a| a.edges()))
+            .chain(self.generator.as_ref().into_iter().flat_map(|g| g.edges()))
             .chain(self.promise.as_ref().into_iter().flat_map(|p| p.edges()))
             .chain(self.internal.as_ref().into_iter().flat_map(|p| p.edges()))
             .chain(self.cell.as_ref().into_iter().flat_map(|p| p.edges()))

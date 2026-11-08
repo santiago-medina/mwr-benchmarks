@@ -39,6 +39,7 @@ pub(super) enum Op {
     Branch(usize, usize, usize),
     Jump(usize),
     Await(usize, usize),
+    Yield(usize, usize),
     Return(usize),
     Throw(usize),
     Object(usize),
@@ -730,12 +731,17 @@ struct Handler {
     pending: Completion,
 }
 #[derive(Clone)]
+pub(super) enum Target {
+    Promise(super::promises::Capability),
+    Generator(Id),
+}
+#[derive(Clone)]
 pub(super) struct Activation {
     program: Arc<Program>,
     ip: usize,
     envs: Vec<Id>,
     root: Id,
-    cap: super::promises::Capability,
+    target: Target,
     handlers: Vec<Handler>,
     incoming: Option<Value>,
     awaiting: Option<usize>,
@@ -744,7 +750,10 @@ impl Activation {
     pub fn edges(&self) -> Vec<Id> {
         let mut ids = self.envs.clone();
         ids.push(self.root);
-        ids.extend(self.cap.values().iter().filter_map(Value::id));
+        match &self.target {
+            Target::Promise(cap) => ids.extend(cap.values().iter().filter_map(Value::id)),
+            Target::Generator(id) => ids.push(*id),
+        }
         ids.extend(self.incoming.as_ref().and_then(Value::id));
         for h in &self.handlers {
             match &h.pending {
@@ -786,6 +795,16 @@ impl Engine<'_> {
         program: Arc<Program>,
         cap: super::promises::Capability,
     ) -> Result<Value> {
+        let id = self.new_activation(local, program, Target::Promise(cap.clone()))?;
+        self.resume_async(id, Value::Undefined, false)?;
+        Ok(cap.promise)
+    }
+    pub(super) fn new_activation(
+        &mut self,
+        local: Id,
+        program: Arc<Program>,
+        target: Target,
+    ) -> Result<Id> {
         let id = self.new_object(None)?;
         self.protect(&Value::Object(id))?;
         let mut data = self.data(id)?.clone();
@@ -794,14 +813,13 @@ impl Engine<'_> {
             ip: 0,
             envs: vec![local],
             root: local,
-            cap: cap.clone(),
+            target,
             handlers: vec![],
             incoming: None,
             awaiting: None,
         });
         self.replace_data(id, data)?;
-        self.resume_async(id, Value::Undefined, false)?;
-        Ok(cap.promise)
+        Ok(id)
     }
     fn register(&mut self, frame: &Activation, r: usize) -> Result<Value> {
         self.lookup(frame.root, &name(r))
@@ -827,19 +845,26 @@ impl Engine<'_> {
             _ => return Err(ScriptError::Runtime("loop control escaped async function")),
         };
         self.protect(&value)?;
-        let resolve = if reject {
-            frame.cap.reject.clone()
-        } else {
-            frame.cap.resolve.clone()
-        };
-        self.protect(&resolve)?;
         for r in 0..frame.program.registers {
             self.initialize(frame.root, &name(r), Value::Undefined)?;
         }
         let mut data = self.data(id)?.clone();
         data.activation = None;
         self.replace_data(id, data)?;
-        self.invoke(resolve, vec![value])?;
+        match &frame.target {
+            Target::Promise(cap) => {
+                let resolve = if reject {
+                    cap.reject.clone()
+                } else {
+                    cap.resolve.clone()
+                };
+                self.invoke(resolve, vec![value])?;
+            }
+            Target::Generator(generator) => {
+                self.generator_output(*generator, value, reject, true)?
+            }
+        }
+
         Ok(())
     }
     fn route_async(
@@ -909,6 +934,22 @@ impl Engine<'_> {
         }
     }
     pub(super) fn resume_async(&mut self, id: Id, value: Value, reject: bool) -> Result<Value> {
+        self.resume_program(
+            id,
+            value,
+            if reject {
+                super::generators::Resume::Throw
+            } else {
+                super::generators::Resume::Next
+            },
+        )
+    }
+    pub(super) fn resume_program(
+        &mut self,
+        id: Id,
+        value: Value,
+        mode: super::generators::Resume,
+    ) -> Result<Value> {
         self.frame(|e| {
             e.protect(&Value::Object(id))?;
             e.protect(&value)?;
@@ -916,8 +957,13 @@ impl Engine<'_> {
                 return Ok(Value::Undefined);
             };
             if let Some(register) = frame.awaiting.take() {
-                if reject {
-                    if e.route_async(id, &mut frame, Completion::Throw(value))? {
+                if mode != super::generators::Resume::Next {
+                    let completion = if mode == super::generators::Resume::Throw {
+                        Completion::Throw(value)
+                    } else {
+                        Completion::Return(value)
+                    };
+                    if e.route_async(id, &mut frame, completion)? {
                         return Ok(Value::Undefined);
                     }
                 } else {
@@ -1092,6 +1138,18 @@ impl Engine<'_> {
                             }
                         }
                         Op::Jump(ip) => frame.ip = ip,
+                        Op::Yield(r, out) => {
+                            let Target::Generator(generator) = frame.target.clone() else {
+                                return Err(ScriptError::Unsupported(
+                                    "yield outside generator activation",
+                                ));
+                            };
+                            let value = e.register(&frame, r)?;
+                            frame.awaiting = Some(out);
+                            e.save_activation(id, frame.clone())?;
+                            e.generator_output(generator, value, false, false)?;
+                            return Ok(Some(Completion::Normal));
+                        }
                         Op::Await(r, out) => {
                             let value = e.register(&frame, r)?;
                             let promise = e.promise_resolve(

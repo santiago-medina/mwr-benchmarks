@@ -70,3 +70,5 @@ mod sorting;
 mod typed_methods;
 
 mod typed_copy;
+
+mod generators;
