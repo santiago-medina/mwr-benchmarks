@@ -499,6 +499,14 @@ impl Engine<'_> {
                 self.hidden(*p, "constructor", Value::Object(*id))?;
             }
         }
+        self.define(
+            objects["GeneratorFunction.prototype"],
+            "constructor",
+            Descriptor {
+                writable: Some(false),
+                ..Descriptor::default()
+            },
+        )?;
         for (owner, methods) in METHODS {
             if *owner == "assert" && !self.test_harness {
                 continue;
@@ -853,9 +861,7 @@ impl Engine<'_> {
             return self.generator_builtin(name, receiver, args);
         }
         if name == "GeneratorFunction" {
-            return Err(ScriptError::Unsupported(
-                "dynamic GeneratorFunction construction",
-            ));
+            return self.dynamic_function_kind(super::vm::FunctionKind::Generator, args, None);
         }
         if super::typed_arrays::kind(name).is_some() || name.starts_with("%TypedArray%") {
             return self.typed_builtin(name, receiver, args);

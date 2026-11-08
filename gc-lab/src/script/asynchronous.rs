@@ -40,6 +40,7 @@ pub(super) enum Op {
     Jump(usize),
     Await(usize, usize),
     Yield(usize, usize),
+    Delegate(usize, usize),
     Return(usize),
     Throw(usize),
     Object(usize),
@@ -202,18 +203,17 @@ impl Compiler {
                 out
             }
             Expr::Yield(value, delegate) => {
-                if *delegate {
-                    return Err(ScriptError::Unsupported(
-                        "yield delegation is not yet implemented",
-                    ));
-                }
                 let value = if let Some(value) = value {
                     self.expression(value)?
                 } else {
                     self.eval(Expr::Undefined)
                 };
                 let out = self.reg();
-                self.emit(Op::Yield(value, out));
+                self.emit(if *delegate {
+                    Op::Delegate(value, out)
+                } else {
+                    Op::Yield(value, out)
+                });
                 out
             }
             Expr::Await(e) => {
@@ -761,6 +761,7 @@ pub(super) struct Activation {
     handlers: Vec<Handler>,
     incoming: Option<Value>,
     awaiting: Option<usize>,
+    delegate: Option<super::delegation::Delegation>,
 }
 impl Activation {
     pub fn edges(&self) -> Vec<Id> {
@@ -769,6 +770,10 @@ impl Activation {
         match &self.target {
             Target::Promise(cap) => ids.extend(cap.values().iter().filter_map(Value::id)),
             Target::Generator(id) => ids.push(*id),
+        }
+        if let Some(delegate) = &self.delegate {
+            ids.extend(delegate.iterator.id());
+            ids.extend(delegate.next.id());
         }
         ids.extend(self.incoming.as_ref().and_then(Value::id));
         for h in &self.handlers {
@@ -833,6 +838,7 @@ impl Engine<'_> {
             handlers: vec![],
             incoming: None,
             awaiting: None,
+            delegate: None,
         });
         self.replace_data(id, data)?;
         Ok(id)
@@ -949,6 +955,39 @@ impl Engine<'_> {
             frame.handlers.pop();
         }
     }
+    fn process_delegate(
+        &mut self,
+        id: Id,
+        frame: &mut Activation,
+        input: Value,
+        mode: super::generators::Resume,
+    ) -> Result<Option<Completion>> {
+        let delegate = frame.delegate.clone().unwrap();
+        let result = self.delegate_call(&delegate, input, mode);
+        match result {
+            Ok(super::delegation::Delegated::Yield(result)) => {
+                let Target::Generator(generator) = frame.target.clone() else {
+                    return Err(ScriptError::Unsupported("yield-star outside generator"));
+                };
+                self.save_activation(id, frame.clone())?;
+                self.forward_generator_result(generator, result)?;
+                Ok(Some(Completion::Normal))
+            }
+            Ok(super::delegation::Delegated::Next(value)) => {
+                frame.delegate = None;
+                self.store(frame, delegate.output, value)?;
+                Ok(None)
+            }
+            Ok(super::delegation::Delegated::Return(value)) => {
+                frame.delegate = None;
+                Ok(Some(Completion::Return(value)))
+            }
+            Err(error) => {
+                frame.delegate = None;
+                Err(error)
+            }
+        }
+    }
     pub(super) fn resume_async(&mut self, id: Id, value: Value, reject: bool) -> Result<Value> {
         self.resume_program(
             id,
@@ -972,7 +1011,23 @@ impl Engine<'_> {
             let Some(mut frame) = e.data(id)?.activation.clone() else {
                 return Ok(Value::Undefined);
             };
-            if let Some(register) = frame.awaiting.take() {
+            if frame.delegate.is_some() {
+                match e.process_delegate(id, &mut frame, value, mode) {
+                    Ok(Some(Completion::Normal)) => return Ok(Value::Undefined),
+                    Ok(Some(completion)) => {
+                        if e.route_async(id, &mut frame, completion)? {
+                            return Ok(Value::Undefined);
+                        }
+                    }
+                    Err(ScriptError::Thrown(error)) => {
+                        if e.route_async(id, &mut frame, Completion::Throw(error.value))? {
+                            return Ok(Value::Undefined);
+                        }
+                    }
+                    Err(error) => return Err(error),
+                    Ok(None) => {}
+                }
+            } else if let Some(register) = frame.awaiting.take() {
                 if mode != super::generators::Resume::Next {
                     let completion = if mode == super::generators::Resume::Throw {
                         Completion::Throw(value)
@@ -1154,6 +1209,24 @@ impl Engine<'_> {
                             }
                         }
                         Op::Jump(ip) => frame.ip = ip,
+                        Op::Delegate(source, out) => {
+                            let source = e.register(&frame, source)?;
+                            let method =
+                                e.get_member(source.clone(), super::objects::Key::Symbol(0))?;
+                            e.protect(&method)?;
+                            let (iterator, next) = e.open_iterator(source, method)?;
+                            frame.delegate = Some(super::delegation::Delegation {
+                                iterator,
+                                next,
+                                output: out,
+                            });
+                            return e.process_delegate(
+                                id,
+                                &mut frame,
+                                Value::Undefined,
+                                super::generators::Resume::Next,
+                            );
+                        }
                         Op::Yield(r, out) => {
                             let Target::Generator(generator) = frame.target.clone() else {
                                 return Err(ScriptError::Unsupported(

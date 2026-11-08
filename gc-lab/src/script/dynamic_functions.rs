@@ -11,13 +11,33 @@ impl Engine<'_> {
         args: Vec<Value>,
         new_target: Option<Value>,
     ) -> Result<Value> {
+        self.dynamic_function_kind(
+            if asynchronous {
+                FunctionKind::Async
+            } else {
+                FunctionKind::Ordinary
+            },
+            args,
+            new_target,
+        )
+    }
+    pub(super) fn dynamic_function_kind(
+        &mut self,
+        kind: FunctionKind,
+        args: Vec<Value>,
+        new_target: Option<Value>,
+    ) -> Result<Value> {
+        let asynchronous = kind == FunctionKind::Async;
+        let generator = kind == FunctionKind::Generator;
         let mut strings = vec![];
         for value in args {
             strings.push(self.to_string(value)?);
         }
         let body = strings.pop().unwrap_or_default();
         let parameters = strings.join(",");
-        let prefix = if asynchronous {
+        let prefix = if generator {
+            "function*"
+        } else if asynchronous {
             "async function"
         } else {
             "function"
@@ -32,7 +52,7 @@ impl Engine<'_> {
         };
         if !matches!(
             parsed.as_slice(),
-            [Stmt::Function(..)] | [Stmt::AsyncFunction(..)]
+            [Stmt::Function(..)] | [Stmt::AsyncFunction(..)] | [Stmt::GeneratorFunction(..)]
         ) {
             return self.throw_error("SyntaxError", "invalid dynamic function parameters");
         }
@@ -42,7 +62,8 @@ impl Engine<'_> {
             Err(_) => return self.throw_error("SyntaxError", "invalid dynamic function body"),
         };
         let (params, body) = match parsed.as_slice() {
-            [Stmt::Function(_, params, body)] if !asynchronous => (params, body),
+            [Stmt::Function(_, params, body)] if !asynchronous && !generator => (params, body),
+            [Stmt::GeneratorFunction(_, params, body)] if generator => (params, body),
             [Stmt::AsyncFunction(_, params, body)] if asynchronous => (params, body),
             _ => return self.throw_error("SyntaxError", "invalid dynamic function syntax"),
         };
@@ -63,18 +84,7 @@ impl Engine<'_> {
             "dynamic function without global environment",
         ))?;
         let global = self.runtime.resolve(global)?;
-        let function = self.make_function(
-            global,
-            Some("anonymous"),
-            params,
-            body,
-            if asynchronous {
-                FunctionKind::Async
-            } else {
-                FunctionKind::Ordinary
-            },
-            false,
-        )?;
+        let function = self.make_function(global, Some("anonymous"), params, body, kind, false)?;
         let Value::Object(id) = function else {
             unreachable!()
         };

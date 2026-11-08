@@ -124,12 +124,18 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
                         }
                     }
                     p.take();
+                    let generator = p.op("*");
+                    if generator && async_function {
+                        return Err(p.error("async generator modules are not yet supported"));
+                    }
                     if matches!(p.current(), Token::Name(_)) {
                         local = p.name()?;
                     }
                     let params = p.params()?;
                     let body = p.block()?;
-                    module.body.push(if async_function {
+                    module.body.push(if generator {
+                        Stmt::GeneratorFunction(local.clone(), params, body)
+                    } else if async_function {
                         Stmt::AsyncFunction(local.clone(), params, body)
                     } else {
                         Stmt::Function(local.clone(), params, body)

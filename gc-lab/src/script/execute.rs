@@ -855,6 +855,7 @@ impl Engine<'_> {
                             | "Object"
                             | "Function"
                             | "AsyncFunction"
+                            | "GeneratorFunction"
                             | "String"
                             | "Number"
                             | "Boolean"
@@ -893,6 +894,13 @@ impl Engine<'_> {
                 )
             }
             Some(Object::Builtin { name, .. }) => {
+                if name == "GeneratorFunction" {
+                    return self.dynamic_function_kind(
+                        FunctionKind::Generator,
+                        args,
+                        Some(new_target),
+                    );
+                }
                 if name == "%TypedArray%" {
                     return self.throw_error("TypeError", "abstract TypedArray constructor");
                 }

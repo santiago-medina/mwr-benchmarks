@@ -72,3 +72,5 @@ mod typed_methods;
 mod typed_copy;
 
 mod generators;
+
+mod delegation;
