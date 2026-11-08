@@ -31,3 +31,5 @@ mod array_methods;
 mod json;
 
 mod numeric;
+
+mod strings;

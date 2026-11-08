@@ -13,3 +13,5 @@ JSON additions (unverified): syntax parsing, materialization, reviver traversal,
 Operator additions (unverified): conditional expressions with resumable async branches, bitwise operators and shifts, bitwise NOT, and right-associative exponentiation with unary-left syntax restriction. Numeric conversion helpers are shared with intrinsics.
 
 Numeric additions (unverified): Math constants and 36 numeric methods, including compensated/scaled hypot, signed-zero round/min/max, f16round, fround, integer multiplication, and a per-thread randomly seeded hash stream for Math.random. Added parseFloat and global/Number predicates, with Number parsing aliases.
+
+String additions (unverified): primitive prototype property lookup without eager boxing, Unicode code-point iteration, fromCharCode/fromCodePoint, code-unit/code-point access, concatenation, searches, slice/substring, padding/repetition, casing and exact ECMAScript whitespace trimming. Operations requiring an isolated surrogate still report Unsupported because the runtime String representation has not been replaced with UTF-16 storage.

@@ -99,6 +99,7 @@ pub(super) struct Data {
     pub job: Option<super::promises::Job>,
     pub collection: Option<super::collections::Table>,
     pub collection_cursor: Option<super::collections::Cursor>,
+    pub string_cursor: Option<super::strings::Cursor>,
     pub iterator: Option<super::arrays::IteratorState>,
 }
 impl Data {
@@ -114,6 +115,7 @@ impl Data {
             iterator: None,
             collection: None,
             collection_cursor: None,
+            string_cursor: None,
             activation: None,
             response: None,
             request: None,

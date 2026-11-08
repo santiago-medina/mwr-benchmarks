@@ -73,6 +73,30 @@ impl Engine<'_> {
         }
         Ok(Value::Object(id))
     }
+    fn primitive_prototype(&mut self, value: &Value) -> Result<Id> {
+        let name = match value {
+            Value::String(_) => "String",
+            Value::Number(_) => "Number",
+            Value::Bool(_) => "Boolean",
+            Value::Null | Value::Undefined => {
+                return self.throw_error("TypeError", "null or undefined")
+            }
+            _ => return Err(ScriptError::Unsupported("primitive prototype")),
+        };
+        let ctor = self.intrinsics.as_ref().unwrap().functions[name];
+        // Built-in prototypes are intrinsic even if the global binding is replaced.
+        let Some(property) = self.own(ctor, "prototype")? else {
+            unreachable!()
+        };
+        let super::objects::Kind::Data {
+            value: Value::Object(proto),
+            ..
+        } = property.kind
+        else {
+            unreachable!()
+        };
+        Ok(proto)
+    }
     pub(super) fn get_member(
         &mut self,
         receiver: Value,
@@ -83,7 +107,8 @@ impl Engine<'_> {
             return if let Value::Object(id) = receiver.clone() {
                 self.ordinary_get(id, &property, receiver)
             } else {
-                self.throw_error("TypeError", "symbol property on primitive not implemented")
+                let proto = self.primitive_prototype(&receiver)?;
+                self.ordinary_get(proto, &property, receiver)
             };
         }
         let Key::String(property) = property else {
@@ -134,9 +159,23 @@ impl Engine<'_> {
             }
             Value::Null | Value::Undefined => self.throw_error("TypeError", "null or undefined"),
             value => {
-                let id = self.box_value(value.clone())?;
-                self.protect(&Value::Object(id))?;
-                self.ordinary_get(id, property, value)
+                if let Value::String(text) = &value {
+                    if property == "length" {
+                        return Ok(Value::number(text.encode_utf16().count() as f64));
+                    }
+                    if let Some(index) = Key::from(property).index() {
+                        if let Some(unit) = text.encode_utf16().nth(index as usize) {
+                            let Some(c) = char::from_u32(unit as u32) else {
+                                return Err(ScriptError::Unsupported(
+                                    "unpaired UTF-16 string storage",
+                                ));
+                            };
+                            return Ok(Value::String(c.to_string()));
+                        }
+                    }
+                }
+                let proto = self.primitive_prototype(&value)?;
+                self.ordinary_get(proto, property, value)
             }
         }
     }

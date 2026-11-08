@@ -164,7 +164,10 @@ impl Engine<'_> {
             },
         );
         self.replace_data(id, Data::new(prototype))?;
-        let short = if name == "%IteratorPrototype%.iterator" {
+        let short = if matches!(
+            name,
+            "%IteratorPrototype%.iterator" | "String.prototype.iterator"
+        ) {
             "[Symbol.iterator]"
         } else if matches!(name, "Array.species" | "Promise.species") {
             "get [Symbol.species]"
@@ -174,7 +177,15 @@ impl Engine<'_> {
             name.rsplit('.').next().unwrap()
         };
         let arity = match name {
-            "Math.random" => 0,
+            "Math.random"
+            | "String.prototype.iterator"
+            | "%StringIteratorPrototype%.next"
+            | "String.prototype.trim"
+            | "String.prototype.trimStart"
+            | "String.prototype.trimEnd"
+            | "String.prototype.toLowerCase"
+            | "String.prototype.toUpperCase" => 0,
+            "String.prototype.slice" | "String.prototype.substring" => 2,
             "Math.atan2" | "Math.hypot" | "Math.imul" | "Math.max" | "Math.min" | "Math.pow" => 2,
             "Array.from"
             | "Array.prototype.slice"
@@ -403,6 +414,7 @@ impl Engine<'_> {
         }
         self.bootstrap_collections(env, &mut objects, iterator)?;
         self.bootstrap_math(env, &mut objects)?;
+        self.bootstrap_strings(env, &mut objects, iterator)?;
         let constructors: Vec<_> = self
             .intrinsics
             .as_ref()
@@ -781,6 +793,15 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name == "%StringIteratorPrototype%.next"
+            || name.starts_with("String.")
+                && !matches!(
+                    name,
+                    "String.prototype.toString" | "String.prototype.valueOf"
+                )
+        {
+            return self.string_builtin(name, receiver, args);
+        }
         if name.starts_with("Math.")
             || matches!(
                 name,
