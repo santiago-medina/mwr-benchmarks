@@ -9,6 +9,8 @@ type Result<T> = std::result::Result<T, ScriptError>;
 #[derive(Clone)]
 pub(super) enum Op {
     Eval(Expr, usize),
+    Iterator(usize, usize, usize),
+    IteratorNext(usize, usize, usize, usize),
     Loop(usize, usize),
     EndLoop,
     CloneIteration(Vec<String>),
@@ -540,10 +542,47 @@ impl Compiler {
                     end,
                 };
             }
-            Stmt::ForOf { .. } if stmt_await(s) => {
-                return Err(ScriptError::Unsupported(
-                    "await inside for-of is not implemented",
-                ))
+            Stmt::ForOf {
+                kind,
+                name,
+                iterable,
+                body,
+            } => {
+                let declaration = if kind == "const" {
+                    Stmt::Const(name.clone(), Expr::Undefined)
+                } else {
+                    Stmt::Let(name.clone(), Expr::Undefined)
+                };
+                if kind != "var" {
+                    self.emit(Op::Enter(vec![declaration.clone()]));
+                }
+                let source = self.expression(iterable)?;
+                let iterator = self.reg();
+                let next = self.reg();
+                self.emit(Op::Iterator(source, iterator, next));
+                if kind != "var" {
+                    self.emit(Op::Exit);
+                }
+                let handler = self.emit(Op::Loop(0, 0));
+                let again = self.ops.len();
+                let value = self.reg();
+                let done = self.reg();
+                self.emit(Op::IteratorNext(iterator, next, value, done));
+                let branch = self.emit(Op::Branch(done, 0, 0));
+                let body_start = self.ops.len();
+                if kind != "var" {
+                    self.emit(Op::Enter(vec![declaration]));
+                }
+                self.emit(Op::Init(name.clone(), value, kind == "var"));
+                self.statement(body)?;
+                if kind != "var" {
+                    self.emit(Op::Exit);
+                }
+                self.emit(Op::Jump(again));
+                let exit = self.emit(Op::EndLoop);
+                let end = self.ops.len();
+                self.ops[branch] = Op::Branch(done, exit, body_start);
+                self.ops[handler] = Op::Loop(end, again);
             }
             s => {
                 self.emit(Op::Sync(s.clone()));
@@ -591,6 +630,7 @@ enum Phase {
 #[derive(Clone)]
 struct Handler {
     loop_to: Option<(usize, usize)>,
+    iterator: Option<usize>,
     catch: Option<usize>,
     finally: Option<usize>,
     end: usize,
@@ -716,7 +756,7 @@ impl Engine<'_> {
         &mut self,
         id: Id,
         frame: &mut Activation,
-        completion: Completion,
+        mut completion: Completion,
     ) -> Result<bool> {
         if let Completion::Return(v) | Completion::Throw(v) = &completion {
             self.protect(v)?;
@@ -728,21 +768,33 @@ impl Engine<'_> {
             };
             frame.envs.truncate(h.depth);
             if let Some((stop, again)) = h.loop_to {
-                match completion {
-                    Completion::Break => {
-                        frame.ip = stop;
-                        frame.handlers.pop();
-                        return Ok(false);
-                    }
-                    Completion::Continue => {
-                        frame.ip = again;
-                        return Ok(false);
-                    }
-                    _ => {
-                        frame.handlers.pop();
-                        continue;
+                if matches!(completion, Completion::Continue) {
+                    frame.ip = again;
+                    return Ok(false);
+                }
+                let iterator = h.iterator;
+                frame.handlers.pop();
+                if let Some(iterator) = iterator {
+                    let iterator = self.register(frame, iterator)?;
+                    let pending = if let Completion::Throw(value) = &completion {
+                        Err(self.thrown(value.clone()))
+                    } else {
+                        Ok(None)
+                    };
+                    match self.close_iterator(iterator, pending) {
+                        Ok(_) => {}
+                        Err(ScriptError::Thrown(error)) => {
+                            self.protect(&error.value)?;
+                            completion = Completion::Throw(error.value);
+                        }
+                        Err(error) => return Err(error),
                     }
                 }
+                if matches!(completion, Completion::Break) {
+                    frame.ip = stop;
+                    return Ok(false);
+                }
+                continue;
             }
             if matches!(completion, Completion::Throw(_))
                 && h.phase == Phase::Try
@@ -793,8 +845,40 @@ impl Engine<'_> {
                 let env = *frame.envs.last().unwrap();
                 let step = (|| -> Result<Option<Completion>> {
                     match op {
+                        Op::Iterator(source, iterator, next) => {
+                            let source = e.register(&frame, source)?;
+                            let method =
+                                e.get_member(source.clone(), super::objects::Key::Symbol(0))?;
+                            e.protect(&method)?;
+                            let (value, method) = e.open_iterator(source, method)?;
+                            e.store(&frame, iterator, value)?;
+                            e.store(&frame, next, method)?;
+                        }
+                        Op::IteratorNext(iterator, next, value, done) => {
+                            frame.handlers.last_mut().unwrap().iterator = None;
+                            let target = e.register(&frame, iterator)?;
+                            let next = e.register(&frame, next)?;
+                            let step = e.invoke_this(next, target, vec![])?;
+                            e.protect(&step)?;
+                            if !matches!(step, Value::Object(_)) {
+                                return e
+                                    .throw_error("TypeError", "iterator result is not an object");
+                            }
+                            let finished = e.get_member(step.clone(), "done")?.truthy();
+                            let result = if finished {
+                                Value::Undefined
+                            } else {
+                                e.get_member(step, "value")?
+                            };
+                            e.store(&frame, value, result)?;
+                            e.store(&frame, done, Value::Bool(finished))?;
+                            if !finished {
+                                frame.handlers.last_mut().unwrap().iterator = Some(iterator);
+                            }
+                        }
                         Op::Loop(stop, again) => frame.handlers.push(Handler {
                             loop_to: Some((stop, again)),
+                            iterator: None,
                             catch: None,
                             finally: None,
                             end: stop,
@@ -940,6 +1024,7 @@ impl Engine<'_> {
                             end,
                         } => frame.handlers.push(Handler {
                             loop_to: None,
+                            iterator: None,
                             catch,
                             finally,
                             end,

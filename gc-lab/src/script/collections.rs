@@ -181,12 +181,7 @@ impl Engine<'_> {
         self.protect(&method)?;
         self.consume_iterator(source, method, accept)
     }
-    pub(super) fn consume_iterator(
-        &mut self,
-        source: Value,
-        method: Value,
-        mut accept: impl FnMut(&mut Self, Value) -> Result<()>,
-    ) -> Result<()> {
+    pub(super) fn open_iterator(&mut self, source: Value, method: Value) -> Result<(Value, Value)> {
         let iterator = self.invoke_this(method, source, vec![])?;
         self.protect(&iterator)?;
         if !matches!(iterator, Value::Object(_)) {
@@ -194,6 +189,15 @@ impl Engine<'_> {
         }
         let next = self.get_member(iterator.clone(), "next")?;
         self.protect(&next)?;
+        Ok((iterator, next))
+    }
+    pub(super) fn consume_iterator(
+        &mut self,
+        source: Value,
+        method: Value,
+        mut accept: impl FnMut(&mut Self, Value) -> Result<()>,
+    ) -> Result<()> {
+        let (iterator, next) = self.open_iterator(source, method)?;
         loop {
             self.tick()?;
             let value = self.frame(|e| {

@@ -363,13 +363,7 @@ impl Engine<'_> {
         self.protect(&value)?;
         let method = self.get_member(value.clone(), Key::Symbol(0))?;
         self.protect(&method)?;
-        let iterator = self.invoke_this(method, value, vec![])?;
-        self.protect(&iterator)?;
-        if !matches!(iterator, Value::Object(_)) {
-            return self.throw_error("TypeError", "iterator is not object");
-        }
-        let next = self.get_member(iterator.clone(), "next")?;
-        self.protect(&next)?;
+        let (iterator, next) = self.open_iterator(value, method)?;
         loop {
             self.tick()?;
             let (done, completion) = self.frame(|e| {
