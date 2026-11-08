@@ -444,6 +444,7 @@ impl Engine<'_> {
                 ..Default::default()
             },
         )?;
+        self.bootstrap_typed_methods(env, base, proto, function)?;
         for (name, kind) in NAMES {
             let prototype = self.new_object(Some(proto))?;
             self.runtime.link(env, prototype)?;
@@ -539,10 +540,7 @@ impl Engine<'_> {
                     },
                 )
             }
-            _ => {
-                let _ = args;
-                Err(ScriptError::Unsupported("typed-array method"))
-            }
+            _ => self.typed_method(method, receiver, args),
         }
     }
 }

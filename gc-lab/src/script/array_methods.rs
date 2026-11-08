@@ -466,34 +466,7 @@ impl Engine<'_> {
                     }
                 }
                 let count = values.len();
-                let mut work = vec![Value::Undefined; count];
-                let mut width = 1;
-                while width < count {
-                    for start in (0..count).step_by(width * 2) {
-                        let middle = (start + width).min(count);
-                        let end = (middle + width).min(count);
-                        let (mut left, mut right) = (start, middle);
-                        for out in start..end {
-                            self.tick()?;
-                            let take_left = if left == middle {
-                                false
-                            } else if right == end {
-                                true
-                            } else {
-                                self.sort_compare(&compare, &values[left], &values[right])? <= 0
-                            };
-                            if take_left {
-                                work[out] = values[left].clone();
-                                left += 1;
-                            } else {
-                                work[out] = values[right].clone();
-                                right += 1;
-                            }
-                        }
-                    }
-                    std::mem::swap(&mut values, &mut work);
-                    width = width.saturating_mul(2);
-                }
+                self.stable_sort_values(&mut values, |e, a, b| e.sort_compare(&compare, a, b))?;
                 for (k, value) in values.into_iter().enumerate() {
                     self.set_member(receiver.clone(), k.to_string(), value)?;
                 }

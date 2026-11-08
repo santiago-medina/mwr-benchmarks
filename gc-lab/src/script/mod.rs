@@ -65,3 +65,6 @@ mod buffer_elements;
 mod buffers;
 
 mod typed_arrays;
+
+mod sorting;
+mod typed_methods;
