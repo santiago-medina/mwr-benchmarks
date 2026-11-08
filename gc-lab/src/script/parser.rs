@@ -73,8 +73,21 @@ pub enum Expr {
     Update(Box<Expr>, bool, bool),
     Conditional(Box<Expr>, Box<Expr>, Box<Expr>),
 }
+impl Expr {
+    pub fn anonymous_function(&self) -> bool {
+        matches!(
+            self,
+            Self::Arrow { .. }
+                | Self::AsyncArrow { .. }
+                | Self::Function { name: None, .. }
+                | Self::AsyncFunction { name: None, .. }
+                | Self::GeneratorFunction { name: None, .. }
+        )
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Property {
+    Computed(Expr, Box<Property>),
     Spread(Expr),
     Value(Expr),
     Prototype(Expr),
@@ -638,6 +651,111 @@ impl Parser<'_> {
         } else {
             Stmt::Declarations(declarations)
         })
+    }
+    fn literal_key(&mut self) -> Result<(String, Option<Expr>), SyntaxError> {
+        if self.punct('[') {
+            let key = self.sequence()?;
+            self.expect(']')?;
+            Ok((String::new(), Some(key)))
+        } else {
+            self.key().map(|key| (key, None))
+        }
+    }
+    fn object_property(&mut self, prototype: &mut bool) -> Result<(String, Property), SyntaxError> {
+        if self.op("...") {
+            return Ok((String::new(), Property::Spread(self.expression()?)));
+        }
+        let generator = self.op("*");
+        let identifier = matches!(self.current(), Token::Name(_));
+        let (mut key, mut computed) = self.literal_key()?;
+        let asynchronous = !generator
+            && computed.is_none()
+            && key == "async"
+            && !self.newline()
+            && (matches!(
+                self.current(),
+                Token::Name(_)
+                    | Token::String(_)
+                    | Token::Number(_)
+                    | Token::BigInt(_)
+                    | Token::Punct('[')
+            ) || self.current() == &Token::Op("*".into()));
+        if asynchronous {
+            if self.op("*") {
+                return Err(self.error("async generator methods are not implemented"));
+            }
+            (key, computed) = self.literal_key()?;
+        }
+        let property = if !generator && !asynchronous && self.punct(':') {
+            let value = self.expression()?;
+            if computed.is_none() && key == "__proto__" {
+                if *prototype {
+                    return Err(self.error("duplicate prototype literal"));
+                }
+                *prototype = true;
+                Property::Prototype(value)
+            } else {
+                Property::Value(value)
+            }
+        } else if !generator
+            && !asynchronous
+            && computed.is_none()
+            && (key == "get" || key == "set")
+            && !matches!(
+                self.current(),
+                Token::Punct('(') | Token::Punct(',') | Token::Punct('}')
+            )
+        {
+            let getter = key == "get";
+            (key, computed) = self.literal_key()?;
+            let params = self.params()?;
+            let body = self.block()?;
+            match (getter, params.as_slice()) {
+                (true, []) => Property::Getter(body),
+                (false, [param]) if !param.rest && param.default.is_none() => {
+                    Property::Setter(param.clone(), body)
+                }
+                _ => return Err(self.error("invalid accessor parameters")),
+            }
+        } else if generator || asynchronous || self.current() == &Token::Punct('(') {
+            let params = self.params()?;
+            let body = self.block()?;
+            Property::Value(if generator {
+                Expr::GeneratorFunction {
+                    name: None,
+                    params,
+                    body,
+                    method: true,
+                }
+            } else if asynchronous {
+                Expr::AsyncFunction {
+                    name: None,
+                    params,
+                    body,
+                    method: true,
+                }
+            } else {
+                Expr::Function {
+                    name: None,
+                    params,
+                    body,
+                    method: true,
+                }
+            })
+        } else {
+            if computed.is_some() || !identifier {
+                return Err(self.error("invalid shorthand property"));
+            }
+            Property::Value(Expr::Name(key.clone()))
+        };
+        Ok((
+            key,
+            if let Some(expression) = computed {
+                Property::Computed(expression, Box::new(property))
+            } else {
+                property
+            },
+        ))
     }
     fn params(&mut self) -> Result<Vec<Param>, SyntaxError> {
         self.expect('(')?;
@@ -1323,109 +1441,7 @@ impl Parser<'_> {
                 let mut prototype = false;
                 if !self.punct('}') {
                     loop {
-                        if self.op("*") {
-                            let key = self.key()?;
-                            let params = self.params()?;
-                            let body = self.block()?;
-                            props.push((
-                                key,
-                                Property::Value(Expr::GeneratorFunction {
-                                    name: None,
-                                    params,
-                                    body,
-                                    method: true,
-                                }),
-                            ));
-                            if self.punct('}') {
-                                break;
-                            }
-                            self.expect(',')?;
-                            if self.punct('}') {
-                                break;
-                            }
-                            continue;
-                        }
-                        if self.op("...") {
-                            let value = self.expression()?;
-                            props.push((String::new(), Property::Spread(value)));
-                            if self.punct('}') {
-                                break;
-                            }
-                            self.expect(',')?;
-                            if self.punct('}') {
-                                break;
-                            }
-                            continue;
-                        }
-                        let key = self.key()?;
-                        if key == "async"
-                            && matches!(
-                                self.current(),
-                                Token::Name(_)
-                                    | Token::String(_)
-                                    | Token::Number(_)
-                                    | Token::BigInt(_)
-                            )
-                        {
-                            let key = self.key()?;
-                            let params = self.params()?;
-                            let body = self.block()?;
-                            props.push((
-                                key,
-                                Property::Value(Expr::AsyncFunction {
-                                    name: None,
-                                    params,
-                                    body,
-                                    method: true,
-                                }),
-                            ));
-                            if self.punct('}') {
-                                break;
-                            }
-                            self.expect(',')?;
-                            if self.punct('}') {
-                                break;
-                            }
-                            continue;
-                        }
-                        let (key, p) = if self.punct(':') {
-                            let e = self.expression()?;
-                            if key == "__proto__" {
-                                if prototype {
-                                    return Err(self.error("duplicate prototype literal"));
-                                }
-                                prototype = true;
-                                (key, Property::Prototype(e))
-                            } else {
-                                (key, Property::Value(e))
-                            }
-                        } else if (key == "get" || key == "set")
-                            && self.current() != &Token::Punct('(')
-                        {
-                            let n = self.key()?;
-                            let p = self.params()?;
-                            let b = self.block()?;
-                            match (key.as_str(), p.as_slice()) {
-                                ("get", []) => (n, Property::Getter(b)),
-                                ("set", [p]) if !p.rest => (n, Property::Setter(p.clone(), b)),
-                                _ => return Err(self.error("invalid accessor parameters")),
-                            }
-                        } else if self.current() == &Token::Punct('(') {
-                            let params = self.params()?;
-                            let body = self.block()?;
-                            (
-                                key,
-                                Property::Value(Expr::Function {
-                                    name: None,
-                                    params,
-                                    body,
-                                    method: true,
-                                }),
-                            )
-                        } else {
-                            (key.clone(), Property::Value(Expr::Name(key)))
-                        };
-                        props.push((key, p));
+                        props.push(self.object_property(&mut prototype)?);
                         if self.punct('}') {
                             break;
                         }
@@ -1926,8 +1942,13 @@ fn validate_loop(
             Expr::Sequence(elements) => work.extend(elements.iter().map(|x| (x, d + 1))),
             Expr::Array(elements) => work.extend(elements.iter().flatten().map(|x| (x, d + 1))),
             Expr::Object(p) => {
-                for (_, p) in p {
+                let mut properties = p.iter().map(|(_, p)| p).collect::<Vec<_>>();
+                while let Some(p) = properties.pop() {
                     match p {
+                        Property::Computed(key, property) => {
+                            work.push((key, d + 1));
+                            properties.push(property);
+                        }
                         Property::Value(e) | Property::Prototype(e) | Property::Spread(e) => {
                             work.push((e, d + 1))
                         }

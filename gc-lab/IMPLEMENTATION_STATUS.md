@@ -77,3 +77,7 @@ Implemented string-pattern `replace`, `replaceAll`, and `split`, with object `Sy
 ### Multiple declarators (unverified)
 
 Added ordered declaration lists for `const`, `let`, and `var`, including destructuring, classic `for` initializers, and named module exports. A shared direct-statement expansion exposes each declaration to binding instantiation, lexical conflict checks, var hoisting and export collection without creating an artificial scope. Ordinary and resumable execution initialize declarators in source order. Per-iteration lexical copying includes all `let` declarators. No compilation or tests were run.
+
+### Computed object property names (unverified)
+
+Object literals now accept computed data, method, generator-method, async-method and accessor names, including symbol keys. Parser property handling is consolidated into one path; computed `__proto__` is an ordinary property. Ordinary execution converts keys before values. Resumable lowering captures canonical keys before evaluating suspending values and retains function creation at property definition. Anonymous functions receive inferred property names, including symbol descriptions; accessors receive get/set name prefixes. Async generator methods and `super` semantics remain unsupported. No compilation or tests were run.

@@ -675,7 +675,24 @@ impl Engine<'_> {
         Ok(Value::Object(id))
     }
     pub(super) fn literal_property(&mut self, id: Id, k: &str, p: &Literal, env: Id) -> Result<()> {
+        self.literal_property_key(id, Key::from(k), p, env)
+    }
+    fn literal_property_key(&mut self, id: Id, key: Key, p: &Literal, env: Id) -> Result<()> {
+        let display = match &key {
+            Key::String(name) => name.clone(),
+            Key::Symbol(id) => self
+                .symbol_description(*id)
+                .map(|s| format!("[{s}]"))
+                .unwrap_or_default(),
+        };
+        let k = display.as_str();
         let d = match p {
+            Literal::Computed(expression, property) => {
+                let value = self.eval(expression, env)?;
+                self.protect(&value)?;
+                let key = self.to_key(value)?;
+                return self.literal_property_key(id, key, property, env);
+            }
             Literal::Spread(expression) => {
                 let source = self.eval(expression, env)?;
                 return self.copy_properties(id, source, &[]);
@@ -697,6 +714,18 @@ impl Engine<'_> {
             Literal::Value(x) => {
                 let v = self.eval(x, env)?;
                 self.protect(&v)?;
+                if x.anonymous_function() {
+                    if let Value::Object(function) = &v {
+                        self.define(
+                            *function,
+                            "name",
+                            Descriptor {
+                                value: Some(Value::String(display.clone())),
+                                ..Descriptor::default()
+                            },
+                        )?;
+                    }
+                }
                 Descriptor {
                     value: Some(v),
                     writable: Some(true),
@@ -706,7 +735,14 @@ impl Engine<'_> {
                 }
             }
             Literal::Getter(b) => {
-                let f = self.make_function(env, Some(k), &[], b, FunctionKind::Method, false)?;
+                let f = self.make_function(
+                    env,
+                    Some(&format!("get {k}")),
+                    &[],
+                    b,
+                    FunctionKind::Method,
+                    false,
+                )?;
                 Descriptor {
                     get: Some(f),
                     enumerable: Some(true),
@@ -717,7 +753,7 @@ impl Engine<'_> {
             Literal::Setter(n, b) => {
                 let f = self.make_function(
                     env,
-                    Some(k),
+                    Some(&format!("set {k}")),
                     std::slice::from_ref(n),
                     b,
                     FunctionKind::Method,
@@ -731,7 +767,7 @@ impl Engine<'_> {
                 }
             }
         };
-        self.define(id, k, d)?;
+        self.define(id, key, d)?;
         Ok(())
     }
     fn eval_call(&mut self, f: &Expr, args: &[Expr], env: Id, new: bool) -> Result<Value> {

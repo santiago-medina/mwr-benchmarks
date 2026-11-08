@@ -35,7 +35,7 @@ impl Engine<'_> {
         self.symbol_descriptions.insert(id, description);
         Ok(Value::Symbol(id))
     }
-    fn symbol_description(&self, id: u64) -> Option<String> {
+    pub(super) fn symbol_description(&self, id: u64) -> Option<String> {
         if let Some(name) = WELL_KNOWN.get(id as usize) {
             Some(format!("Symbol.{name}"))
         } else {

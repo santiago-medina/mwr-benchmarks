@@ -71,22 +71,29 @@ fn expr_await(e: &Expr) -> bool {
     match e {
         Expr::Await(_) | Expr::Yield(..) => true,
         Expr::Sequence(items) => items.iter().any(expr_await),
-        Expr::GeneratorFunction{..}
+        Expr::GeneratorFunction { .. }
         | Expr::Function { .. }
         | Expr::Arrow { .. }
         | Expr::AsyncFunction { .. }
         | Expr::AsyncArrow { .. } => false,
         Expr::Conditional(a, b, c) => expr_await(a) || expr_await(b) || expr_await(c),
-        Expr::Member(a, _) | Expr::Unary(_, a) | Expr::Update(a, ..) | Expr::Spread(a) => expr_await(a),
+        Expr::Member(a, _) | Expr::Unary(_, a) | Expr::Update(a, ..) | Expr::Spread(a) => {
+            expr_await(a)
+        }
         Expr::Computed(a, b)
         | Expr::Binary(_, a, b)
         | Expr::Assign(a, b)
         | Expr::Compound(_, a, b) => expr_await(a) || expr_await(b),
         Expr::Call(a, b) | Expr::New(a, b) => expr_await(a) || b.iter().any(expr_await),
         Expr::Array(e) => e.iter().flatten().any(expr_await),
-        Expr::Object(props) => props
-            .iter()
-            .any(|(_, p)| matches!(p,Property::Value(e)|Property::Prototype(e)|Property::Spread(e) if expr_await(e))),
+        Expr::Object(props) => props.iter().any(|(_, p)| property_await(p)),
+        _ => false,
+    }
+}
+fn property_await(p: &Property) -> bool {
+    match p {
+        Property::Computed(key, property) => expr_await(key) || property_await(property),
+        Property::Value(e) | Property::Prototype(e) | Property::Spread(e) => expr_await(e),
         _ => false,
     }
 }
@@ -426,17 +433,27 @@ impl Compiler {
                 let out = self.reg();
                 self.emit(Op::Object(out));
                 for (key, p) in props {
-                    let p = match p {
-                        Property::Value(e) => Property::Value(read(self.expression(e)?)),
-                        Property::Prototype(e) => Property::Prototype(read(self.expression(e)?)),
-                        Property::Spread(e) => Property::Spread(read(self.expression(e)?)),
-                        p => p.clone(),
-                    };
+                    let p = self.property(out, p)?;
                     self.emit(Op::Property(out, key.clone(), p));
                 }
                 out
             }
             _ => return Err(ScriptError::Unsupported("await expression shape")),
+        })
+    }
+    fn property(&mut self, object: usize, p: &Property) -> Result<Property> {
+        Ok(match p {
+            Property::Computed(key, property) => {
+                let key = self.expression(key)?;
+                let canonical = self.reg();
+                self.emit(Op::PropertyKey(object, key, canonical));
+                Property::Computed(read(canonical), Box::new(self.property(object, property)?))
+            }
+            Property::Value(e) if e.anonymous_function() => p.clone(),
+            Property::Value(e) => Property::Value(read(self.expression(e)?)),
+            Property::Prototype(e) => Property::Prototype(read(self.expression(e)?)),
+            Property::Spread(e) => Property::Spread(read(self.expression(e)?)),
+            p => p.clone(),
         })
     }
     fn body(&mut self, body: &[Stmt], scope: bool) -> Result<()> {
