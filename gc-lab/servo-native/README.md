@@ -121,7 +121,7 @@ python3 gc-lab/servo-native/run_fetch.py --servo gc-lab/.servo-native/target/deb
 ```
 
 El runner sirve HTTP local y espera observaciones DOM nativas, manteniendo
-bloqueado el evento load con una imagen mientras continúa la red. Comprueba
+bloqueado el evento load con un contador nativo exclusivo de las pruebas mientras continúa la red. Comprueba
 éxito, 404, 204, fallo de conexión, CORS, CSP y navegación con un cuerpo pendiente.
 No usa el self-test de click sincrónico para simular una operación de red.
 Ver [FETCH.md](../FETCH.md) para límites y estado de la evidencia.
@@ -131,3 +131,13 @@ sin crear una entrada nueva por cada edición del intérprete. El archivo de
 fuentes verificado también se guarda antes de compilar, incluso si las pruebas
 posteriores fallan. Los cuatro paquetes de integración se siguen limpiando
 antes de cada compilación nativa.
+
+## Modulos ES con carga nativa
+
+[MODULES.md](../MODULES.md) describe el backend optativo
+`application/x-mwr-module`, inline o con `src`. `run_modules.py` verifica once
+escenarios HTTP, incluidos CSP, CORS, MIME, errores y navegación con una fuente
+pendiente. Los programas no se compilan en SpiderMonkey. El hito verificado
+está en `native-module-proof.json`, con `native-modules.png`. Las capturas usan
+bloqueadores de carga nativos exclusivos de las pruebas, sin peticiones de imagen
+que puedan retener el documento retirado.

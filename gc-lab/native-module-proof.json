@@ -1,0 +1,430 @@
+{
+  "tested_commit": "788f5209bcd199a5430e086c1bfa35379810b8f9",
+  "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+  "binary_sha256": "dd743a238e00682662d1714ea1f0645d9f82d517f0ec15b7c7b7868c085fc8e4",
+  "sources": {
+    "mwr.rs": "d2b8ad7cc938962176a9f2edd25b2269febe508a81e8c86fa84911285b2c675b",
+    "mwr_modules.rs": "630d08e51c780e99ae8285b4c23a8e27746b19abf69f5fa96a449883184fa0a0",
+    "mwr_network.rs": "3d542b98dc87aca52e2b709220a9d42847efc17ec10be575594743228b35c0d6",
+    "servo.patch": "e7954a6e2b5f0f2ae0f6471009fac099c9deaf0e9837cdc95dcba6af4c082250",
+    "run_modules.py": "aa5fe63b097803be7092da101497df8beccb9b93a3529cb42a9823e24bd43423"
+  },
+  "scenarios": {
+    "success": {
+      "proof": {
+        "status": "Evaluated",
+        "modules": 8,
+        "text": "modular | 1 | respuesta HTTP | ciclo | 1"
+      },
+      "requests": [
+        "/",
+        "/main.js",
+        "/counter.js",
+        "/format.js",
+        "/remote.js",
+        "/a.js",
+        "/shared.js",
+        "/b.js",
+        "/payload"
+      ],
+      "microtask_collections": 3
+    },
+    "external-entry": {
+      "proof": {
+        "status": "Evaluated",
+        "modules": 7,
+        "text": "modular | 1 | respuesta HTTP | ciclo | 1"
+      },
+      "requests": [
+        "/",
+        "/main.js",
+        "/remote.js",
+        "/format.js",
+        "/counter.js",
+        "/a.js",
+        "/b.js",
+        "/shared.js",
+        "/payload"
+      ],
+      "microtask_collections": 3
+    },
+    "connect-blocked": {
+      "proof": {
+        "status": "Evaluated",
+        "modules": 8,
+        "text": "modular | 1 | sin red | ciclo | 1"
+      },
+      "requests": [
+        "/",
+        "/main.js",
+        "/counter.js",
+        "/remote.js",
+        "/a.js",
+        "/format.js",
+        "/b.js",
+        "/shared.js"
+      ],
+      "microtask_collections": 2
+    },
+    "script-blocked": {
+      "proof": {
+        "status": "Errored(\"module body error: Blocked by Content-Security-Policy\")",
+        "modules": 1,
+        "text": "Pendiente"
+      },
+      "requests": [
+        "/"
+      ],
+      "microtask_collections": 0
+    },
+    "cors": {
+      "proof": {
+        "status": "Errored(\"module body error: CORS check failed\")",
+        "modules": 2,
+        "text": "Pendiente"
+      },
+      "requests": [
+        "/",
+        "/main.js",
+        "/remote.js"
+      ],
+      "microtask_collections": 0
+    },
+    "mime": {
+      "proof": {
+        "status": "Errored(\"module requires a JavaScript MIME type\")",
+        "modules": 4,
+        "text": "Pendiente"
+      },
+      "requests": [
+        "/",
+        "/main.js",
+        "/format.js",
+        "/counter.js",
+        "/remote.js",
+        "/a.js",
+        "/shared.js"
+      ],
+      "microtask_collections": 0
+    },
+    "http-error": {
+      "proof": {
+        "status": "Errored(\"module HTTP status is not successful\")",
+        "modules": 4,
+        "text": "Pendiente"
+      },
+      "requests": [
+        "/",
+        "/main.js",
+        "/format.js",
+        "/counter.js",
+        "/a.js",
+        "/remote.js",
+        "/shared.js"
+      ],
+      "microtask_collections": 0
+    },
+    "link-error": {
+      "proof": {
+        "status": "Errored(\"module link/evaluation: Thrown(Exception { name: Some(\\\"SyntaxError\\\"), message: \\\"imported export does not exist\\\", value: Object(Js(Handle { heap: 2, index: 131, serial: 274 })) })\")",
+        "modules": 3,
+        "text": "Pendiente"
+      },
+      "requests": [
+        "/",
+        "/main.js",
+        "/shared.js"
+      ],
+      "microtask_collections": 0
+    },
+    "evaluation-error": {
+      "proof": {
+        "status": "Errored(\"Error: module failure\")",
+        "modules": 2,
+        "text": "Pendiente"
+      },
+      "requests": [
+        "/",
+        "/main.js"
+      ],
+      "microtask_collections": 2
+    },
+    "navigation": {
+      "proof": {
+        "after": "navigated",
+        "native_fetch": false,
+        "native_modules": true,
+        "old_session_collected": true,
+        "old_document_collected": true,
+        "retired_completion_ignored": true
+      },
+      "requests": [
+        "/",
+        "/slow.js",
+        "/?after=1"
+      ],
+      "microtask_collections": 0
+    },
+    "disabled": {
+      "proof": {
+        "disabled": true
+      },
+      "requests": [
+        "/"
+      ],
+      "microtask_collections": 0
+    }
+  },
+  "javascript_transport": false,
+  "webdriver": false,
+  "workflow_run": 42421045635,
+  "workflow_url": "https://github.com/santiago-medina/mwr-benchmarks/actions/runs/42421045635",
+  "workflow_conclusion": "success",
+  "artifact_sha256": "6c758b28b929080d98fb5f506e69ae23531cf8fee566a7b4eaca04257d9fdd6c",
+  "contracts": {
+    "debug": 163,
+    "release": 163
+  },
+  "node_contracts": {
+    "node_version": "v24.22.1",
+    "total": 13,
+    "passed": 13,
+    "failures": [],
+    "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
+    "contracts_sha256": "3ccfc089b520dff30628207d71b730725d8fa6ca76e18791d613d411b6ee1955",
+    "runner_sha256": "816773c3037a4206265cfbae73efb7344ee915cf86ba19d14dfcc23a9adfe975",
+    "cases": [
+      {
+        "name": "imports_are_live_and_readonly",
+        "sources": {
+          "counter": "b79353617bad045247b37e2bd891842794886e9eb418cc816881203ef566eed7",
+          "main": "16707c1be5d65f947f3b92620943f927245dc19becf510a4e702102cadf0f415"
+        }
+      },
+      {
+        "name": "cyclic_functions_are_instantiated_before_evaluation",
+        "sources": {
+          "main": "5fdf9243a66fa87aa98e062b00f34664078fc646e723dd0f8fe3c894270f4535",
+          "b": "0b322a06ca68326ba4b9e68dce50c7388b590135ebe2e5902c38e50956580292"
+        }
+      },
+      {
+        "name": "reexports_and_default_imports_resolve_to_original_bindings",
+        "sources": {
+          "main": "ea4a5c553d7e04471b71553b82899dac8749d5f66b9d44c417716601e1b9827b",
+          "barrel": "1d879f3e6e11011f99422cd35a6780b5926746d83639291727988a7d1618e6e6",
+          "dep": "5e03dccfe83347e331df2b47ba490095b61e0fbc8af65b5bebc3bf3dde249c1e"
+        }
+      },
+      {
+        "name": "diamond_graph_executes_dependency_once",
+        "sources": {
+          "main": "b0c0d9e6071bd98f36ab64399ed30ee443a254bd745c7af2e4f932ed8c662ada",
+          "a": "f743c35947de09e6835d14b2a344d9fd5577601f343b489221e3be12ce5003e0",
+          "b": "59f6db49f98b550ae831312ffd45dc9c499b2daae4e72047758df0c54216f8c4",
+          "shared": "2b153cd2eb2e88d51b76ec4995596d2dc5448a783a43cffde469b1d395a5fb75"
+        }
+      },
+      {
+        "name": "top_level_await_holds_parent_and_preserves_live_exports",
+        "sources": {
+          "main": "200af466a4ee63f4430d3b4e52667eb0a4c76713cf410b5bb515b37a6e749574",
+          "dep": "f9e9732ce1328a21d71e5888a3cdfad4076cc457eb9d4464940f793d6aef6cd9"
+        }
+      },
+      {
+        "name": "asynchronous_cycle_waits_for_descendant_execution",
+        "sources": {
+          "main": "69fa2908db66365131bd477f393178a9504a4bc944aaeba689d20b6f94b047fe",
+          "b": "3c30e9062e7afbebb2d1ff0d86fd0df6c1cc0e89943b3894127a3f50ebd2b486"
+        }
+      },
+      {
+        "name": "missing_exports_fail_linking_before_any_effect",
+        "sources": {
+          "main": "f3e732a28cdf70c136fc921dd686b0ccf87e184c6eba7f9b46efaa037cc56990",
+          "dep": "03fba566178f639f593007e3c48450ad711e2232212a3314ce3625a57e817e4d"
+        }
+      },
+      {
+        "name": "independent_siblings_execute_while_an_async_dependency_waits",
+        "sources": {
+          "main": "b6a05a6f90152bcc126d57ec20a85ccc74571e12ee26b436bbdc0b1848070868",
+          "shared": "d8270edf48f551ac6ec292f3268dd77ebd09e981abea0f4ccfe8e87fc171d3c2",
+          "a": "4f0dbfd07822dddbe98e2c9f58d207ce0d0954c162b36fda7a5bbb0785b83bd5",
+          "b": "09c06ba07a6532fa16c67bfde9124a56718d3ac9db7dec2f56bc8cbd0d27038a"
+        }
+      },
+      {
+        "name": "default_function_declarations_are_hoisted_through_cycles",
+        "sources": {
+          "main": "66b2527da9ec4e28e87fa345a949cbfec238a33feceb6d38b3c297708e4a401e",
+          "dep": "5297ab63d09a05b983bc9f2a1b6c0d4bfcacfb0429df158459f27dcb90d69ae9"
+        }
+      },
+      {
+        "name": "rejection_is_cached_and_propagated_to_the_importer",
+        "sources": {
+          "main": "9428e81cceea78ef5333eb40e05fd83c74b2d5d1004558921cdb1464942a37a2",
+          "dep": "d8207417ea189d6bdcda48fee66675955e8b05357e69479559f41c19bd1ba98b"
+        }
+      },
+      {
+        "name": "self_import_does_not_wait_for_its_own_completion",
+        "sources": {
+          "main": "49a55090fa31cc7a3fc2ee5b3b103295af019accab9e2297ceda86e616c85ec3"
+        }
+      },
+      {
+        "name": "syntactic_top_level_await_remains_asynchronous_when_not_reached",
+        "sources": {
+          "main": "827e9e4ce23cb7b397ee64f5ed9f910ae75ae9e28dfe0c0c6ecacb5810787a9d",
+          "trace": "d8270edf48f551ac6ec292f3268dd77ebd09e981abea0f4ccfe8e87fc171d3c2",
+          "a": "5297d46ca9a59bb9d2775b977f738b398b72dabfafbfef197c1e9cb00e9be848"
+        }
+      },
+      {
+        "name": "rejection_before_await_does_not_skip_independent_siblings",
+        "sources": {
+          "main": "f9a319b833b759fd2cef2cbc36e800569ed41083035026e649e74250e7a6acb0",
+          "trace": "d8270edf48f551ac6ec292f3268dd77ebd09e981abea0f4ccfe8e87fc171d3c2",
+          "a": "9517a4b9d87d896fa09c9fb636a1c55ef8dc5c82fcf2ed1a7f94ed052d6bc988",
+          "b": "13de604cca81348f3ccf944afab2eb6e400b0ff0a157ece394bb73f55fe7d43f"
+        }
+      }
+    ]
+  },
+  "node_generated_graphs": {
+    "node_version": "v24.22.1",
+    "total": 96,
+    "passed": 96,
+    "failures": [],
+    "runner_sha256": "b2476d47a4b75746804b715313417d52ec543916917e570216ea17b01fb583ef"
+  },
+  "joint_gc_regression": {
+    "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+    "binary_sha256": "dd743a238e00682662d1714ea1f0645d9f82d517f0ec15b7c7b7868c085fc8e4",
+    "patch_sha256": "e7954a6e2b5f0f2ae0f6471009fac099c9deaf0e9837cdc95dcba6af4c082250",
+    "harness_sha256": "8e5c6bac7e1cca78f112fb57ff00f1a1db14b0da45bef47f32247d3b113f213f",
+    "module_sha256": "d2b8ad7cc938962176a9f2edd25b2269febe508a81e8c86fa84911285b2c675b",
+    "vm_sources_sha256": "98efb9858de75a18f2f5f682b9becd8f10ed9d7b171b3ba6c4db29cac50f97b3",
+    "native_finalization_observed": true,
+    "in_process": true,
+    "webdriver": false,
+    "javascript_transport": false,
+    "proof": {
+      "iterations": 1500,
+      "native_buttons_finalized": 3000,
+      "callbacks": 1500,
+      "recovered_errors": 89,
+      "baseline_vm_objects": 120,
+      "final_vm_objects": 120,
+      "persistent_native_handles": 1,
+      "escaped_invocation_pins": 0,
+      "manual_global_release": false,
+      "native_to_vm_to_native_survival": true,
+      "disconnected_js_root_survival": true,
+      "stale_ids_rejected": true,
+      "retired_realm_microtasks_ignored": 2,
+      "navigation_rounds": 2,
+      "old_sessions_destroyed": true,
+      "old_documents_finalized": true,
+      "old_global_native_nodes_finalized": true
+    }
+  },
+  "fetch_regression": {
+    "servo_revision": "aac43a3f31a259f04a574f5ec4e959c943ad7cc7",
+    "binary_sha256": "dd743a238e00682662d1714ea1f0645d9f82d517f0ec15b7c7b7868c085fc8e4",
+    "module_sha256": "3d542b98dc87aca52e2b709220a9d42847efc17ec10be575594743228b35c0d6",
+    "runner_sha256": "925a805a844d8e9bcd8f9f14172d0b27192c77c52abbf87665bf29658eecd210",
+    "patch_sha256": "e7954a6e2b5f0f2ae0f6471009fac099c9deaf0e9837cdc95dcba6af4c082250",
+    "tested_commit": "788f5209bcd199a5430e086c1bfa35379810b8f9",
+    "scenarios": {
+      "success": {
+        "after": "200|true|body from native networking",
+        "completions": [
+          "MWR_NATIVE_FETCH_COMPLETION 1 headers",
+          "MWR_NATIVE_FETCH_COMPLETION 2 body"
+        ],
+        "requests": [
+          "/",
+          "/data"
+        ],
+        "joint_gc_before_microtasks": 2
+      },
+      "http404": {
+        "after": "404|false|body from native networking",
+        "completions": [
+          "MWR_NATIVE_FETCH_COMPLETION 1 headers",
+          "MWR_NATIVE_FETCH_COMPLETION 2 body"
+        ],
+        "requests": [
+          "/",
+          "/missing"
+        ],
+        "joint_gc_before_microtasks": 2
+      },
+      "empty": {
+        "after": "204|true|",
+        "completions": [
+          "MWR_NATIVE_FETCH_COMPLETION 1 headers"
+        ],
+        "requests": [
+          "/",
+          "/empty"
+        ],
+        "joint_gc_before_microtasks": 2
+      },
+      "network-error": {
+        "after": "TypeError",
+        "completions": [
+          "MWR_NATIVE_FETCH_COMPLETION 1 headers"
+        ],
+        "requests": [
+          "/",
+          "/drop"
+        ],
+        "joint_gc_before_microtasks": 1
+      },
+      "cors": {
+        "after": "TypeError",
+        "completions": [
+          "MWR_NATIVE_FETCH_COMPLETION 1 headers"
+        ],
+        "requests": [
+          "/",
+          "/data"
+        ],
+        "joint_gc_before_microtasks": 1
+      },
+      "csp": {
+        "after": "TypeError",
+        "completions": [
+          "MWR_NATIVE_FETCH_COMPLETION 1 headers"
+        ],
+        "requests": [
+          "/"
+        ],
+        "joint_gc_before_microtasks": 1
+      },
+      "navigation": {
+        "after": "navigated",
+        "completions": [
+          "MWR_NATIVE_FETCH_COMPLETION 1 headers",
+          "MWR_NATIVE_FETCH_COMPLETION 2 body"
+        ],
+        "requests": [
+          "/",
+          "/slow",
+          "/?after=1"
+        ],
+        "joint_gc_before_microtasks": 2
+      }
+    },
+    "native_fetch": true,
+    "javascript_transport": false,
+    "webdriver": false
+  },
+  "native_compile_seconds": 81,
+  "source_and_dependency_caches_restored": true
+}
