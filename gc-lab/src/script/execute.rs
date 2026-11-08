@@ -776,24 +776,27 @@ impl Engine<'_> {
             }) => true,
             Some(Object::Bound { target, .. }) => self.constructible(target),
             Some(Object::Builtin { name, .. }) => {
-                matches!(
-                    name.as_str(),
-                    "Promise"
-                        | "ArrayBuffer"
-                        | "DataView"
-                        | "Array"
-                        | "Map"
-                        | "Set"
-                        | "Object"
-                        | "Function"
-                        | "AsyncFunction"
-                        | "String"
-                        | "Number"
-                        | "Boolean"
-                ) || self
-                    .intrinsics
-                    .as_ref()
-                    .is_some_and(|i| i.errors.contains_key(name))
+                super::typed_arrays::kind(name).is_some()
+                    || name == "%TypedArray%"
+                    || matches!(
+                        name.as_str(),
+                        "Promise"
+                            | "ArrayBuffer"
+                            | "DataView"
+                            | "Array"
+                            | "Map"
+                            | "Set"
+                            | "Object"
+                            | "Function"
+                            | "AsyncFunction"
+                            | "String"
+                            | "Number"
+                            | "Boolean"
+                    )
+                    || self
+                        .intrinsics
+                        .as_ref()
+                        .is_some_and(|i| i.errors.contains_key(name))
             }
             _ => false,
         }
@@ -824,6 +827,10 @@ impl Engine<'_> {
                 )
             }
             Some(Object::Builtin { name, .. }) => {
+                if super::typed_arrays::kind(&name).is_some() {
+                    return self.construct_typed(&name, new_target, args);
+                }
+
                 if matches!(name.as_str(), "ArrayBuffer" | "DataView") {
                     return self.construct_buffer(&name, new_target, args);
                 }

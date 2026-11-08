@@ -258,6 +258,9 @@ impl Engine<'_> {
                 let Some(target) = state.target else {
                     return self.iterator_result(Value::Undefined, true);
                 };
+                if self.data(target)?.typed.is_some() {
+                    self.typed_record(Value::Object(target))?;
+                }
                 let len = self.length_of(target)?;
                 let mut d = self.data(id)?.clone();
                 let next = d.iterator.as_mut().unwrap();

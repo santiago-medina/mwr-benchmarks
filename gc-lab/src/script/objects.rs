@@ -91,6 +91,7 @@ pub(super) struct Data {
     pub source: Option<String>,
     pub buffer: Option<super::buffers::Store>,
     pub view: Option<super::buffers::View>,
+    pub typed: Option<super::typed_arrays::Typed>,
     pub enumeration: Option<super::enumeration::Cursor>,
     pub arguments: bool,
     pub array: bool,
@@ -117,6 +118,7 @@ impl Data {
             source: None,
             buffer: None,
             view: None,
+            typed: None,
             enumeration: None,
             arguments: false,
             array: false,
@@ -140,6 +142,7 @@ impl Data {
             .chain(self.collection_cursor.as_ref().and_then(|c| c.target))
             .chain(self.enumeration.as_ref().and_then(|c| c.current))
             .chain(self.view.as_ref().map(|v| v.buffer))
+            .chain(self.typed.as_ref().map(|t| t.view.buffer))
             .chain(self.boxed.as_ref().and_then(Value::id))
             .chain(self.iterator.as_ref().and_then(|i| i.target))
             .chain(self.request.as_ref().into_iter().flat_map(|r| r.edges()))
@@ -285,6 +288,9 @@ impl Engine<'_> {
         Ok(())
     }
     pub(super) fn new_object(&mut self, prototype: Option<Id>) -> Result<Id> {
+        if let Some(prototype) = prototype {
+            self.protect(&Value::Object(prototype))?;
+        }
         let id = self.allocate(Domain::Js, -500)?;
         self.objects.insert(id, Object::Ordinary(Data::new(None)));
         self.replace_data(id, Data::new(prototype))?;
@@ -292,11 +298,27 @@ impl Engine<'_> {
     }
     pub(super) fn own(&self, id: Id, key: impl Into<Key>) -> Result<Option<Property>> {
         let key = key.into();
+        if let Some(typed) = &self.data(id)?.typed {
+            if let Some(index) = super::typed_arrays::numeric_index(&key) {
+                let value = self.typed_get(typed, index)?;
+                return Ok(if value == Value::Undefined {
+                    None
+                } else {
+                    Some(Property::data(value, true, true, true))
+                });
+            }
+        }
         Ok(self.data(id)?.own(&key).cloned())
     }
     pub(super) fn has(&self, mut id: Id, key: impl Into<Key>) -> Result<bool> {
         let key = key.into();
         for _ in 0..10_000 {
+            if let Some(typed) = &self.data(id)?.typed {
+                if let Some(index) = super::typed_arrays::numeric_index(&key) {
+                    return self.typed_valid(typed, index);
+                }
+            }
+
             if self.own(id, &key)?.is_some() {
                 return Ok(true);
             }
@@ -319,6 +341,11 @@ impl Engine<'_> {
             let Some(id) = at else {
                 return Ok(Value::Undefined);
             };
+            if let Some(typed) = &self.data(id)?.typed {
+                if let Some(index) = super::typed_arrays::numeric_index(&key) {
+                    return self.typed_get(typed, index);
+                }
+            }
             if let Some(p) = self.own(id, &key)? {
                 return match p.kind {
                     Kind::Data { value, .. } => Ok(value),
@@ -339,6 +366,11 @@ impl Engine<'_> {
         let key = key.into();
         if d.data() && d.accessor() {
             return self.throw_error("TypeError", "mixed descriptor");
+        }
+        if let Some(typed) = self.data(id)?.typed.clone() {
+            if let Some(index) = super::typed_arrays::numeric_index(&key) {
+                return self.typed_define(&typed, index, d);
+            }
         }
         if self.data(id)?.array {
             return self.array_define(id, key, d);
@@ -381,6 +413,17 @@ impl Engine<'_> {
         let mut found = None;
         for _ in 0..10_000 {
             let Some(id) = at else { break };
+            if let Some(typed) = self.data(id)?.typed.clone() {
+                if let Some(index) = super::typed_arrays::numeric_index(&key) {
+                    if receiver == Value::Object(id) {
+                        self.typed_write(&typed, index, value)?;
+                        return Ok(true);
+                    }
+                    if !self.typed_valid(&typed, index)? {
+                        return Ok(true);
+                    }
+                }
+            }
             if let Some(p) = self.own(id, &key)? {
                 found = Some(p);
                 break;
@@ -439,6 +482,11 @@ impl Engine<'_> {
     }
     pub(super) fn delete(&mut self, id: Id, key: impl Into<Key>) -> Result<bool> {
         let key = key.into();
+        if let Some(typed) = &self.data(id)?.typed {
+            if let Some(index) = super::typed_arrays::numeric_index(&key) {
+                return self.typed_valid(typed, index).map(|valid| !valid);
+            }
+        }
         if self.own(id, &key)?.is_some_and(|p| !p.configurable) {
             return Ok(false);
         }
@@ -527,6 +575,27 @@ impl Engine<'_> {
         Ok(Value::Object(id))
     }
     pub(super) fn own_keys(&self, id: Id) -> Result<Vec<Key>> {
+        if let Some(typed) = &self.data(id)?.typed {
+            let length = self.typed_length(typed)?.unwrap_or(0);
+            let mut keys: Vec<_> = (0..length)
+                .map(|index| Key::from(index.to_string()))
+                .collect();
+            keys.extend(
+                self.data(id)?
+                    .properties
+                    .iter()
+                    .filter(|(key, _)| matches!(key, Key::String(_)))
+                    .map(|(key, _)| key.clone()),
+            );
+            keys.extend(
+                self.data(id)?
+                    .properties
+                    .iter()
+                    .filter(|(key, _)| matches!(key, Key::Symbol(_)))
+                    .map(|(key, _)| key.clone()),
+            );
+            return Ok(keys);
+        }
         let mut indices = vec![];
         let mut strings = vec![];
         let mut symbols = vec![];

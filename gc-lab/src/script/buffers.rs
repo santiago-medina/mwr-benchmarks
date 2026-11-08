@@ -361,7 +361,7 @@ impl Engine<'_> {
         }
         if name == "ArrayBuffer.isView" {
             return Ok(Value::Bool(
-                matches!(arg(0),Value::Object(id) if self.data(id).is_ok_and(|d|d.view.is_some())),
+                matches!(arg(0),Value::Object(id) if self.data(id).is_ok_and(|d|d.view.is_some()||d.typed.is_some())),
             ));
         }
         let method = name.rsplit('.').next().unwrap();

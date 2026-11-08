@@ -388,6 +388,7 @@ impl Engine<'_> {
             "DataView",
             "%ThrowTypeError%",
         ];
+        names.extend(super::typed_arrays::NAMES.iter().map(|(name, _)| *name));
         names.extend(ERRORS.iter().copied());
         if self.test_harness {
             names.extend(["assert", "$ERROR", "$DONE"]);
@@ -475,6 +476,7 @@ impl Engine<'_> {
         self.bootstrap_enumeration(env, iterator)?;
         self.bootstrap_bigint(env, &mut objects)?;
         self.bootstrap_buffers(env, &mut objects)?;
+        self.bootstrap_typed(env, &mut objects)?;
         let constructors: Vec<_> = self
             .intrinsics
             .as_ref()
@@ -516,6 +518,9 @@ impl Engine<'_> {
         )?;
         let next = self.intrinsic_function(env, "%ArrayIteratorPrototype%.next", Some(function))?;
         self.hidden(array_iterator, "next", Value::Object(next))?;
+        let to_string = self.intrinsics.as_ref().unwrap().functions["Array.prototype.toString"];
+        let typed_proto = self.intrinsics.as_ref().unwrap().collection["TypedArray"];
+        self.hidden(typed_proto, "toString", Value::Object(to_string))?;
         let values = self.intrinsics.as_ref().unwrap().functions["Array.prototype.values"];
         self.hidden(array, super::objects::Key::Symbol(0), Value::Object(values))?;
         let species = self.intrinsic_function(env, "Array.species", Some(function))?;
@@ -843,6 +848,9 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if super::typed_arrays::kind(name).is_some() || name.starts_with("%TypedArray%") {
+            return self.typed_builtin(name, receiver, args);
+        }
         if matches!(name, "ArrayBuffer" | "DataView")
             || name.starts_with("ArrayBuffer.")
             || name.starts_with("DataView.")
@@ -1301,6 +1309,28 @@ impl Engine<'_> {
             }
             "isExtensible" => Ok(Value::Bool(self.data(id)?.extensible)),
             "preventExtensions" | "seal" | "freeze" => {
+                if let Some(typed) = self.data(id)?.typed.clone() {
+                    if !self.typed_fixed(&typed)? {
+                        return if reflect {
+                            Ok(Value::Bool(false))
+                        } else {
+                            self.throw_error(
+                                "TypeError",
+                                "resizable typed-array extensions cannot be prevented",
+                            )
+                        };
+                    }
+                    if method != "preventExtensions" && self.typed_length(&typed)?.unwrap_or(0) != 0
+                    {
+                        let mut data = self.data(id)?.clone();
+                        data.extensible = false;
+                        self.replace_data(id, data)?;
+                        return self.throw_error(
+                            "TypeError",
+                            "typed-array elements cannot be sealed or frozen",
+                        );
+                    }
+                }
                 let mut d = self.data(id)?.clone();
                 d.extensible = false;
                 if method != "preventExtensions" {
@@ -1321,6 +1351,11 @@ impl Engine<'_> {
                 })
             }
             "isSealed" | "isFrozen" => {
+                if let Some(typed) = &self.data(id)?.typed {
+                    if self.typed_length(typed)?.unwrap_or(0) != 0 {
+                        return Ok(Value::Bool(false));
+                    }
+                }
                 let d = self.data(id)?;
                 Ok(Value::Bool(
                     !d.extensible

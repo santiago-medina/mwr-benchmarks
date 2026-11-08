@@ -56,6 +56,9 @@ impl Engine<'_> {
         } else {
             None
         };
+        if let Some(prototype) = prototype {
+            self.protect(&Value::Object(prototype))?;
+        }
         let global = self.global.ok_or(ScriptError::Runtime(
             "dynamic function without global environment",
         ))?;

@@ -63,3 +63,5 @@ mod bigint_vm;
 
 mod buffer_elements;
 mod buffers;
+
+mod typed_arrays;
