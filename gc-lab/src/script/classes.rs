@@ -88,12 +88,7 @@ impl Engine<'_> {
             }
         }
     }
-    fn method_function(
-        &mut self,
-        env: Id,
-        name: &str,
-        method: &Expr,
-    ) -> Result<Value> {
+    fn method_function(&mut self, env: Id, name: &str, method: &Expr) -> Result<Value> {
         let (params, body, kind) = match method {
             Expr::Function { params, body, .. } => (params, body, FunctionKind::Method),
             Expr::GeneratorFunction { params, body, .. } => {
@@ -156,7 +151,9 @@ impl Engine<'_> {
         self.protect(&Value::Object(proto))?;
         self.initialize(scope, "%home", Value::Object(proto))?;
         let derived = class.heritage.is_some();
-        let forward = vec![Stmt::Expr(Expr::SuperCall(vec![Expr::Name("%forward".into())]))];
+        let forward = vec![Stmt::Expr(Expr::SuperCall(vec![Expr::Name(
+            "%forward".into(),
+        )]))];
         let (params, body): (&[Param], &[Stmt]) = match &class.constructor {
             Some((p, b)) => (p, b),
             None if derived => (&[], &forward),
@@ -566,7 +563,12 @@ impl Engine<'_> {
         };
         Ok((this, target))
     }
-    pub(super) fn super_get(&mut self, this: Value, target: Option<Id>, key: &Key) -> Result<Value> {
+    pub(super) fn super_get(
+        &mut self,
+        this: Value,
+        target: Option<Id>,
+        key: &Key,
+    ) -> Result<Value> {
         let Some(target) = target else {
             return self.throw_error("TypeError", "super base is null");
         };
@@ -643,9 +645,9 @@ impl Engine<'_> {
         };
         match property.map(|p| p.kind) {
             None => self.throw_error("TypeError", "private member not present"),
-            Some(Kind::Data { writable: false, .. }) => {
-                self.throw_error("TypeError", "private method is not writable")
-            }
+            Some(Kind::Data {
+                writable: false, ..
+            }) => self.throw_error("TypeError", "private method is not writable"),
             Some(Kind::Data { .. }) => {
                 let mut data = self.data(id)?.clone();
                 if let Some((_, p)) = data.properties.iter_mut().find(|(k, _)| *k == key) {

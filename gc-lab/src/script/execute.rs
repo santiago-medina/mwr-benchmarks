@@ -926,10 +926,8 @@ impl Engine<'_> {
                     return match result {
                         Some(v @ Value::Object(_)) => Ok(v),
                         Some(Value::Undefined) | None => self.lookup(local, "this"),
-                        Some(_) => self.throw_error(
-                            "TypeError",
-                            "derived constructor returned a non-object",
-                        ),
+                        Some(_) => self
+                            .throw_error("TypeError", "derived constructor returned a non-object"),
                     };
                 }
                 Ok(result.unwrap_or(Value::Undefined))

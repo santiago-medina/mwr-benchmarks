@@ -1402,8 +1402,8 @@ impl Engine<'_> {
                         && d.properties.iter().all(|(k, p)| {
                             self.is_private(k)
                                 || !p.configurable
-                                && (method != "isFrozen"
-                                    || !matches!(p.kind, Kind::Data { writable: true, .. }))
+                                    && (method != "isFrozen"
+                                        || !matches!(p.kind, Kind::Data { writable: true, .. }))
                         }),
                 ))
             }

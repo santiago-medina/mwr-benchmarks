@@ -22,7 +22,9 @@ impl Engine<'_> {
             .collect();
         let pending = if matches!(
             kind,
-            FunctionKind::Ordinary | FunctionKind::ClassConstructor | FunctionKind::DerivedConstructor
+            FunctionKind::Ordinary
+                | FunctionKind::ClassConstructor
+                | FunctionKind::DerivedConstructor
         ) {
             self.pending_construct.take()
         } else {

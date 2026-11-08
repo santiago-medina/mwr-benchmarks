@@ -903,7 +903,10 @@ impl Parser<'_> {
         if let Token::PrivateName(name) = self.current().clone() {
             self.take();
             self.private_reference(&name)?;
-            return Ok(Expr::Computed(Box::new(e), Box::new(Expr::PrivateName(name))));
+            return Ok(Expr::Computed(
+                Box::new(e),
+                Box::new(Expr::PrivateName(name)),
+            ));
         }
         Ok(Expr::Member(Box::new(e), self.key()?))
     }
@@ -1056,10 +1059,9 @@ impl Parser<'_> {
                     Some(false) => 2,
                     None => 0,
                 };
-                if privates
-                    .iter()
-                    .any(|(m, s, t)| m == n && (tag == 0 || *t == 0 || *t == tag || *s != is_static))
-                {
+                if privates.iter().any(|(m, s, t)| {
+                    m == n && (tag == 0 || *t == 0 || *t == tag || *s != is_static)
+                }) {
                     return Err(self.error("duplicate private name"));
                 }
                 privates.push((n.clone(), is_static, tag));
