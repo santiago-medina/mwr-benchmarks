@@ -856,6 +856,7 @@ impl Engine<'_> {
                             | "Function"
                             | "AsyncFunction"
                             | "GeneratorFunction"
+                            | "Date"
                             | "String"
                             | "Number"
                             | "Boolean"
@@ -894,6 +895,9 @@ impl Engine<'_> {
                 )
             }
             Some(Object::Builtin { name, .. }) => {
+                if name == "Date" {
+                    return self.construct_date(new_target, args);
+                }
                 if name == "GeneratorFunction" {
                     return self.dynamic_function_kind(
                         FunctionKind::Generator,
@@ -1212,7 +1216,11 @@ impl Engine<'_> {
             }
             return Ok(value);
         }
-        for name in if hint == "string" {
+        self.ordinary_to_primitive(v, hint == "string")
+    }
+    pub(super) fn ordinary_to_primitive(&mut self, v: Value, string: bool) -> Result<Value> {
+        self.protect(&v)?;
+        for name in if string {
             ["toString", "valueOf"]
         } else {
             ["valueOf", "toString"]

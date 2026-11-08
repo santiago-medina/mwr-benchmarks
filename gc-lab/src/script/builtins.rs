@@ -386,6 +386,7 @@ impl Engine<'_> {
             "BigInt",
             "ArrayBuffer",
             "DataView",
+            "Date",
             "%ThrowTypeError%",
         ];
         names.extend(super::typed_arrays::NAMES.iter().map(|(name, _)| *name));
@@ -478,6 +479,7 @@ impl Engine<'_> {
         self.bootstrap_buffers(env, &mut objects)?;
         self.bootstrap_typed(env, &mut objects)?;
         self.bootstrap_generators(env, &mut objects, iterator)?;
+        self.bootstrap_dates(env, &mut objects)?;
         let constructors: Vec<_> = self
             .intrinsics
             .as_ref()
@@ -857,6 +859,9 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name == "Date" || name.starts_with("Date.") {
+            return self.date_builtin(name, receiver, args);
+        }
         if name.starts_with("%Generator%.") {
             return self.generator_builtin(name, receiver, args);
         }
@@ -1113,7 +1118,9 @@ impl Engine<'_> {
                     _ if self.callable(&receiver) => "Function",
                     Value::Object(id) => {
                         let d = self.data(*id)?;
-                        if d.array {
+                        if d.date.is_some() {
+                            "Date"
+                        } else if d.array {
                             "Array"
                         } else if d.iterator.is_some() {
                             "Array Iterator"
