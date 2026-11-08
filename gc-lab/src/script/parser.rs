@@ -1580,7 +1580,9 @@ impl Parser<'_> {
             let save = self.cursor;
             self.take();
             if self.word("function") {
-                let generator = self.op("*");
+                if self.op("*") {
+                    return Err(self.error("unsupported async generator"));
+                }
                 let name = if self.current() == &Token::Punct('(') {
                     None
                 } else {
@@ -1608,6 +1610,7 @@ impl Parser<'_> {
         }
 
         if self.word("function") {
+            let generator = self.op("*");
             let name = if self.current() == &Token::Punct('(') {
                 None
             } else {

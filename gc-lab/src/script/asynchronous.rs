@@ -215,12 +215,12 @@ impl Compiler {
             }
             Expr::Computed(base, key) => {
                 let base = self.expression(base)?;
+                // The key value is saved but ToPropertyKey (and the base's
+                // ToObject) wait for GetValue/PutValue, after any suspension.
                 let key = self.expression(key)?;
-                let canonical = self.reg();
-                self.emit(Op::PropertyKey(base, key, canonical));
                 Ok((
                     base,
-                    Expr::Computed(Box::new(read(base)), Box::new(read(canonical))),
+                    Expr::Computed(Box::new(read(base)), Box::new(read(key))),
                 ))
             }
             _ => Err(ScriptError::Unsupported("async reference")),

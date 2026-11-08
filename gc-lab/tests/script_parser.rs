@@ -1,4 +1,4 @@
-use gc_lab::script::parser::{parse, Expr, Stmt};
+use gc_lab::script::parser::{parse, Expr, Param, Stmt};
 
 #[test]
 fn parses_requested_program_without_recognizing_a_hardcoded_source_string() {
@@ -12,7 +12,9 @@ fn parses_requested_program_without_recognizing_a_hardcoded_source_string() {
 #[test]
 fn parses_parameters_returns_grouping_and_unicode_strings() {
     let ast = parse("const f = (x) => { return x; }; (f)('Sí\\n');").unwrap();
-    assert!(matches!(&ast[0], Stmt::Const(_, Expr::Arrow { params, .. }) if params == &["x"]));
+    assert!(
+        matches!(&ast[0], Stmt::Const(_, Expr::Arrow { params, .. }) if params == &[Param::from("x".to_string())])
+    );
 }
 #[test]
 fn rejects_unsupported_or_malformed_input_with_an_offset() {

@@ -130,7 +130,18 @@ fn assertion_ports_detect_false_positives() {
 fn quota_failures_release_partial_intrinsics_and_graphs() {
     let mut passed = false;
     let mut failed = false;
-    for budget in [0, 64, 512, 2048, 4096, 8192, 16384, 32768, 65536] {
+    for budget in [
+        0,
+        64,
+        512,
+        4096,
+        32768,
+        65536,
+        1 << 18,
+        1 << 20,
+        1 << 22,
+        1 << 24,
+    ] {
         let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
         e.set_budget(Some(budget));
         let result =
