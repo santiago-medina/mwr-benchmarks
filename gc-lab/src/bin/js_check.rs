@@ -1,4 +1,5 @@
 //! One strict-script Test262 case per process; no source rewriting or helper stubs.
+//! `--include=FILE` prepends an official harness include (as the reference runner does).
 use gc_lab::{
     script::{Engine, ScriptError},
     Model,
@@ -26,11 +27,21 @@ fn main() {
         .expect("js_check CASE.js [expected runtime error]");
     let remaining: Vec<_> = args.collect();
     let asynchronous = remaining.iter().any(|s| s == "--async");
-    let negative = remaining.into_iter().find(|s| s != "--async");
+    let mut includes = String::new();
+    for file in remaining
+        .iter()
+        .filter_map(|s| s.strip_prefix("--include="))
+    {
+        includes.push_str(&std::fs::read_to_string(file).expect("include"));
+        includes.push('\n');
+    }
+    let negative = remaining
+        .into_iter()
+        .find(|s| s != "--async" && !s.starts_with("--include="));
     let source = std::fs::read_to_string(path).expect("source");
     let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
     e.enable_test_harness();
-    let mut result = e.execute(&format!("\"use strict\";\n{source}"));
+    let mut result = e.execute(&format!("\"use strict\";\n{includes}{source}"));
     if result.is_ok() {
         result = e.microtask_checkpoint(10_000).map(|_| ());
     }

@@ -582,7 +582,7 @@ impl<'host> Engine<'host> {
                 "standard intrinsic not implemented",
             ));
         }
-        self.throw_error("ReferenceError", "unknown identifier")
+        self.throw_error("ReferenceError", &format!("{name} is not defined"))
     }
     pub(super) fn initialize(&mut self, env: Id, name: &str, value: Value) -> Result<()> {
         if matches!(self.objects.get(&env), Some(Object::Environment{object_bindings,..}) if object_bindings.contains(name))
@@ -659,7 +659,9 @@ impl<'host> Engine<'host> {
             }
             match parent {
                 Some(p) => env = *p,
-                None => return self.throw_error("ReferenceError", "unknown identifier"),
+                None => {
+                    return self.throw_error("ReferenceError", &format!("{name} is not defined"))
+                }
             }
         }
     }

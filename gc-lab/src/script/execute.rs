@@ -1079,7 +1079,7 @@ impl Engine<'_> {
                 Err(ScriptError::Thrown(ex))
                     if matches!(x, Expr::Name(_))
                         && ex.name.as_deref() == Some("ReferenceError")
-                        && ex.message == "unknown identifier" =>
+                        && ex.message.ends_with(" is not defined") =>
                 {
                     Value::Undefined
                 }

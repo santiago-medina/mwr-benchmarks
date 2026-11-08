@@ -10,7 +10,7 @@ def main():
     a.output.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory() as temp:
         archive=Path(temp)/'test262.tar.gz';urllib.request.urlretrieve(f'https://codeload.github.com/tc39/test262/tar.gz/{REVISION}',archive)
-        assert hashlib.file_digest(archive.open('rb'),'sha256').hexdigest()==SHA256
+        assert hashlib.sha256(archive.read_bytes()).hexdigest()==SHA256
         with tarfile.open(archive) as tar:
             for member in tar:
                 pieces=Path(member.name).parts
