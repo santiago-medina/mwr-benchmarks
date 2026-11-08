@@ -214,6 +214,8 @@ impl Engine<'_> {
             "Symbol.prototype.description"
             | "Symbol.prototype.toString"
             | "Symbol.prototype.valueOf" => 0,
+            "BigInt.asIntN" | "BigInt.asUintN" => 2,
+            "BigInt.prototype.valueOf" => 0,
             "AggregateError"
             | "Object.hasOwn"
             | "Object.groupBy"
@@ -381,6 +383,7 @@ impl Engine<'_> {
             "String",
             "Number",
             "Boolean",
+            "BigInt",
             "%ThrowTypeError%",
         ];
         names.extend(ERRORS.iter().copied());
@@ -468,6 +471,7 @@ impl Engine<'_> {
         self.bootstrap_strings(env, &mut objects, iterator)?;
         self.bootstrap_symbols(env, &mut objects)?;
         self.bootstrap_enumeration(env, iterator)?;
+        self.bootstrap_bigint(env, &mut objects)?;
         let constructors: Vec<_> = self
             .intrinsics
             .as_ref()
@@ -671,6 +675,7 @@ impl Engine<'_> {
             Value::Bool(_) => "Boolean",
             Value::Object(id) => return Ok(*id),
             Value::Symbol(_) => "Symbol",
+            Value::BigInt(_) => "BigInt",
             _ => return self.throw_error("TypeError", "cannot box value"),
         };
         let ctor = self.intrinsics.as_ref().unwrap().functions[name];
@@ -835,6 +840,9 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name == "BigInt" || name.starts_with("BigInt.") {
+            return self.bigint_builtin(name, receiver, args);
+        }
         if name == "%ForInIteratorPrototype%.next" {
             return self.enumeration_next(receiver);
         }
@@ -1019,11 +1027,17 @@ impl Engine<'_> {
                 }))
             }
             "Number" => {
-                return Ok(Value::number(if args.is_empty() {
+                let value = if args.is_empty() {
                     0.0
                 } else {
-                    self.to_number(arg(0))?
-                }))
+                    let primitive = self.to_primitive(arg(0), false)?;
+                    if let Value::BigInt(value) = primitive {
+                        value.to_float()
+                    } else {
+                        self.to_number(primitive)?
+                    }
+                };
+                return Ok(Value::number(value));
             }
             "Boolean" => return Ok(Value::Bool(arg(0).truthy())),
             "Object" => {
@@ -1063,6 +1077,7 @@ impl Engine<'_> {
                     Value::Number(_) => "Number",
                     Value::Bool(_) => "Boolean",
                     Value::Symbol(_) => "Symbol",
+                    Value::BigInt(_) => "BigInt",
                     _ if self.callable(&receiver) => "Function",
                     Value::Object(id) => {
                         let d = self.data(*id)?;

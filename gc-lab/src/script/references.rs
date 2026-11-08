@@ -85,6 +85,16 @@ impl Engine<'_> {
         let reference = self.eval_reference(target, env)?;
         let old = self.reference_get(&reference)?;
         self.protect(&old)?;
+        let old = self.to_primitive(old, false)?;
+        if let Value::BigInt(value) = old {
+            let next = self.big_value(if increment {
+                value.add(&super::bigint::Big::from_u64(1))
+            } else {
+                value.sub(&super::bigint::Big::from_u64(1))
+            })?;
+            let next = self.reference_set(reference, next)?;
+            return Ok(if prefix { next } else { Value::BigInt(value) });
+        }
         let old = self.to_number(old)?;
         let next = Value::number(old + if increment { 1.0 } else { -1.0 });
         let next = self.reference_set(reference, next)?;

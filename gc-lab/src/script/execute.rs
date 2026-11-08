@@ -19,6 +19,7 @@ impl Value {
                 n != 0.0 && !n.is_nan()
             }
             Self::String(s) => !s.is_empty(),
+            Self::BigInt(n) => !n.is_zero(),
             _ => true,
         }
     }
@@ -481,6 +482,7 @@ impl Engine<'_> {
             Expr::Name(n) => self.lookup(env, n),
             Expr::This => self.lookup(env, "this"),
             Expr::String(s) => Ok(Value::String(s.clone())),
+            Expr::BigInt(s) => self.big_literal(s),
             Expr::Number(n) => Ok(Value::number(n.parse().unwrap())),
             Expr::Bool(b) => Ok(Value::Bool(*b)),
             Expr::Null => Ok(Value::Null),
@@ -918,6 +920,18 @@ impl Engine<'_> {
             self.eval(x, env)?
         };
         self.protect(&v)?;
+        let v = if matches!(op, "-" | "~") {
+            self.to_primitive(v, false)?
+        } else {
+            v
+        };
+        if let Value::BigInt(value) = &v {
+            match op {
+                "-" => return self.big_value(value.neg()),
+                "~" => return self.big_value(value.not()),
+                _ => {}
+            }
+        }
         match op {
             "!" => Ok(Value::Bool(!v.truthy())),
             "~" => Ok(Value::number(
@@ -933,6 +947,7 @@ impl Engine<'_> {
                     Value::Number(_) => "number",
                     Value::String(_) => "string",
                     Value::Symbol(_) => "symbol",
+                    Value::BigInt(_) => "bigint",
                     _ if self.callable(&v) => "function",
                     _ => "object",
                 }
@@ -955,25 +970,7 @@ impl Engine<'_> {
         match op {
             "&&" | "||" | "??" => Ok(b),
             "===" | "!==" => Ok(Value::Bool(a.strict_equal(&b) ^ (op == "!=="))),
-            "==" | "!=" => {
-                let equal = if a.strict_equal(&b)
-                    || matches!(
-                        (&a, &b),
-                        (Value::Null, Value::Undefined) | (Value::Undefined, Value::Null)
-                    ) {
-                    true
-                } else if matches!(
-                    (&a, &b),
-                    (Value::Number(_), Value::String(_)) | (Value::String(_), Value::Number(_))
-                ) || matches!(a, Value::Bool(_))
-                    || matches!(b, Value::Bool(_))
-                {
-                    self.to_number(a)? == self.to_number(b)?
-                } else {
-                    false
-                };
-                Ok(Value::Bool(equal ^ (op == "!=")))
-            }
+            "==" | "!=" => Ok(Value::Bool(self.abstract_equal(a, b)? ^ (op == "!="))),
             "in" => {
                 let Value::Object(id) = b else {
                     return self.throw_error("TypeError", "in requires object");
@@ -1001,6 +998,22 @@ impl Engine<'_> {
                             _ => !order.is_lt(),
                         }));
                     }
+                }
+                if matches!(a, Value::BigInt(_)) || matches!(b, Value::BigInt(_)) {
+                    if matches!(op, "<" | ">" | "<=" | ">=") {
+                        let order = self.big_order(a, b)?;
+                        return Ok(Value::Bool(match (op, order) {
+                            ("<", Some(order)) => order.is_lt(),
+                            (">", Some(order)) => order.is_gt(),
+                            ("<=", Some(order)) => !order.is_gt(),
+                            (">=", Some(order)) => !order.is_lt(),
+                            _ => false,
+                        }));
+                    }
+                    let (Value::BigInt(a), Value::BigInt(b)) = (a, b) else {
+                        return self.throw_error("TypeError", "cannot mix BigInt and Number");
+                    };
+                    return self.big_binary(op, a, b);
                 }
                 let a = self.to_number(a)?;
                 let b = self.to_number(b)?;
@@ -1141,6 +1154,7 @@ impl Engine<'_> {
             Value::Bool(b) => b.to_string(),
             Value::Number(n) => number_string(f64::from_bits(n)),
             Value::String(s) => s,
+            Value::BigInt(value) => self.big_string(&value, 10)?,
             Value::Symbol(_) => {
                 return self.throw_error("TypeError", "cannot convert symbol to string")
             }
@@ -1160,20 +1174,25 @@ impl Engine<'_> {
                 }
             }
             Value::Number(n) => f64::from_bits(n),
+            Value::BigInt(_) => {
+                return self.throw_error("TypeError", "cannot implicitly convert BigInt to Number")
+            }
             Value::Symbol(_) => {
                 return self.throw_error("TypeError", "cannot convert symbol to number")
             }
             Value::String(s) => {
-                let s =
-                    s.trim_matches(|c: char| c == '\u{feff}' || c != '\u{85}' && c.is_whitespace());
+                let s = s.trim_matches(super::strings::whitespace);
                 if s.is_empty() {
                     0.0
-                } else if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-                    u64::from_str_radix(hex, 16)
-                        .map(|n| n as f64)
+                } else if ["0x", "0X", "0o", "0O", "0b", "0B"]
+                    .iter()
+                    .any(|prefix| s.starts_with(*prefix))
+                {
+                    self.big_parse(s)?
+                        .map(|value| value.to_float())
                         .unwrap_or(f64::NAN)
                 } else {
-                    s.parse().unwrap_or(f64::NAN)
+                    super::numeric::decimal_number(s)
                 }
             }
             _ => return Err(ScriptError::Unsupported("host numeric conversion")),

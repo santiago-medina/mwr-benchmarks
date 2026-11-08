@@ -24,6 +24,7 @@ pub enum Expr {
     Name(String),
     String(String),
     Number(String),
+    BigInt(String),
     Bool(bool),
     Null,
     Undefined,
@@ -123,6 +124,7 @@ enum Token {
     Name(String),
     String(String),
     Number(String),
+    BigInt(String),
     Punct(char),
     Op(String),
     End,
@@ -143,7 +145,7 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
     let mut tokens = vec![];
     let mut chars = source.char_indices().peekable();
     while let Some((offset, c)) = chars.next() {
-        if c.is_whitespace() {
+        if super::strings::whitespace(c) {
             continue;
         }
         let error = |message| SyntaxError { offset, message };
@@ -152,7 +154,7 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
                 let style = chars.next().unwrap().1;
                 if style == '/' {
                     for (_, c) in chars.by_ref() {
-                        if c == '\n' {
+                        if matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}') {
                             break;
                         }
                     }
@@ -181,24 +183,84 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
                 }
                 Token::Name(n)
             }
-            '0'..='9' => {
-                let mut n = c.to_string();
-                while chars.peek().is_some_and(|(_, c)| {
-                    c.is_ascii_digit()
-                        || *c == '.'
-                        || *c == 'e'
-                        || *c == 'E'
-                        || ((*c == '+' || *c == '-') && n.ends_with(['e', 'E']))
-                }) {
-                    n.push(chars.next().unwrap().1);
+            '0'..='9' | '.'
+                if c != '.' || chars.peek().is_some_and(|(_, c)| c.is_ascii_digit()) =>
+            {
+                let mut raw = c.to_string();
+                let mut radix = 10;
+                if c == '0'
+                    && chars
+                        .peek()
+                        .is_some_and(|(_, c)| matches!(c, 'x' | 'X' | 'o' | 'O' | 'b' | 'B'))
+                {
+                    let prefix = chars.next().unwrap().1;
+                    raw.push(prefix);
+                    radix = match prefix {
+                        'x' | 'X' => 16,
+                        'o' | 'O' => 8,
+                        _ => 2,
+                    };
+                    while chars
+                        .peek()
+                        .is_some_and(|(_, c)| c.is_ascii_alphanumeric() || *c == '_')
+                    {
+                        raw.push(chars.next().unwrap().1);
+                    }
+                } else {
+                    while chars.peek().is_some_and(|(_, c)| {
+                        c.is_ascii_digit()
+                            || *c == '_'
+                            || *c == '.' && !raw.contains(['.', 'e', 'E'])
+                            || matches!(c, 'e' | 'E') && !raw.contains(['e', 'E'])
+                            || matches!(c, '+' | '-') && raw.ends_with(['e', 'E'])
+                    }) {
+                        raw.push(chars.next().unwrap().1);
+                    }
+                    if chars.peek().is_some_and(|(_, c)| *c == 'n') {
+                        raw.push(chars.next().unwrap().1);
+                    }
                 }
-                if n.parse::<f64>().is_err() {
-                    return Err(error("unsupported numeric literal"));
+                let big = raw.ends_with('n');
+                if big {
+                    raw.pop();
                 }
-                if n.len() > 1 && n.starts_with('0') && n.as_bytes()[1].is_ascii_digit() {
+                let digits = if radix == 10 { raw.as_str() } else { &raw[2..] };
+                let bytes = digits.as_bytes();
+                for (i, c) in bytes.iter().enumerate() {
+                    if *c == b'_'
+                        && (i == 0
+                            || i + 1 == bytes.len()
+                            || !(bytes[i - 1] as char).is_digit(radix)
+                            || !(bytes[i + 1] as char).is_digit(radix))
+                    {
+                        return Err(error("invalid numeric separator"));
+                    }
+                }
+                let clean = raw.replace('_', "");
+                if radix == 10
+                    && clean.len() > 1
+                    && clean.starts_with('0')
+                    && clean.as_bytes()[1].is_ascii_digit()
+                {
                     return Err(error("legacy numeric literal in strict mode"));
                 }
-                Token::Number(n)
+                if big || radix != 10 {
+                    if big && radix == 10 && clean.contains(['.', 'e', 'E']) {
+                        return Err(error("invalid BigInt literal"));
+                    }
+                    let value = super::bigint::Big::parse(&clean)
+                        .map_err(|_| error("invalid or oversized integer literal"))?;
+                    if big {
+                        Token::BigInt(clean)
+                    } else {
+                        Token::Number(value.to_float().to_string())
+                    }
+                } else {
+                    if clean.parse::<f64>().is_err() {
+                        return Err(error("invalid numeric literal"));
+                    }
+                    Token::Number(clean)
+                }
             }
             '\'' | '"' => {
                 let mut s = String::new();
@@ -267,9 +329,9 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
                     op.push(chars.next().unwrap().1);
                 }
                 if op == "=>"
-                    && tokens
-                        .last()
-                        .is_some_and(|(_, last)| source[*last..offset].contains(['\n', '\r']))
+                    && tokens.last().is_some_and(|(_, last)| {
+                        source[*last..offset].contains(['\n', '\r', '\u{2028}', '\u{2029}'])
+                    })
                 {
                     return Err(error("newline before arrow"));
                 }
@@ -358,13 +420,16 @@ impl Parser<'_> {
         match self.take() {
             Token::Name(s) | Token::String(s) => Ok(s),
             Token::Number(s) => Ok(super::execute::number_string(s.parse().unwrap())),
+            Token::BigInt(s) => super::bigint::Big::parse(&s)
+                .map(|n| n.radix_string(10))
+                .map_err(|_| self.error("invalid BigInt property name")),
             _ => Err(self.error("unsupported property key")),
         }
     }
     fn newline(&self) -> bool {
         self.cursor > 0
             && self.source[self.tokens[self.cursor - 1].1..self.tokens[self.cursor].1]
-                .contains(['\n', '\r'])
+                .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
     }
     fn semi(&mut self) -> Result<(), SyntaxError> {
         if self.punct(';')
@@ -605,7 +670,8 @@ impl Parser<'_> {
         if self.current() == &Token::Name("async".into())
             && self.tokens.get(self.cursor + 1).is_some_and(|(t, offset)| {
                 t == &Token::Name("function".into())
-                    && !self.source[self.tokens[self.cursor].1..*offset].contains(['\n', '\r'])
+                    && !self.source[self.tokens[self.cursor].1..*offset]
+                        .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
             })
         {
             self.take();
@@ -710,7 +776,7 @@ impl Parser<'_> {
                         return self.tokens.get(index + 1).is_some_and(|(t, offset)| {
                             matches!(t,Token::Op(op) if op=="=>")
                                 && !self.source[self.tokens[index].1..*offset]
-                                    .contains(['\n', '\r'])
+                                    .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
                         });
                     }
                 }
@@ -934,7 +1000,8 @@ impl Parser<'_> {
                 .get(self.cursor + 1)
                 .is_some_and(|(token, offset)| {
                     matches!(token,Token::Name(name) if !reserved(name))
-                        && !self.source[self.tokens[self.cursor].1..*offset].contains(['\n', '\r'])
+                        && !self.source[self.tokens[self.cursor].1..*offset]
+                            .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
                 })
             && self
                 .tokens
@@ -942,7 +1009,7 @@ impl Parser<'_> {
                 .is_some_and(|(token, offset)| {
                     matches!(token,Token::Op(op) if op=="=>")
                         && !self.source[self.tokens[self.cursor + 1].1..*offset]
-                            .contains(['\n', '\r'])
+                            .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
                 })
         {
             self.take();
@@ -960,7 +1027,8 @@ impl Parser<'_> {
                 .get(self.cursor + 1)
                 .is_some_and(|(token, offset)| {
                     matches!(token,Token::Op(op) if op=="=>")
-                        && !self.source[self.tokens[self.cursor].1..*offset].contains(['\n', '\r'])
+                        && !self.source[self.tokens[self.cursor].1..*offset]
+                            .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
                 })
         {
             let name = self.name()?;
@@ -974,7 +1042,8 @@ impl Parser<'_> {
 
         if self.current() == &Token::Name("async".into())
             && self.tokens.get(self.cursor + 1).is_some_and(|(t, offset)| {
-                !self.source[self.tokens[self.cursor].1..*offset].contains(['\n', '\r'])
+                !self.source[self.tokens[self.cursor].1..*offset]
+                    .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
                     && (t == &Token::Name("function".into()) || t == &Token::Punct('('))
             })
         {
@@ -1042,6 +1111,7 @@ impl Parser<'_> {
             },
             Token::String(s) => Ok(Expr::String(s)),
             Token::Number(n) => Ok(Expr::Number(n)),
+            Token::BigInt(n) => Ok(Expr::BigInt(n)),
             Token::Punct('(') => {
                 let e = self.sequence()?;
                 self.expect(')')?;
@@ -1087,7 +1157,10 @@ impl Parser<'_> {
                         if key == "async"
                             && matches!(
                                 self.current(),
-                                Token::Name(_) | Token::String(_) | Token::Number(_)
+                                Token::Name(_)
+                                    | Token::String(_)
+                                    | Token::Number(_)
+                                    | Token::BigInt(_)
                             )
                         {
                             let key = self.key()?;

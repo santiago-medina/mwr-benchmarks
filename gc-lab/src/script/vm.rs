@@ -50,6 +50,7 @@ pub(super) enum Value {
     Null,
     Bool(bool),
     Number(u64),
+    BigInt(std::rc::Rc<super::bigint::Big>),
     Symbol(u64),
     String(String),
     Object(Id),

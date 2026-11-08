@@ -263,6 +263,31 @@ impl Big {
                 .collect(),
         )
     }
+    pub fn truncate(&self, width: usize, signed: bool) -> Self {
+        if width == 0 {
+            return Self::zero();
+        }
+        let mut limbs = self.twos((width + 31) / 32);
+        // Truncate before sign extension when the requested width is smaller than the magnitude.
+        limbs.truncate((width + 31) / 32);
+        if width % 32 != 0 {
+            let mask = (1u32 << (width % 32)) - 1;
+            let last = limbs.last_mut().unwrap();
+            *last &= mask;
+            if signed && *last & (1u32 << ((width - 1) % 32)) != 0 {
+                *last |= !mask;
+            }
+        }
+        if signed {
+            Self::from_twos(limbs)
+        } else {
+            Self {
+                negative: false,
+                limbs,
+            }
+            .normalized()
+        }
+    }
     pub fn not(&self) -> Self {
         self.add(&Self::from_u64(1)).neg()
     }

@@ -290,3 +290,52 @@ impl Engine<'_> {
         Ok(Value::number(out))
     }
 }
+
+// StringNumericLiteral decimal grammar, distinct from parseFloat's prefix grammar.
+pub(super) fn decimal_number(text: &str) -> f64 {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    if bytes.first().is_some_and(|c| matches!(c, b'+' | b'-')) {
+        i += 1;
+    }
+    if &text[i..] == "Infinity" {
+        return if bytes.first() == Some(&b'-') {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        };
+    }
+    let mut digits = 0;
+    while bytes.get(i).is_some_and(u8::is_ascii_digit) {
+        i += 1;
+        digits += 1;
+    }
+    if bytes.get(i) == Some(&b'.') {
+        i += 1;
+        while bytes.get(i).is_some_and(u8::is_ascii_digit) {
+            i += 1;
+            digits += 1;
+        }
+    }
+    if digits == 0 {
+        return f64::NAN;
+    }
+    if bytes.get(i).is_some_and(|c| matches!(c, b'e' | b'E')) {
+        i += 1;
+        if bytes.get(i).is_some_and(|c| matches!(c, b'+' | b'-')) {
+            i += 1;
+        }
+        let start = i;
+        while bytes.get(i).is_some_and(u8::is_ascii_digit) {
+            i += 1;
+        }
+        if i == start {
+            return f64::NAN;
+        }
+    }
+    if i != bytes.len() {
+        f64::NAN
+    } else {
+        text.parse().unwrap_or(f64::NAN)
+    }
+}

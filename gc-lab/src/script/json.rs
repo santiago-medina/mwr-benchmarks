@@ -437,7 +437,7 @@ impl Engine<'_> {
         }
         let mut value = self.get_member(Value::Object(holder), key)?;
         self.protect(&value)?;
-        if matches!(value, Value::Object(_)) {
+        if matches!(value, Value::Object(_) | Value::BigInt(_)) {
             let method = self.get_member(value.clone(), "toJSON")?;
             self.protect(&method)?;
             if self.callable(&method) {
@@ -458,12 +458,15 @@ impl Engine<'_> {
                 value = match boxed {
                     Value::Number(_) => Value::number(self.to_number(value)?),
                     Value::String(_) => Value::String(self.to_string(value)?),
-                    Value::Bool(_) => boxed,
+                    Value::Bool(_) | Value::BigInt(_) => boxed,
                     _ => value,
                 };
             }
         }
         match value {
+            Value::BigInt(_) => {
+                self.throw_error("TypeError", "BigInt cannot be serialized as JSON")
+            }
             Value::Null => Ok(Some("null".into())),
             Value::Bool(v) => Ok(Some(v.to_string())),
             Value::Number(n) => {
