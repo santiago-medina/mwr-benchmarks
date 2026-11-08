@@ -58,7 +58,7 @@ impl Engine<'_> {
             self.intrinsics.as_mut().unwrap().functions.insert(name, f);
             self.hidden(objects["String.prototype"], *method, Value::Object(f))?;
         }
-        for method in ["fromCharCode", "fromCodePoint"] {
+        for method in ["fromCharCode", "fromCodePoint", "raw"] {
             let name = format!("String.{method}");
             let f = self.intrinsic_function(env, &name, Some(function))?;
             self.intrinsics.as_mut().unwrap().functions.insert(name, f);
@@ -97,6 +97,9 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name == "String.raw" {
+            return self.string_raw(args);
+        }
         if matches!(
             name,
             "String.prototype.replace" | "String.prototype.replaceAll" | "String.prototype.split"

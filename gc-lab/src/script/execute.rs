@@ -553,6 +553,7 @@ impl Engine<'_> {
     }
     fn eval_inner(&mut self, x: &Expr, env: Id) -> Result<Value> {
         match x {
+            Expr::Template(t) => self.eval_template(t, env),
             Expr::Name(n) => self.lookup(env, n),
             Expr::This => self.lookup(env, "this"),
             Expr::String(s) => Ok(Value::String(s.clone())),
@@ -786,28 +787,12 @@ impl Engine<'_> {
         Ok(())
     }
     fn eval_call(&mut self, f: &Expr, args: &[Expr], env: Id, new: bool) -> Result<Value> {
-        let (receiver, callee) = if !new {
-            match f {
-                Expr::Member(r, k) => {
-                    let r = self.eval(r, env)?;
-                    self.protect(&r)?;
-                    let f = self.get_member(r.clone(), k)?;
-                    (r, f)
-                }
-                Expr::Computed(r, k) => {
-                    let r = self.eval(r, env)?;
-                    self.protect(&r)?;
-                    let k = self.eval(k, env)?;
-                    self.protect(&k)?;
-                    let k = self.member_key(&r, k)?;
-                    let f = self.get_member(r.clone(), &k)?;
-                    (r, f)
-                }
-                _ => (Value::Undefined, self.eval(f, env)?),
-            }
-        } else {
+        let (receiver, callee) = if new {
             (Value::Undefined, self.eval(f, env)?)
+        } else {
+            self.call_target(f, env)?
         };
+        self.protect(&receiver)?;
         self.protect(&callee)?;
         let values = if args.iter().any(|e| matches!(e, Expr::Spread(_))) {
             self.spread_arguments(args, env)?

@@ -123,6 +123,7 @@ pub struct Engine<'host> {
     pub(super) network: super::network::Network,
     pub(super) global: Option<ExternalRoot>,
     pub(super) intrinsics: Option<Intrinsics>,
+    pub(super) template_cache: HashMap<u64, Id>,
     pub(super) test_harness: bool,
     pub(super) assertions: usize,
     pub(super) evaluation_depth: usize,
@@ -160,6 +161,7 @@ impl<'host> Engine<'host> {
             modules: super::modules::Registry::default(),
             global: None,
             intrinsics: None,
+            template_cache: HashMap::new(),
             test_harness: false,
             assertions: 0,
             evaluation_depth: 0,
@@ -200,6 +202,7 @@ impl<'host> Engine<'host> {
             modules: self.modules,
             global: self.global,
             intrinsics: self.intrinsics,
+            template_cache: self.template_cache,
             test_harness: self.test_harness,
             assertions: self.assertions,
             evaluation_depth: self.evaluation_depth,
@@ -279,6 +282,8 @@ impl<'host> Engine<'host> {
         self.remote_nodes
             .retain(|id, _| self.runtime.value(*id).is_ok());
         self.objects.retain(|id, _| self.runtime.value(*id).is_ok());
+        self.template_cache
+            .retain(|_, id| self.objects.contains_key(id));
         if self
             .intrinsics
             .as_ref()

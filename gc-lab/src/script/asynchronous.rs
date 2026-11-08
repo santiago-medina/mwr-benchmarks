@@ -45,6 +45,8 @@ pub(super) enum Op {
     Return(usize),
     Throw(usize),
     Object(usize),
+    TemplateObject(super::templates::Template, usize),
+    TemplateStep(usize, usize, String, usize),
     Array(usize, u32),
     Property(usize, String, Property),
     Try {
@@ -70,6 +72,9 @@ fn read(r: usize) -> Expr {
 fn expr_await(e: &Expr) -> bool {
     match e {
         Expr::Await(_) | Expr::Yield(..) => true,
+        Expr::Template(t) => {
+            t.tag.as_ref().is_some_and(|tag| expr_await(tag)) || t.values.iter().any(expr_await)
+        }
         Expr::Sequence(items) => items.iter().any(expr_await),
         Expr::GeneratorFunction { .. }
         | Expr::Function { .. }
@@ -232,6 +237,49 @@ impl Compiler {
                     out = self.expression(item)?;
                 }
                 out
+            }
+            Expr::Template(t) => {
+                if let Some(tag) = &t.tag {
+                    let (receiver, callee) =
+                        if matches!(tag.as_ref(), Expr::Member(..) | Expr::Computed(..)) {
+                            let (base, expression) = self.reference(tag)?;
+                            (Some(base), self.eval(expression))
+                        } else {
+                            (None, self.expression(tag)?)
+                        };
+                    let object = self.reg();
+                    self.emit(Op::TemplateObject(t.as_ref().clone(), object));
+                    let mut args = vec![object];
+                    for value in &t.values {
+                        args.push(self.expression(value)?);
+                    }
+                    let out = self.reg();
+                    self.emit(Op::Invoke {
+                        callee,
+                        receiver,
+                        args,
+                        new: false,
+                        out,
+                    });
+                    out
+                } else {
+                    let first = t.parts[0]
+                        .0
+                        .clone()
+                        .ok_or(ScriptError::Runtime("invalid untagged template escape"))?;
+                    let mut text = self.eval(Expr::String(first));
+                    for (index, value) in t.values.iter().enumerate() {
+                        let value = self.expression(value)?;
+                        let out = self.reg();
+                        let part = t.parts[index + 1]
+                            .0
+                            .clone()
+                            .ok_or(ScriptError::Runtime("invalid untagged template escape"))?;
+                        self.emit(Op::TemplateStep(text, value, part, out));
+                        text = out;
+                    }
+                    text
+                }
             }
             Expr::Yield(value, delegate) => {
                 let value = if let Some(value) = value {
@@ -1367,6 +1415,18 @@ impl Engine<'_> {
                             return Ok(Some(Completion::Return(e.register(&frame, r)?)))
                         }
                         Op::Throw(r) => return Ok(Some(Completion::Throw(e.register(&frame, r)?))),
+                        Op::TemplateObject(template, out) => {
+                            let value = e.template_object(&template, env)?;
+                            e.store(&frame, out, value)?;
+                        }
+                        Op::TemplateStep(text, value, part, out) => {
+                            let Value::String(text) = e.register(&frame, text)? else {
+                                return Err(ScriptError::Runtime("invalid template accumulator"));
+                            };
+                            let value = e.register(&frame, value)?;
+                            let text = e.template_text(text, value, &part)?;
+                            e.store(&frame, out, Value::String(text))?;
+                        }
                         Op::Object(out) => {
                             let object =
                                 e.new_object(Some(e.intrinsics.as_ref().unwrap().object))?;

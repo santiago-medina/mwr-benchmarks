@@ -22,6 +22,7 @@ impl From<String> for Param {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Expr {
+    Template(Box<super::templates::Template>),
     Name(String),
     String(String),
     Number(String),
@@ -185,6 +186,12 @@ impl Stmt {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Token {
+    Template {
+        start: bool,
+        cooked: Option<String>,
+        raw: String,
+        tail: bool,
+    },
     Name(String),
     String(String),
     Number(String),
@@ -207,6 +214,7 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
         });
     }
     let mut tokens = vec![];
+    let mut templates: Vec<usize> = vec![];
     let mut chars = source.char_indices().peekable();
     while let Some((offset, c)) = chars.next() {
         if super::strings::whitespace(c) {
@@ -214,6 +222,45 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
         }
         let error = |message| SyntaxError { offset, message };
         let token = match c {
+            '`' => {
+                let (cooked, raw, tail) = super::template_lex::segment(source, &mut chars, offset)?;
+                if !tail {
+                    if templates.len() >= 64 {
+                        return Err(error("template nesting limit"));
+                    }
+                    templates.push(0);
+                }
+                Token::Template {
+                    start: true,
+                    cooked,
+                    raw,
+                    tail,
+                }
+            }
+            '}' if templates.last() == Some(&0) => {
+                let (cooked, raw, tail) = super::template_lex::segment(source, &mut chars, offset)?;
+                if tail {
+                    templates.pop();
+                }
+                Token::Template {
+                    start: false,
+                    cooked,
+                    raw,
+                    tail,
+                }
+            }
+            '{' => {
+                if let Some(depth) = templates.last_mut() {
+                    *depth += 1;
+                }
+                Token::Punct(c)
+            }
+            '}' => {
+                if let Some(depth) = templates.last_mut() {
+                    *depth -= 1;
+                }
+                Token::Punct(c)
+            }
             '/' if chars.peek().is_some_and(|(_, c)| *c == '/' || *c == '*') => {
                 let style = chars.next().unwrap().1;
                 if style == '/' {
@@ -375,7 +422,7 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
                 chars.next();
                 Token::Op("...".into())
             }
-            '(' | ')' | '{' | '}' | '[' | ']' | '.' | ',' | ';' | ':' => Token::Punct(c),
+            '(' | ')' | '[' | ']' | '.' | ',' | ';' | ':' => Token::Punct(c),
             '?' if !chars.peek().is_some_and(|(_, c)| *c == '?') => Token::Punct('?'),
             '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^' | '~' | '?' => {
                 let mut op = c.to_string();
@@ -407,6 +454,12 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
         if tokens.len() > 8192 {
             return Err(error("token limit"));
         }
+    }
+    if !templates.is_empty() {
+        return Err(SyntaxError {
+            offset: source.len(),
+            message: "unterminated template substitution",
+        });
     }
     tokens.push((Token::End, source.len()));
     Ok(tokens)
@@ -1426,7 +1479,51 @@ impl Parser<'_> {
             Ok(vec![Stmt::Return(self.expression()?)])
         }
     }
+    fn template(&mut self, tag: Option<Expr>) -> Result<Expr, SyntaxError> {
+        let site = super::templates::site().map_err(|_| self.error("template identity limit"))?;
+        let mut parts = vec![];
+        let mut values = vec![];
+        let mut first = true;
+        loop {
+            let Token::Template {
+                start,
+                cooked,
+                raw,
+                tail,
+            } = self.take()
+            else {
+                return Err(self.error("missing template continuation"));
+            };
+            if start != first {
+                return Err(self.error("invalid template boundary"));
+            }
+            if cooked.is_none() && tag.is_none() {
+                return Err(self.error("invalid template escape"));
+            }
+            parts.push((cooked, raw));
+            if tail {
+                break;
+            }
+            first = false;
+            if self.depth >= 64 {
+                return Err(self.error("template nesting limit"));
+            }
+            self.depth += 1;
+            let value = self.sequence();
+            self.depth -= 1;
+            values.push(value?);
+        }
+        Ok(Expr::Template(Box::new(super::templates::Template {
+            site,
+            parts,
+            values,
+            tag: tag.map(Box::new),
+        })))
+    }
     fn primary(&mut self) -> Result<Expr, SyntaxError> {
+        if matches!(self.current(), Token::Template { start: true, .. }) {
+            return self.template(None);
+        }
         if self.current() == &Token::Name("async".into())
             && self
                 .tokens
@@ -1628,6 +1725,8 @@ impl Parser<'_> {
                 let k = self.sequence()?;
                 self.expect(']')?;
                 e = Expr::Computed(Box::new(e), Box::new(k));
+            } else if matches!(self.current(), Token::Template { start: true, .. }) {
+                e = self.template(Some(e))?;
             } else if self.punct('(') {
                 e = Expr::Call(Box::new(e), self.arguments()?);
             } else if !self.newline()
@@ -2082,6 +2181,12 @@ fn validate_loop(
             }
             Expr::Arrow { params, body } | Expr::Function { params, body, .. } => {
                 validate_function(body, params, d + 1, false, false)?
+            }
+            Expr::Template(t) => {
+                if let Some(tag) = &t.tag {
+                    work.push((tag, d + 1));
+                }
+                work.extend(t.values.iter().map(|e| (e, d + 1)));
             }
             Expr::Sequence(elements) => work.extend(elements.iter().map(|x| (x, d + 1))),
             Expr::Array(elements) => work.extend(elements.iter().flatten().map(|x| (x, d + 1))),
