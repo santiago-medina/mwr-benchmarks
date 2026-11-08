@@ -30,6 +30,7 @@ const ERRORS: &[&str] = &[
     "Test262Error",
 ];
 const METHODS: &[(&str, &[&str])] = &[
+    ("JSON", &["parse", "stringify"]),
     (
         "Object",
         &[
@@ -169,7 +170,8 @@ impl Engine<'_> {
             name.rsplit('.').next().unwrap()
         };
         let arity = match name {
-            "Reflect.construct"
+            "JSON.parse"
+            | "Reflect.construct"
             | "Function.prototype.apply"
             | "Promise.prototype.then"
             | "parseInt"
@@ -186,7 +188,8 @@ impl Engine<'_> {
             | "assert.throws"
             | "assert.sameValue"
             | "assert.notSameValue" => 2,
-            "Reflect.apply"
+            "JSON.stringify"
+            | "Reflect.apply"
             | "Object.defineProperty"
             | "Reflect.defineProperty"
             | "Reflect.set" => 3,
@@ -323,6 +326,18 @@ impl Engine<'_> {
         let reflect = self.new_object(Some(object))?;
         self.runtime.link(env, reflect)?;
         objects.insert("Reflect".into(), reflect);
+        let json = self.new_object(Some(object))?;
+        self.runtime.link(env, json)?;
+        objects.insert("JSON".into(), json);
+        self.define(
+            json,
+            super::objects::Key::Symbol(1),
+            Descriptor {
+                value: Some(Value::String("JSON".into())),
+                configurable: Some(true),
+                ..Descriptor::default()
+            },
+        )?;
         for name in ["String", "Number", "Boolean"] {
             let p = self.new_object(Some(object))?;
             self.runtime.link(env, p)?;
@@ -749,6 +764,9 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name.starts_with("JSON.") {
+            return self.json_builtin(name, args);
+        }
         if name == "Map"
             || name == "Set"
             || name.starts_with("Map.")

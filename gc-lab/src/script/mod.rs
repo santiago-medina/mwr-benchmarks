@@ -27,3 +27,5 @@ pub use modules::{ModuleSource, ModuleStatus};
 mod collections;
 
 mod array_methods;
+
+mod json;
