@@ -58,6 +58,12 @@ impl PromiseState {
 }
 #[derive(Clone)]
 pub(super) enum Internal {
+    AggregateElement {
+        group: Id,
+        guard: Id,
+        index: u64,
+        reject: bool,
+    },
     ModuleSettled {
         index: usize,
         reject: bool,
@@ -86,6 +92,7 @@ pub(super) enum Internal {
 impl Internal {
     pub fn edges(&self) -> Vec<Id> {
         match self {
+            Self::AggregateElement { group, guard, .. } => vec![*group, *guard],
             Self::ModuleSettled { .. } => vec![],
             Self::AsyncResume { activation, .. } => vec![*activation],
             Self::Resolve { cell, .. } | Self::Capability { cell } => vec![*cell],
@@ -103,12 +110,16 @@ impl Internal {
 }
 #[derive(Clone)]
 pub(super) enum Cell {
+    Aggregate(super::promise_combinators::Aggregate),
+    Called(bool),
     Resolving { promise: Id, resolved: bool },
     Capability { resolve: Value, reject: Value },
 }
 impl Cell {
     pub fn edges(&self) -> Vec<Id> {
         match self {
+            Self::Aggregate(state) => state.edges(),
+            Self::Called(_) => vec![],
             Self::Resolving { promise, .. } => vec![*promise],
             Self::Capability { resolve, reject } => [resolve, reject]
                 .into_iter()
@@ -572,6 +583,12 @@ impl Engine<'_> {
     pub(super) fn promise_internal(&mut self, action: Internal, args: Vec<Value>) -> Result<Value> {
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Undefined);
         match action {
+            Internal::AggregateElement {
+                group,
+                guard,
+                index,
+                reject,
+            } => self.aggregate_element(group, guard, index, reject, arg(0)),
             Internal::ModuleSettled { index, reject } => self.module_settled(index, arg(0), reject),
             Internal::AsyncResume { activation, reject } => {
                 self.resume_async(activation, arg(0), reject)
@@ -690,6 +707,12 @@ impl Engine<'_> {
             "Promise" => self.throw_error("TypeError", "Promise requires new"),
             "Promise.species" => Ok(receiver),
             "Promise.resolve" => self.promise_resolve(receiver, arg(0)),
+            "Promise.all"
+            | "Promise.race"
+            | "Promise.allSettled"
+            | "Promise.any"
+            | "Promise.withResolvers"
+            | "Promise.try" => self.promise_combinator(name, receiver, args),
             "Promise.reject" => {
                 let cap = self.capability(receiver)?;
                 self.invoke(cap.reject, vec![arg(0)])?;

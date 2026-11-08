@@ -15,3 +15,5 @@ Operator additions (unverified): conditional expressions with resumable async br
 Numeric additions (unverified): Math constants and 36 numeric methods, including compensated/scaled hypot, signed-zero round/min/max, f16round, fround, integer multiplication, and a per-thread randomly seeded hash stream for Math.random. Added parseFloat and global/Number predicates, with Number parsing aliases.
 
 String additions (unverified): primitive prototype property lookup without eager boxing, Unicode code-point iteration, fromCharCode/fromCodePoint, code-unit/code-point access, concatenation, searches, slice/substring, padding/repetition, casing and exact ECMAScript whitespace trimming. Operations requiring an isolated surrogate still report Unsupported because the runtime String representation has not been replaced with UTF-16 storage.
+
+Promise/error additions (unverified): all/race/allSettled/any, withResolvers and try, traced aggregate state and per-element once guards, AggregateError, Error.prototype.toString, cause options, and Error newTarget prototypes. These reuse the existing job queue and iterator closing; no tests have been added or run.

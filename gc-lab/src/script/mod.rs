@@ -33,3 +33,6 @@ mod json;
 mod numeric;
 
 mod strings;
+
+mod errors;
+mod promise_combinators;

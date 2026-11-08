@@ -803,6 +803,9 @@ impl Engine<'_> {
                 )
             }
             Some(Object::Builtin { name, .. }) => {
+                if self.intrinsics.as_ref().unwrap().errors.contains_key(&name) {
+                    return self.error_constructor(&name, args, Some(new_target));
+                }
                 if name == "Map" || name == "Set" {
                     return self.construct_collection(
                         &name,

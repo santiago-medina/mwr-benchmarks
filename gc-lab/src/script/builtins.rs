@@ -21,6 +21,7 @@ pub(super) struct Intrinsics {
 }
 const ERRORS: &[&str] = &[
     "Error",
+    "AggregateError",
     "EvalError",
     "URIError",
     "TypeError",
@@ -30,6 +31,7 @@ const ERRORS: &[&str] = &[
     "Test262Error",
 ];
 const METHODS: &[(&str, &[&str])] = &[
+    ("Error.prototype", &["toString"]),
     ("JSON", &["parse", "stringify"]),
     (
         "Number",
@@ -86,7 +88,19 @@ const METHODS: &[(&str, &[&str])] = &[
         ],
     ),
     ("Array", &["isArray", "from", "of"]),
-    ("Promise", &["resolve", "reject"]),
+    (
+        "Promise",
+        &[
+            "resolve",
+            "reject",
+            "all",
+            "race",
+            "allSettled",
+            "any",
+            "withResolvers",
+            "try",
+        ],
+    ),
     ("Promise.prototype", &["then", "catch", "finally"]),
     (
         "Array.prototype",
@@ -177,6 +191,8 @@ impl Engine<'_> {
             name.rsplit('.').next().unwrap()
         };
         let arity = match name {
+            "AggregateError" => 2,
+            "Promise.withResolvers" | "Error.prototype.toString" => 0,
             "Math.random"
             | "String.prototype.iterator"
             | "%StringIteratorPrototype%.next"
@@ -848,12 +864,10 @@ impl Engine<'_> {
         }
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Undefined);
         if ERRORS.contains(&name) {
-            let message = if arg(0) == Value::Undefined {
-                String::new()
-            } else {
-                self.to_string(arg(0))?
-            };
-            return self.error_value(name, &message);
+            return self.error_constructor(name, args, None);
+        }
+        if name == "Error.prototype.toString" {
+            return self.error_to_string(receiver);
         }
         if name == "assert" || name.starts_with("assert.") || name == "$ERROR" {
             return self.assert_builtin(name, args);

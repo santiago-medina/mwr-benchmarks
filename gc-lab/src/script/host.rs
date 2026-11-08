@@ -132,14 +132,6 @@ impl Engine<'_> {
             Value::Object(id) => {
                 self.runtime.value(id)?;
                 let Some(Object::Node { tag, .. }) = self.objects.get(&id) else {
-                    if matches!(self.objects.get(&id),Some(Object::Builtin{name,..})if name=="Promise")
-                        && matches!(
-                            property,
-                            "all" | "race" | "allSettled" | "any" | "withResolvers" | "try"
-                        )
-                    {
-                        return Err(ScriptError::Unsupported("promise combinators"));
-                    }
                     return self.ordinary_get(id, property, Value::Object(id));
                 };
                 match property {
