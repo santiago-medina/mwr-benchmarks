@@ -15,15 +15,16 @@ impl Engine<'_> {
         receiver: Value,
         args: &[Value],
     ) -> Result<Id> {
-        let declarations: Vec<_> = params
+        let names: Vec<_> = params.iter().flat_map(|p| p.binding.names()).collect();
+        let declarations: Vec<_> = names
             .iter()
-            .map(|p| Stmt::Let(p.name.clone(), Expr::Undefined))
+            .map(|name| Stmt::Let(name.clone(), Expr::Undefined))
             .collect();
         let parameters = self.new_environment(Some(parent), &declarations, false)?;
         self.protect(&Value::Object(parameters))?;
         if !matches!(kind, FunctionKind::Arrow | FunctionKind::AsyncArrow) {
             self.initialize(parameters, "this", receiver)?;
-            if !params.iter().any(|p| p.name == "arguments") {
+            if !names.iter().any(|name| name == "arguments") {
                 let arguments = self.arguments_object(args)?;
                 self.mutable_binding(parameters, "arguments", arguments)?;
             }
@@ -47,14 +48,14 @@ impl Engine<'_> {
                     self.protect(&value)?;
                 }
             }
-            self.initialize(parameters, &param.name, value)?;
+            self.bind_pattern(&param.binding, value, parameters, parameters)?;
         }
         let local = self.new_environment(Some(parameters), body, true)?;
         self.protect(&Value::Object(local))?;
-        let mut names = vec![];
-        parser::var_names(body, &mut names);
-        for name in names {
-            if params.iter().any(|p| p.name == name)
+        let mut vars = vec![];
+        parser::var_names(body, &mut vars);
+        for name in vars {
+            if names.contains(&name)
                 || name == "arguments"
                     && !matches!(kind, FunctionKind::Arrow | FunctionKind::AsyncArrow)
             {

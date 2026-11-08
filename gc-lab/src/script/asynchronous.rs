@@ -33,6 +33,7 @@ pub(super) enum Op {
     },
     Append(usize, Option<usize>, bool),
     Init(String, usize, bool),
+    Bind(super::parser::Pattern, usize, bool),
     Enter(Vec<Stmt>),
     Exit,
     Hoist(Vec<Stmt>),
@@ -91,6 +92,10 @@ fn expr_await(e: &Expr) -> bool {
 }
 pub(super) fn stmt_await(s: &Stmt) -> bool {
     match s {
+        Stmt::Bind { pattern, init, .. } => {
+            init.as_ref().is_some_and(expr_await)
+                || pattern.expressions().into_iter().any(expr_await)
+        }
         Stmt::Const(_, e) | Stmt::Let(_, e) | Stmt::Return(e) | Stmt::Throw(e) | Stmt::Expr(e) => {
             expr_await(e)
         }
@@ -435,6 +440,21 @@ impl Compiler {
     }
     fn statement(&mut self, s: &Stmt) -> Result<()> {
         match s {
+            Stmt::Bind {
+                kind,
+                pattern,
+                init,
+            } => {
+                if pattern.expressions().into_iter().any(expr_await) {
+                    return Err(ScriptError::Unsupported(
+                        "resumable binding pattern expressions",
+                    ));
+                }
+                if let Some(init) = init {
+                    let value = self.expression(init)?;
+                    self.emit(Op::Bind(pattern.clone(), value, kind == "var"));
+                }
+            }
             Stmt::Switch(expression, cases) => {
                 let value = self.expression(expression)?;
                 let all = cases
@@ -1185,6 +1205,11 @@ impl Engine<'_> {
                                 e.invoke_this(f, this, args)?
                             };
                             e.store(&frame, out, v)?;
+                        }
+                        Op::Bind(pattern, value, var) => {
+                            let value = e.register(&frame, value)?;
+                            let target = if var { e.var_environment(env)? } else { env };
+                            e.bind_pattern(&pattern, value, env, target)?;
                         }
                         Op::Init(n, r, var) => {
                             let v = e.register(&frame, r)?;

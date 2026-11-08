@@ -435,6 +435,15 @@ impl<'host> Engine<'host> {
         let mut mutable = HashSet::new();
         for stmt in body {
             match stmt {
+                Stmt::Bind { kind, pattern, .. } if kind != "var" => {
+                    for name in pattern.names() {
+                        bindings.insert(name.clone(), None);
+                        if kind == "let" {
+                            mutable.insert(name);
+                        }
+                    }
+                }
+
                 Stmt::Const(n, _) | Stmt::Let(n, _) => {
                     bindings.insert(n.clone(), None);
                     if matches!(stmt, Stmt::Let(..)) {

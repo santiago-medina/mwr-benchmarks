@@ -268,6 +268,22 @@ impl Engine<'_> {
         can_return: bool,
     ) -> Result<Option<Value>> {
         match s {
+            Stmt::Bind {
+                kind,
+                pattern,
+                init,
+            } => {
+                if let Some(init) = init {
+                    let value = self.eval(init, env)?;
+                    self.protect(&value)?;
+                    let target = if kind == "var" {
+                        self.var_environment(env)?
+                    } else {
+                        env
+                    };
+                    self.bind_pattern(pattern, value, env, target)?;
+                }
+            }
             Stmt::Empty => {}
             Stmt::Switch(value, cases) => {
                 return self.switch_statement(value, cases, env, can_return)

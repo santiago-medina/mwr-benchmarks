@@ -1,4 +1,5 @@
 //! Bounded grammar for strict scripts; unsupported forms are rejected explicitly.
+pub use super::patterns::{Pattern, PatternKey};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyntaxError {
     pub offset: usize,
@@ -6,14 +7,14 @@ pub struct SyntaxError {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Param {
-    pub name: String,
+    pub binding: Pattern,
     pub default: Option<Expr>,
     pub rest: bool,
 }
 impl From<String> for Param {
     fn from(name: String) -> Self {
         Self {
-            name,
+            binding: Pattern::Name(name),
             default: None,
             rest: false,
         }
@@ -83,6 +84,11 @@ pub enum Property {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Stmt {
     Empty,
+    Bind {
+        kind: String,
+        pattern: Pattern,
+        init: Option<Expr>,
+    },
     Switch(Expr, Vec<(Option<Expr>, Vec<Stmt>)>),
     While {
         test: Expr,
@@ -479,15 +485,115 @@ impl Parser<'_> {
         self.depth -= 1;
         r
     }
+    fn binding_pattern(&mut self) -> Result<Pattern, SyntaxError> {
+        if self.depth >= 64 {
+            return Err(self.error("binding nesting limit"));
+        }
+        self.depth += 1;
+        let result = self.binding_pattern_inner();
+        self.depth -= 1;
+        result
+    }
+    fn binding_element(&mut self) -> Result<Pattern, SyntaxError> {
+        let pattern = self.binding_pattern()?;
+        if self.op("=") {
+            Ok(Pattern::Default(Box::new(pattern), self.expression()?))
+        } else {
+            Ok(pattern)
+        }
+    }
+    fn binding_pattern_inner(&mut self) -> Result<Pattern, SyntaxError> {
+        if self.punct('[') {
+            let mut items = vec![];
+            let mut rest = None;
+            while !self.punct(']') {
+                if self.punct(',') {
+                    items.push(None);
+                    continue;
+                }
+                if self.op("...") {
+                    rest = Some(Box::new(self.binding_pattern()?));
+                    self.expect(']')?;
+                    break;
+                }
+                items.push(Some(self.binding_element()?));
+                if self.punct(']') {
+                    break;
+                }
+                self.expect(',')?;
+            }
+            return Ok(Pattern::Array(items, rest));
+        }
+        if self.punct('{') {
+            let mut properties = vec![];
+            let mut rest = None;
+            while !self.punct('}') {
+                if self.op("...") {
+                    rest = Some(Box::new(Pattern::Name(self.name()?)));
+                    self.expect('}')?;
+                    break;
+                }
+                let (key, pattern) = if self.punct('[') {
+                    let expression = self.sequence()?;
+                    self.expect(']')?;
+                    self.expect(':')?;
+                    (PatternKey::Computed(expression), self.binding_element()?)
+                } else {
+                    let shorthand = matches!(self.current(), Token::Name(_));
+                    let key = self.key()?;
+                    let pattern = if self.punct(':') {
+                        self.binding_element()?
+                    } else {
+                        if !shorthand || reserved(&key) {
+                            return Err(self.error("invalid shorthand binding"));
+                        }
+                        let pattern = Pattern::Name(key.clone());
+                        if self.op("=") {
+                            Pattern::Default(Box::new(pattern), self.expression()?)
+                        } else {
+                            pattern
+                        }
+                    };
+                    (PatternKey::Static(key), pattern)
+                };
+                properties.push((key, pattern));
+                if self.punct('}') {
+                    break;
+                }
+                self.expect(',')?;
+            }
+            return Ok(Pattern::Object(properties, rest));
+        }
+        self.name().map(Pattern::Name)
+    }
+    fn binding_statement(kind: &str, pattern: Pattern, init: Option<Expr>) -> Stmt {
+        match pattern {
+            Pattern::Name(name) => match kind {
+                "const" => Stmt::Const(name, init.unwrap()),
+                "let" => Stmt::Let(name, init.unwrap_or(Expr::Undefined)),
+                _ => Stmt::Var(name, init),
+            },
+            pattern => Stmt::Bind {
+                kind: kind.into(),
+                pattern,
+                init,
+            },
+        }
+    }
     fn params(&mut self) -> Result<Vec<Param>, SyntaxError> {
         self.expect('(')?;
         let mut params: Vec<Param> = vec![];
         if !self.punct(')') {
             loop {
                 let rest = self.op("...");
-                let name = self.name()?;
-                if params.iter().any(|p| p.name == name) {
-                    return Err(self.error("duplicate parameter"));
+                let binding = self.binding_pattern()?;
+                let names = binding.names();
+                for (index, name) in names.iter().enumerate() {
+                    if names[..index].contains(name)
+                        || params.iter().any(|p| p.binding.names().contains(name))
+                    {
+                        return Err(self.error("duplicate parameter"));
+                    }
                 }
                 let default = if self.op("=") {
                     if rest {
@@ -735,28 +841,23 @@ impl Parser<'_> {
                 finally,
             });
         }
-        let s = if self.word("const") {
-            let n = self.name()?;
-            if !self.op("=") {
-                return Err(self.error("const requires initializer"));
-            }
-            Stmt::Const(n, self.expression()?)
-        } else if self.word("let") {
-            let n = self.name()?;
-            let e = if self.op("=") {
-                self.expression()?
-            } else {
-                Expr::Undefined
+        let s = if self.current() == &Token::Name("const".into())
+            || self.current() == &Token::Name("let".into())
+            || self.current() == &Token::Name("var".into())
+        {
+            let Token::Name(kind) = self.take() else {
+                unreachable!()
             };
-            Stmt::Let(n, e)
-        } else if self.word("var") {
-            let n = self.name()?;
-            let e = if self.op("=") {
+            let pattern = self.binding_pattern()?;
+            let init = if self.op("=") {
                 Some(self.expression()?)
             } else {
                 None
             };
-            Stmt::Var(n, e)
+            if init.is_none() && (kind == "const" || !matches!(pattern, Pattern::Name(_))) {
+                return Err(self.error("binding declaration requires initializer"));
+            }
+            Self::binding_statement(&kind, pattern, init)
         } else if self.word("return") {
             let e = if self.newline()
                 || matches!(
@@ -1395,8 +1496,11 @@ fn validate_function(
     asynchronous: bool,
     generator: bool,
 ) -> Result<(), SyntaxError> {
-    let names: Vec<_> = params.iter().map(|p| p.name.clone()).collect();
-    if params.iter().any(|p| p.default.is_some() || p.rest) {
+    let names: Vec<_> = params.iter().flat_map(|p| p.binding.names()).collect();
+    if params
+        .iter()
+        .any(|p| p.default.is_some() || p.rest || !matches!(p.binding, Pattern::Name(_)))
+    {
         for statement in body {
             match statement {
                 Stmt::Expr(Expr::String(text)) if text == "use strict" => {
@@ -1411,18 +1515,24 @@ fn validate_function(
         }
     }
     for param in params {
+        for expression in param.binding.expressions() {
+            validate(&[Stmt::Expr(expression.clone())], &names, false, depth + 1)?;
+        }
         if let Some(default) = &param.default {
             validate(&[Stmt::Expr(default.clone())], &names, false, depth + 1)?;
         }
     }
     for statement in body {
-        if let Stmt::Let(name, _) | Stmt::Const(name, _) = statement {
-            if names.contains(name) {
-                return Err(SyntaxError {
-                    offset: 0,
-                    message: "parameter conflicts with lexical binding",
-                });
-            }
+        let bindings = match statement {
+            Stmt::Let(name, _) | Stmt::Const(name, _) => vec![name.clone()],
+            Stmt::Bind { kind, pattern, .. } if kind != "var" => pattern.names(),
+            _ => vec![],
+        };
+        if bindings.iter().any(|name| names.contains(name)) {
+            return Err(SyntaxError {
+                offset: 0,
+                message: "parameter conflicts with lexical binding",
+            });
         }
     }
     validate_loop(
@@ -1458,10 +1568,15 @@ fn validate_loop(
     if depth >= 64 {
         return Err(err("AST nesting limit"));
     }
-    let mut names: std::collections::HashSet<&str> = params.iter().map(String::as_str).collect();
+    let mut names: std::collections::HashSet<String> = params.iter().cloned().collect();
     for s in body {
-        if let Stmt::Const(n, _) | Stmt::Let(n, _) = s {
-            if !names.insert(n) {
+        let bindings = match s {
+            Stmt::Const(name, _) | Stmt::Let(name, _) => vec![name.clone()],
+            Stmt::Bind { kind, pattern, .. } if kind != "var" => pattern.names(),
+            _ => vec![],
+        };
+        for name in bindings {
+            if !names.insert(name) {
                 return Err(err("duplicate lexical binding"));
             }
         }
@@ -1469,6 +1584,24 @@ fn validate_loop(
     let mut work = vec![];
     for s in body {
         match s {
+            Stmt::Bind {
+                kind,
+                pattern,
+                init,
+            } => {
+                if kind == "var" && pattern.names().iter().any(|name| names.contains(name)) {
+                    return Err(err("var conflicts with lexical binding"));
+                }
+                work.extend(
+                    pattern
+                        .expressions()
+                        .into_iter()
+                        .map(|expression| (expression, depth)),
+                );
+                if let Some(init) = init {
+                    work.push((init, depth));
+                }
+            }
             Stmt::Const(_, e) | Stmt::Let(_, e) | Stmt::Expr(e) | Stmt::Throw(e) => {
                 work.push((e, depth))
             }
@@ -1755,6 +1888,7 @@ pub use module_syntax::{parse_module, Export, Import, Module};
 pub(super) fn var_names(body: &[Stmt], out: &mut Vec<String>) {
     for s in body {
         match s {
+            Stmt::Bind { kind, pattern, .. } if kind == "var" => out.extend(pattern.names()),
             Stmt::Switch(_, cases) => {
                 for (_, body) in cases {
                     var_names(body, out);

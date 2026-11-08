@@ -172,20 +172,23 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
                     }));
             } else {
                 let statement = p.statement()?;
-                let name = match &statement {
+                let names = match &statement {
                     Stmt::Const(n, _)
                     | Stmt::Let(n, _)
                     | Stmt::Var(n, _)
                     | Stmt::Function(n, ..)
                     | Stmt::AsyncFunction(n, ..)
-                    | Stmt::GeneratorFunction(n, ..) => n.clone(),
+                    | Stmt::GeneratorFunction(n, ..) => vec![n.clone()],
+                    Stmt::Bind { pattern, .. } => pattern.names(),
                     _ => return Err(p.error("unsupported export declaration")),
                 };
-                module.exports.push(Export {
-                    exported: name.clone(),
-                    local: name,
-                    from: None,
-                });
+                for name in names {
+                    module.exports.push(Export {
+                        exported: name.clone(),
+                        local: name,
+                        from: None,
+                    });
+                }
                 module.body.push(statement);
             }
         } else {
@@ -205,13 +208,17 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
     }
     let mut lexical = imports.clone();
     for statement in &module.body {
-        if let Stmt::Const(n, _)
-        | Stmt::Let(n, _)
-        | Stmt::Function(n, ..)
-        | Stmt::AsyncFunction(n, ..)
-        | Stmt::GeneratorFunction(n, ..) = statement
-        {
-            if !lexical.insert(n.clone()) {
+        let names = match statement {
+            Stmt::Const(n, _)
+            | Stmt::Let(n, _)
+            | Stmt::Function(n, ..)
+            | Stmt::AsyncFunction(n, ..)
+            | Stmt::GeneratorFunction(n, ..) => vec![n.clone()],
+            Stmt::Bind { kind, pattern, .. } if kind != "var" => pattern.names(),
+            _ => vec![],
+        };
+        for name in names {
+            if !lexical.insert(name) {
                 return Err(p.error("duplicate module binding"));
             }
         }

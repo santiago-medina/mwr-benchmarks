@@ -78,3 +78,5 @@ mod delegation;
 mod calendar;
 
 mod dates;
+
+mod patterns;
