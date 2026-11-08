@@ -83,5 +83,7 @@ mod dates;
 
 mod patterns;
 
+mod identifiers;
 mod template_lex;
 mod templates;
+mod unicode_id;

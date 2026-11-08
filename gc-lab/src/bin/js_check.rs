@@ -41,7 +41,18 @@ fn main() {
     let source = std::fs::read_to_string(path).expect("source");
     let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
     e.enable_test_harness();
-    let mut result = e.execute(&format!("\"use strict\";\n{includes}{source}"));
+    let full = format!("\"use strict\";\n{includes}{source}");
+    let mut result = e.execute(&full);
+    if let (Err(ScriptError::Syntax(s)), Ok(_)) =
+        (&result, std::env::var("JS_CHECK_SYNTAX_CONTEXT"))
+    {
+        // Debug aid for lexer/parser surveys: the offending character and its line.
+        let at = s.offset.min(full.len());
+        let start = full[..at].rfind('\n').map_or(0, |i| i + 1);
+        let end = full[at..].find('\n').map_or(full.len(), |i| at + i);
+        let c = full[at..].chars().next().map_or(0, |c| c as u32);
+        eprintln!("SYNTAX\t{}\tU+{c:04X}\t{}", s.message, &full[start..end]);
+    }
     if result.is_ok() {
         result = e.microtask_checkpoint(10_000).map(|_| ());
     }

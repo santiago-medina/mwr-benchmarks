@@ -87,7 +87,7 @@ la retirada antes de su turno y evita registros duplicados.
 GC en modo estrés se ejecuta antes de cada asignación administrada y después de
 cada sentencia; también puede ocurrir al agotar la cuota. Se prueban las cuatro
 combinaciones de Stable/Indirect de los dos heaps, con estrés activado/desactivado
-para el ejemplo completo. Hay límites de fuente (64 KiB), tokens (8192), nesting
+para el ejemplo completo. Hay límites de fuente (8 MiB), tokens (1 Mi), nesting
 sintáctico, llamadas (32), reentrada nativa (32) y pasos (10000 por defecto).
 
 El presupuesto de Runtime sigue siendo de bytes lógicos. Los 64 bytes de payload

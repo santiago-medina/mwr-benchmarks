@@ -1,7 +1,7 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "741cd37dab75a1c7f84d34ff2f197a1c3e43fb5beeca2c2641a0c4f3ff6e5bb7",
+  "implementation_sha256": "9a79db16f4b8828c888ed9095552f8cddfb2d663e4478ef30212174a949b938f",
   "runner_sha256": "62e2e9b83430e502c8823767e6dd0f2a4c91593e52db25733a76f69e876b166f",
   "new_failures": [
     "built-ins/Array/from/Array.from_arity.js",
@@ -106,6 +106,8 @@
     "built-ins/Array/prototype/slice/S15.4.4.10_A3_T1.js",
     "built-ins/Array/prototype/slice/S15.4.4.10_A3_T2.js",
     "built-ins/Array/prototype/slice/create-non-array-invalid-len.js",
+    "built-ins/Array/prototype/sort/comparefn-nonfunction-call-throws.js",
+    "built-ins/Array/prototype/sort/stability-2048-elements.js",
     "built-ins/Array/prototype/sort/stability-513-elements.js",
     "built-ins/Array/prototype/splice/create-non-array-invalid-len.js",
     "built-ins/Array/prototype/toLocaleString/S15.4.4.3_A1_T1.js",
@@ -212,6 +214,7 @@
     "built-ins/AsyncDisposableStack/prototype/move/name.js",
     "built-ins/AsyncDisposableStack/prototype/move/not-a-constructor.js",
     "built-ins/AsyncDisposableStack/prototype/move/prop-desc.js",
+    "built-ins/AsyncDisposableStack/prototype/move/returns-new-asyncdisposablestack-that-contains-moved-resources.js",
     "built-ins/AsyncDisposableStack/prototype/move/returns-new-asyncdisposablestack-that-is-still-pending.js",
     "built-ins/AsyncDisposableStack/prototype/move/returns-new-asyncdisposablestack.js",
     "built-ins/AsyncDisposableStack/prototype/move/sets-state-to-disposed.js",
@@ -228,6 +231,7 @@
     "built-ins/AsyncDisposableStack/prototype/use/allows-null-value.js",
     "built-ins/AsyncDisposableStack/prototype/use/allows-undefined-value.js",
     "built-ins/AsyncDisposableStack/prototype/use/gets-value-Symbol.asyncDispose-property-once.js",
+    "built-ins/AsyncDisposableStack/prototype/use/gets-value-Symbol.dispose-property-after-trying-Symbol.asyncDispose.js",
     "built-ins/AsyncDisposableStack/prototype/use/gets-value-Symbol.dispose-property-once.js",
     "built-ins/AsyncDisposableStack/prototype/use/length.js",
     "built-ins/AsyncDisposableStack/prototype/use/name.js",
@@ -333,6 +337,8 @@
     "built-ins/Atomics/wait/non-shared-bufferdata-throws.js",
     "built-ins/Atomics/wait/not-a-typedarray-throws.js",
     "built-ins/Atomics/wait/not-an-object-throws.js",
+    "built-ins/Atomics/waitAsync/bad-range.js",
+    "built-ins/Atomics/waitAsync/bigint/bad-range.js",
     "built-ins/Atomics/waitAsync/bigint/false-for-timeout.js",
     "built-ins/Atomics/waitAsync/bigint/negative-index-throws.js",
     "built-ins/Atomics/waitAsync/bigint/negative-timeout.js",
@@ -466,6 +472,7 @@
     "built-ins/DisposableStack/prototype/move/name.js",
     "built-ins/DisposableStack/prototype/move/not-a-constructor.js",
     "built-ins/DisposableStack/prototype/move/prop-desc.js",
+    "built-ins/DisposableStack/prototype/move/returns-new-disposablestack-that-contains-moved-resources.js",
     "built-ins/DisposableStack/prototype/move/returns-new-disposablestack-that-is-still-pending.js",
     "built-ins/DisposableStack/prototype/move/returns-new-disposablestack.js",
     "built-ins/DisposableStack/prototype/move/sets-state-to-disposed.js",
@@ -501,6 +508,7 @@
     "built-ins/Error/isError/fake-errors.js",
     "built-ins/Error/isError/is-a-constructor.js",
     "built-ins/Error/isError/name.js",
+    "built-ins/Error/isError/non-error-objects.js",
     "built-ins/Error/isError/primitives.js",
     "built-ins/Error/isError/prop-desc.js",
     "built-ins/Error/isError/symbols.js",
@@ -510,6 +518,7 @@
     "built-ins/Error/prototype/stack/getter-error-instance.js",
     "built-ins/Error/prototype/stack/getter-error-prototype.js",
     "built-ins/Error/prototype/stack/getter-foreign-new-target.js",
+    "built-ins/Error/prototype/stack/getter-no-error-data.js",
     "built-ins/Error/prototype/stack/getter-not-a-constructor.js",
     "built-ins/Error/prototype/stack/getter-receiver-is-proxy.js",
     "built-ins/Error/prototype/stack/getter-subclass.js",
@@ -1584,7 +1593,88 @@
     "built-ins/Promise/try/avoids-wrap.js",
     "built-ins/Proxy/proxy.js",
     "built-ins/Reflect/Symbol.toStringTag.js",
+    "built-ins/RegExp/CharacterClassEscapes/character-class-digit-class-escape-negative-cases.js",
+    "built-ins/RegExp/CharacterClassEscapes/character-class-non-digit-class-escape-positive-cases.js",
+    "built-ins/RegExp/CharacterClassEscapes/character-class-non-whitespace-class-escape-positive-cases.js",
+    "built-ins/RegExp/CharacterClassEscapes/character-class-non-word-class-escape-positive-cases.js",
+    "built-ins/RegExp/CharacterClassEscapes/character-class-whitespace-class-escape-negative-cases.js",
+    "built-ins/RegExp/CharacterClassEscapes/character-class-word-class-escape-negative-cases.js",
     "built-ins/RegExp/prop-desc.js",
+    "built-ins/RegExp/property-escapes/generated/Alphabetic.js",
+    "built-ins/RegExp/property-escapes/generated/Any.js",
+    "built-ins/RegExp/property-escapes/generated/Assigned.js",
+    "built-ins/RegExp/property-escapes/generated/Bidi_Mirrored.js",
+    "built-ins/RegExp/property-escapes/generated/Case_Ignorable.js",
+    "built-ins/RegExp/property-escapes/generated/Cased.js",
+    "built-ins/RegExp/property-escapes/generated/Changes_When_Casefolded.js",
+    "built-ins/RegExp/property-escapes/generated/Changes_When_Casemapped.js",
+    "built-ins/RegExp/property-escapes/generated/Changes_When_Lowercased.js",
+    "built-ins/RegExp/property-escapes/generated/Changes_When_NFKC_Casefolded.js",
+    "built-ins/RegExp/property-escapes/generated/Changes_When_Titlecased.js",
+    "built-ins/RegExp/property-escapes/generated/Changes_When_Uppercased.js",
+    "built-ins/RegExp/property-escapes/generated/Default_Ignorable_Code_Point.js",
+    "built-ins/RegExp/property-escapes/generated/Diacritic.js",
+    "built-ins/RegExp/property-escapes/generated/Emoji.js",
+    "built-ins/RegExp/property-escapes/generated/Emoji_Presentation.js",
+    "built-ins/RegExp/property-escapes/generated/Extended_Pictographic.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Cased_Letter.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Decimal_Number.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Letter.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Lowercase_Letter.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Mark.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Math_Symbol.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Nonspacing_Mark.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Number.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Other.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Letter.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Number.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Punctuation.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Symbol.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Private_Use.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Punctuation.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Spacing_Mark.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Surrogate.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Symbol.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Unassigned.js",
+    "built-ins/RegExp/property-escapes/generated/General_Category_-_Uppercase_Letter.js",
+    "built-ins/RegExp/property-escapes/generated/Grapheme_Base.js",
+    "built-ins/RegExp/property-escapes/generated/Grapheme_Extend.js",
+    "built-ins/RegExp/property-escapes/generated/ID_Continue.js",
+    "built-ins/RegExp/property-escapes/generated/ID_Start.js",
+    "built-ins/RegExp/property-escapes/generated/Ideographic.js",
+    "built-ins/RegExp/property-escapes/generated/Lowercase.js",
+    "built-ins/RegExp/property-escapes/generated/Math.js",
+    "built-ins/RegExp/property-escapes/generated/Pattern_Syntax.js",
+    "built-ins/RegExp/property-escapes/generated/Script_-_Arabic.js",
+    "built-ins/RegExp/property-escapes/generated/Script_-_Canadian_Aboriginal.js",
+    "built-ins/RegExp/property-escapes/generated/Script_-_Common.js",
+    "built-ins/RegExp/property-escapes/generated/Script_-_Cuneiform.js",
+    "built-ins/RegExp/property-escapes/generated/Script_-_Egyptian_Hieroglyphs.js",
+    "built-ins/RegExp/property-escapes/generated/Script_-_Han.js",
+    "built-ins/RegExp/property-escapes/generated/Script_-_Hangul.js",
+    "built-ins/RegExp/property-escapes/generated/Script_-_Inherited.js",
+    "built-ins/RegExp/property-escapes/generated/Script_-_Latin.js",
+    "built-ins/RegExp/property-escapes/generated/Script_-_SignWriting.js",
+    "built-ins/RegExp/property-escapes/generated/Script_-_Tangut.js",
+    "built-ins/RegExp/property-escapes/generated/Script_-_Unknown.js",
+    "built-ins/RegExp/property-escapes/generated/Script_-_Yi.js",
+    "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Arabic.js",
+    "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Canadian_Aboriginal.js",
+    "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Common.js",
+    "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Cuneiform.js",
+    "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Egyptian_Hieroglyphs.js",
+    "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Han.js",
+    "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Hangul.js",
+    "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Latin.js",
+    "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_SignWriting.js",
+    "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Tangut.js",
+    "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Unknown.js",
+    "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Yi.js",
+    "built-ins/RegExp/property-escapes/generated/Unified_Ideograph.js",
+    "built-ins/RegExp/property-escapes/generated/Uppercase.js",
+    "built-ins/RegExp/property-escapes/generated/XID_Continue.js",
+    "built-ins/RegExp/property-escapes/generated/XID_Start.js",
+    "built-ins/RegExp/prototype/Symbol.replace/coerce-global.js",
     "built-ins/Set/Symbol.species/length.js",
     "built-ins/Set/Symbol.species/symbol-species-name.js",
     "built-ins/Set/prototype/intersection/converts-negative-zero.js",
@@ -1696,6 +1786,7 @@
     "built-ins/String/prototype/match/not-a-constructor.js",
     "built-ins/String/prototype/match/this-val-bool.js",
     "built-ins/String/prototype/match/this-val-obj.js",
+    "built-ins/String/prototype/match/this-value-not-obj-coercible.js",
     "built-ins/String/prototype/matchAll/cstm-matchall-on-bigint-primitive.js",
     "built-ins/String/prototype/matchAll/cstm-matchall-on-boolean-primitive.js",
     "built-ins/String/prototype/matchAll/cstm-matchall-on-number-primitive.js",
@@ -1707,6 +1798,8 @@
     "built-ins/String/prototype/matchAll/regexp-is-null.js",
     "built-ins/String/prototype/matchAll/regexp-is-undefined.js",
     "built-ins/String/prototype/matchAll/regexp-matchAll-invocation.js",
+    "built-ins/String/prototype/matchAll/regexp-matchAll-not-callable.js",
+    "built-ins/String/prototype/matchAll/regexp-prototype-has-no-matchAll.js",
     "built-ins/String/prototype/matchAll/this-val-non-obj-coercible.js",
     "built-ins/String/prototype/normalize/form-is-not-valid-throws.js",
     "built-ins/String/prototype/normalize/length.js",
@@ -1750,6 +1843,7 @@
     "built-ins/String/prototype/search/cstm-search-on-string-primitive.js",
     "built-ins/String/prototype/search/name.js",
     "built-ins/String/prototype/search/not-a-constructor.js",
+    "built-ins/String/prototype/search/this-value-not-obj-coercible.js",
     "built-ins/String/prototype/split/checking-by-using-eval.js",
     "built-ins/String/prototype/toLocaleLowerCase/Final_Sigma_U180E.js",
     "built-ins/String/prototype/toLocaleLowerCase/S15.5.4.17_A10.js",
@@ -1773,6 +1867,8 @@
     "built-ins/String/prototype/toLocaleLowerCase/name.js",
     "built-ins/String/prototype/toLocaleLowerCase/not-a-constructor.js",
     "built-ins/String/prototype/toLocaleLowerCase/special_casing.js",
+    "built-ins/String/prototype/toLocaleLowerCase/special_casing_conditional.js",
+    "built-ins/String/prototype/toLocaleLowerCase/supplementary_plane.js",
     "built-ins/String/prototype/toLocaleLowerCase/this-value-not-obj-coercible.js",
     "built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A10.js",
     "built-ins/String/prototype/toLocaleUpperCase/S15.5.4.19_A11.js",
@@ -1795,6 +1891,7 @@
     "built-ins/String/prototype/toLocaleUpperCase/name.js",
     "built-ins/String/prototype/toLocaleUpperCase/not-a-constructor.js",
     "built-ins/String/prototype/toLocaleUpperCase/special_casing.js",
+    "built-ins/String/prototype/toLocaleUpperCase/supplementary_plane.js",
     "built-ins/String/prototype/toLocaleUpperCase/this-value-not-obj-coercible.js",
     "built-ins/String/prototype/toWellFormed/length.js",
     "built-ins/String/prototype/toWellFormed/name.js",
@@ -5179,6 +5276,14 @@
     "language/global-code/decl-lex-restricted-global.js",
     "language/global-code/unscopables-ignored.js",
     "language/identifier-resolution/S11.1.2_A1_T1.js",
+    "language/identifiers/start-unicode-10.0.0-escaped.js",
+    "language/identifiers/start-unicode-10.0.0.js",
+    "language/identifiers/start-unicode-5.2.0-escaped.js",
+    "language/identifiers/start-unicode-5.2.0.js",
+    "language/identifiers/start-unicode-8.0.0-escaped.js",
+    "language/identifiers/start-unicode-8.0.0.js",
+    "language/identifiers/start-unicode-9.0.0-escaped.js",
+    "language/identifiers/start-unicode-9.0.0.js",
     "language/statements/async-generator/return-undefined-implicit-and-explicit.js",
     "language/statements/async-generator/yield-star-return-then-getter-ticks.js",
     "language/statements/block/tco-stmt-list.js",
@@ -5259,34 +5364,29 @@
   ],
   "total": 47708,
   "counts": {
-    "unsupported": 17452,
-    "passed": 25010,
-    "failed": 5246
+    "unsupported": 15819,
+    "passed": 26538,
+    "failed": 5351
   },
-  "assertions": 109656,
+  "assertions": 127540,
   "regressions": [],
   "unsupported_reasons": {
     "unsupported execution flags: module": 444,
-    "standard intrinsic not implemented": 2543,
+    "standard intrinsic not implemented": 2596,
     "unsupported execution flags: noStrict": 1114,
-    "syntax: newline in string": 1488,
+    "RegExp literal": 2845,
     "unsupported execution flags: async,noStrict": 7,
-    "array operation": 2348,
-    "syntax: unsupported or missing expression": 658,
-    "syntax: surrogate strings unsupported": 28,
+    "array operation": 2395,
+    "syntax: surrogate strings unsupported": 34,
     "map output length exceeds array range": 5,
-    "syntax: token limit": 13,
-    "syntax: invalid numeric separator": 8,
-    "syntax: unsupported character": 2383,
     "number radix": 77,
     "ordinary reflection on host objects": 1,
-    "syntax: unsupported escape": 32,
     "syntax: unsupported reserved expression": 542,
-    "syntax: invalid escape": 39,
     "negative parse/resolution test outside runtime profile": 4330,
-    "syntax: source limit": 21,
+    "syntax: AST nesting limit": 3,
     "unsupported execution flags: async,module": 19,
-    "syntax: expected semicolon": 184,
+    "surrogate string wrapper": 1,
+    "syntax: expected semicolon": 189,
     "unpaired UTF-16 string storage": 10,
     "unsupported execution flags: raw": 27,
     "unsupported execution flags: module,raw": 2,
@@ -5299,13 +5399,16 @@
     "syntax: reserved binding identifier": 32,
     "unsupported execution flags: generated,noStrict,async": 142,
     "yield requires a generator activation": 12,
+    "syntax: expected punctuation": 18,
     "unsupported execution flags: generated,async,module": 9,
+    "syntax: unsupported character": 14,
+    "syntax: unsupported or missing expression": 32,
     "unsupported execution flags: module,async": 54,
     "unsupported execution flags: generated,module,async": 18,
     "syntax: invalid accessor parameters": 3,
     "syntax: invalid update target": 2,
     "unsupported execution flags: noStrict,async": 3,
-    "syntax: expected punctuation": 17,
+    "syntax: escaped reserved word": 2,
     "resumable loop binding expressions": 37,
     "syntax: syntax nesting limit": 1,
     "syntax: invalid shorthand binding": 1
@@ -6126,6 +6229,21 @@
       "reason": "Err(Runtime(\"slice output length limit\")); expected None",
       "assertions": 1,
       "cleanup": true
+    },
+    {
+      "path": "built-ins/Array/prototype/sort/comparefn-nonfunction-call-throws.js",
+      "source_sha256": "f481a5de1d76afbfd98f06fc970258f9919326c4c23e3bf1a774f8de3190db99",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 469, serial: 603 })) })); expected None",
+      "assertions": 2,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Array/prototype/sort/stability-2048-elements.js",
+      "source_sha256": "fed127c2af841d2d2d8fb782b6e505ba445ef38169af6d38abea4635c6086257",
+      "status": "failed",
+      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/Array/prototype/sort/stability-2048-elements.js']' timed out after 10 seconds",
+      "assertions": 0
     },
     {
       "path": "built-ins/Array/prototype/sort/stability-513-elements.js",
@@ -6952,6 +7070,14 @@
       "cleanup": true
     },
     {
+      "path": "built-ins/AsyncDisposableStack/prototype/move/returns-new-asyncdisposablestack-that-contains-moved-resources.js",
+      "source_sha256": "46dd3ed509b09a0b6681082568dfe72b9fe8c111c6450f6cb5e4c6ed800d50c0",
+      "status": "failed",
+      "reason": "$DONE: Thrown(Exception { name: Some(\"ReferenceError\"), message: \"AsyncDisposableStack is not defined\", value: Object(Js(Handle { heap: 2, index: 552, serial: 794 })) })",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
       "path": "built-ins/AsyncDisposableStack/prototype/move/returns-new-asyncdisposablestack-that-is-still-pending.js",
       "source_sha256": "048b88edcbf7bd41251cb02ef1fa0b0177488864a449d60c3bd913c161cc558e",
       "status": "failed",
@@ -7076,6 +7202,14 @@
       "source_sha256": "9bb491f3e938dbc9961a70f13fe4894cf871616c9aa9b68c6cf7ffbf5a98a8c7",
       "status": "failed",
       "reason": "$DONE: Thrown(Exception { name: Some(\"ReferenceError\"), message: \"AsyncDisposableStack is not defined\", value: Object(Js(Handle { heap: 2, index: 477, serial: 584 })) })",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/AsyncDisposableStack/prototype/use/gets-value-Symbol.dispose-property-after-trying-Symbol.asyncDispose.js",
+      "source_sha256": "d49419c410a837a2b0c86a20d9c9b4ff90bf26f8cf47664d2863d3ac04a91a47",
+      "status": "failed",
+      "reason": "$DONE: Thrown(Exception { name: Some(\"ReferenceError\"), message: \"AsyncDisposableStack is not defined\", value: Object(Js(Handle { heap: 2, index: 552, serial: 794 })) })",
       "assertions": 0,
       "cleanup": true
     },
@@ -7941,6 +8075,22 @@
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 465, serial: 547 })) })); expected None",
       "assertions": 1,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Atomics/waitAsync/bad-range.js",
+      "source_sha256": "fe81eeeb4325becda392ca503ba9fc686653424bdb13ad0d765c70d09bd73fe2",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"Atomics is not defined\", value: Object(Js(Handle { heap: 2, index: 464, serial: 529 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Atomics/waitAsync/bigint/bad-range.js",
+      "source_sha256": "b3d274e96b4fa7021a7d38c9a2dc44a9a0a1e8f36c5de5065c61431723f09491",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"Atomics is not defined\", value: Object(Js(Handle { heap: 2, index: 464, serial: 529 })) })); expected None",
+      "assertions": 0,
       "cleanup": true
     },
     {
@@ -8984,6 +9134,14 @@
       "cleanup": true
     },
     {
+      "path": "built-ins/DisposableStack/prototype/move/returns-new-disposablestack-that-contains-moved-resources.js",
+      "source_sha256": "6db33f7ee98886b07701749c48ae84cd2be16cf688c0de363fd9c5f88fa92201",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"DisposableStack is not defined\", value: Object(Js(Handle { heap: 2, index: 460, serial: 721 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
       "path": "built-ins/DisposableStack/prototype/move/returns-new-disposablestack-that-is-still-pending.js",
       "source_sha256": "395027b0a273053a13ab30e7bd56761bfdc42140a6c21ada08d1bce134ab568f",
       "status": "failed",
@@ -9288,6 +9446,14 @@
       "cleanup": true
     },
     {
+      "path": "built-ins/Error/isError/non-error-objects.js",
+      "source_sha256": "127258bf41e20bdb9ee79c86af7f8210a156dd66992fd4cc22067181f3a0a6fe",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"value is not callable\", value: Object(Js(Handle { heap: 2, index: 459, serial: 522 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
       "path": "built-ins/Error/isError/primitives.js",
       "source_sha256": "447a2f1ef38241bde9ac6f23b54db6b76cd31112f9eb9f9baadab0232b68225b",
       "status": "failed",
@@ -9356,6 +9522,14 @@
       "source_sha256": "574d3d267999b83037e2e40331e3f165cac776090358fd1ab4016adf4d92aa07",
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 464, serial: 561 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/Error/prototype/stack/getter-no-error-data.js",
+      "source_sha256": "2121fae24c46b62f2c4a344216541b617a632d445d3e868b61952bf389c92fb8",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 458, serial: 520 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -17952,11 +18126,659 @@
       "cleanup": true
     },
     {
+      "path": "built-ins/RegExp/CharacterClassEscapes/character-class-digit-class-escape-negative-cases.js",
+      "source_sha256": "96def3936bfcbfb8bd65c63f7bea6893209798bbb74698d85d110577f3eac2b7",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/CharacterClassEscapes/character-class-non-digit-class-escape-positive-cases.js",
+      "source_sha256": "93315b35795dd52eee48f34e37a036477cdc6b71a1ebbd8cdf5ecd0d0e9c34f4",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/CharacterClassEscapes/character-class-non-whitespace-class-escape-positive-cases.js",
+      "source_sha256": "27c9f57d7e6e3965217db8021dbe30fe0d19429acdf90a22de56230d86346281",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/CharacterClassEscapes/character-class-non-word-class-escape-positive-cases.js",
+      "source_sha256": "b1bd0e8027bbdc4e698af61f0b23054d2fcda58ad594faff9688abc3d999ab99",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/CharacterClassEscapes/character-class-whitespace-class-escape-negative-cases.js",
+      "source_sha256": "7fd505960f3450b4e4e02a623822e70a24a19a833e9a93d6c9e8929abb1ba8b2",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/CharacterClassEscapes/character-class-word-class-escape-negative-cases.js",
+      "source_sha256": "a1638eb47d976537ce07075afbe594e9f899b98e0b5a68001cf26dfdec7f7dbe",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
       "path": "built-ins/RegExp/prop-desc.js",
       "source_sha256": "b0bf4d000d16cd8ea8c5c3bbd43b26abc8f5ef9dbcd0be7cdeb1b4a3a9cca701",
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 498, serial: 694 })) })); expected None",
       "assertions": 2,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Alphabetic.js",
+      "source_sha256": "1ec0e5cc97b9e7a39a03620650a8378d590f85d9b6b2a313f897807ddcf6dd41",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Any.js",
+      "source_sha256": "f207ea8531925013d8bceb6c88dc1c1fe7b3c35d5b87e30a8f3eae4f93495427",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Assigned.js",
+      "source_sha256": "a137ea03039630f9e5631e55c3838a05108a0ece0385ee7ae100de9412900ecb",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Bidi_Mirrored.js",
+      "source_sha256": "0046d6427a52d8fbdeae30e0082382bf3d7033fec6548df9dc58a68414ca744a",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Case_Ignorable.js",
+      "source_sha256": "e5c68081554a30e04e669800fe06a89e7bd2f600df8caaf98f58a4008ad8ea83",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Cased.js",
+      "source_sha256": "81e4c8adda992992f71a6c76e251dfa77c1fa9e36fa8b7da02a90ccd29c32fab",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Changes_When_Casefolded.js",
+      "source_sha256": "2409caad40232829ae1900044d285e6b69c74996220ed95f33a6396d631c4db9",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Changes_When_Casemapped.js",
+      "source_sha256": "e531428f9758391741b46ac4061207e4cc07d68582dd89593823e9a4b812cbb3",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Changes_When_Lowercased.js",
+      "source_sha256": "2d23145e753d9c520228fc4a4700322947d653a6dafd173ea5b0065be6eb71c3",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Changes_When_NFKC_Casefolded.js",
+      "source_sha256": "d07ee89851d95bce700542ef7e459884d6c5b4478d8d4712e0a01b799e730bac",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Changes_When_Titlecased.js",
+      "source_sha256": "7b6b6b7646af5f20811ee917d9bb5f774eb8793da7b50092c093f5c70c966c7f",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Changes_When_Uppercased.js",
+      "source_sha256": "027bda0f658f74fa656305251429d86c7780569a5faecea246b86da7e0cc32a2",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Default_Ignorable_Code_Point.js",
+      "source_sha256": "dfe393773501c731a24a2d721bd81571a86e3fce30a3e58cb5839a247bd3a482",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Diacritic.js",
+      "source_sha256": "63f67608bb18addd548f7bd069d9af66a956161d66a6be6c0b36b845b438520e",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Emoji.js",
+      "source_sha256": "525555d6dd6d8c3774695ef253598fd56c3ce9f610d71943fc535cc3072a835c",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Emoji_Presentation.js",
+      "source_sha256": "6bf6724c506a8e5330ca440d57962e6e106bb622a9ad99d66380c7bdb6ae68dc",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Extended_Pictographic.js",
+      "source_sha256": "2866c74d9e6e291aea9abd5a2f9680f0487191ccbd3e6e2e5a1f124a738f1e11",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Cased_Letter.js",
+      "source_sha256": "ff93533107794b2a7b2cfe52ad2262e1ea2b7e592b062d3ada490b901f90acc7",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Decimal_Number.js",
+      "source_sha256": "0811b6c9d46d00610f052cb613ccd5478b1263df0a0de6f7b94a1262c4df308a",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Letter.js",
+      "source_sha256": "77c4d252bd7bb8124a84696f4088e4459a1063f297f75278f0b6b3983d9c7e6d",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Lowercase_Letter.js",
+      "source_sha256": "8aec2bc73f93b9219ad98b3a6a8d4cc7c7dd9aa98bedc459aaed390308c2c93f",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Mark.js",
+      "source_sha256": "f525b321d68e9c0cefc6ec4f16c1b5434dc02f46fc03400e759a0641e2172968",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Math_Symbol.js",
+      "source_sha256": "f59052b8a88b81e5e8a2f7b28410973f6e05a3ed0e84848ed814934f4e6f9328",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Nonspacing_Mark.js",
+      "source_sha256": "5af0cc7fea4ce3cd6d24a918001f5fc9765326115b34e794e3d5b60dffa3617b",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Number.js",
+      "source_sha256": "ac5c049ef556813fdc7dd6ec12d6140046a03617079fe76a4f3164375f30aa30",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Other.js",
+      "source_sha256": "8103a620772c029c03b0cf49c110d26ff191f661b52bd21be82df0b8debf426c",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Letter.js",
+      "source_sha256": "9457aa2a7afeb17fcce43d8e19c8dad78bd10a8ee9e79554b42d157805e37e5e",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Number.js",
+      "source_sha256": "a946c7a9aacbbfce708b976b7f152b4d32dcc6514546a0e4ba82428f3d621456",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Punctuation.js",
+      "source_sha256": "fcde37ac913520b36c1bb4eaf4d5f2cc5a43952474b0663654c3c29dd0a91dd3",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Symbol.js",
+      "source_sha256": "095fbc3332852a5c541385400f7d217b8a6ef1a8ff172a23de9c2ca25e715187",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Private_Use.js",
+      "source_sha256": "aae2566289e39c69d4de56979fb7b6058b9263c67512c4b9b6f2656905a57a0f",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Punctuation.js",
+      "source_sha256": "1b2ab7c0b42b15bd5006a349b19fd95bb01a940434e236e67a3693479edb108f",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Spacing_Mark.js",
+      "source_sha256": "5fd9c790e7b4afd128f9167ce07e494e5ee9162c310e4af08b7d94bfadc3acf1",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Surrogate.js",
+      "source_sha256": "e42b90af4bed7a6c67fa9e79861c585fcecfc6b8256de9b5f39d19f8c61ef72f",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Symbol.js",
+      "source_sha256": "ca9ea5c612058452a422e7088e7b2862505be048a508c716c3de1b6dc9cccc72",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Unassigned.js",
+      "source_sha256": "b11d85178624777be55cc0fc72a0ffc3e4b147efc2b81aa5382b2aa595f7cd7c",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/General_Category_-_Uppercase_Letter.js",
+      "source_sha256": "4a52eeba2d1ba3f9ab496e6404938d02ee28031022a655da67ce223f78a73da0",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Grapheme_Base.js",
+      "source_sha256": "f2bd9f382b78b9be8f4126b061f22868ecca174ef46b8c7c077b12c96e03cf3d",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Grapheme_Extend.js",
+      "source_sha256": "e81f4e718f9cc8c0a7796ad0219a36bd30a1f2a4e017d198a1a68d48f58595c3",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/ID_Continue.js",
+      "source_sha256": "52bc2853a1788e07829de06f534575f3689ea36c5bbcf8b1dbc7cb0e86dea5ef",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/ID_Start.js",
+      "source_sha256": "d372226a32c1cfd76eca29d45c9e253ee1389d715cdf0f24540f3f16c8bfb1ef",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Ideographic.js",
+      "source_sha256": "f7d97d3ce0167a7cfde45d49e2f1c421df1247f69065d3181c88a96186fc3153",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Lowercase.js",
+      "source_sha256": "28dd2c3c0a0cc5bfe2090a21083cda2829920893e96869a1914fd344c3425541",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Math.js",
+      "source_sha256": "5b498f569f80aed44c114fd50d807762032807dc2ee2a8bacdaee50b3eb1d4d6",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Pattern_Syntax.js",
+      "source_sha256": "19a46ed97c4cbf8264cca44dd3b82ce08f841bfba94185c767b387b7d5743738",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_-_Arabic.js",
+      "source_sha256": "f6420c923fcc4c4bac0dcadd277ac2e24f35f7074705de6384dd38473fe9cf25",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_-_Canadian_Aboriginal.js",
+      "source_sha256": "65cc89e47f5f474715fcb4c890273873f0d3004660ab205ea44758e5805c2e45",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_-_Common.js",
+      "source_sha256": "72afdb6a1440d4166531cd83ef1f6760425e471c49227ee99afc3db2b41f2e0d",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_-_Cuneiform.js",
+      "source_sha256": "7d7d6426b11add758dfef59b909a2733cc4ea999369fc780683ca83f654b361e",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_-_Egyptian_Hieroglyphs.js",
+      "source_sha256": "2d4fc3de4f820fc322013cbb26b140915a725df3425c20cb1d449a4f6490bd11",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_-_Han.js",
+      "source_sha256": "08e6f6c049b243f5f9f52423eb10dca9a3651eb44adceb1ed4449f1c39ec140a",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_-_Hangul.js",
+      "source_sha256": "b756d9642b5a050626c69776c5fb817c5b2f40ce87d9c0dc432ac935c155d8f9",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_-_Inherited.js",
+      "source_sha256": "eca4f088b559df401032784c01bde64c04d9e28fcb23f8fa3af983b16a6be069",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_-_Latin.js",
+      "source_sha256": "1bbc18ca19106de4b8c499755f914a8d9c9769538467033628d3f26763a60b62",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_-_SignWriting.js",
+      "source_sha256": "af220c67cd415197f303d92a8765a7137f7460cc5a36a3243d9f308893874eda",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_-_Tangut.js",
+      "source_sha256": "ac494a75fc4d4cf70acc0d1e7736a07b9e1992c630305b43599f048e098206c4",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_-_Unknown.js",
+      "source_sha256": "95984748b50620073d6cd1310b3019c010acf28a16fd4a351a8c4d02522e8724",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_-_Yi.js",
+      "source_sha256": "6d52a0947cfd7f2305819b95c312b77852e412016dd2d7b80d8d34c15c58f6a6",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Arabic.js",
+      "source_sha256": "0d203670d87eadf44f14210c1960bab064e07a48cc99391a919ede98b78bf1f9",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Canadian_Aboriginal.js",
+      "source_sha256": "aa5a06003f77f0a66c29990e75524b0305eb06ff60709ad62aa40cb6bf1d53b7",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Common.js",
+      "source_sha256": "f1e42378a0c3705da208fa410dbc4e96eaf66b228d266dbff8f62f208f998efb",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Cuneiform.js",
+      "source_sha256": "72029165a4b678e04bcf660a03be512ac7e5c6b9c5eb515380875c12d565290c",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Egyptian_Hieroglyphs.js",
+      "source_sha256": "f82effee708a6a951f3e75e291cae96ab0138f361e2c20bc62e38b254401afc4",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Han.js",
+      "source_sha256": "145911be2dbd2d43f79cc5132d427606e5c090a419cd4d30de6cb85214aea9e1",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Hangul.js",
+      "source_sha256": "4aa439e75ae00e6e23d85ba3184f39d2f0cc549cab676cc5fb59cfe020f55a4a",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Latin.js",
+      "source_sha256": "8d64aa6100727d1d52010fef23489b689eee53aa214a9ccc86bd72c5dfd95880",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_SignWriting.js",
+      "source_sha256": "70dc35435c9b7e34f90dc4dbdf966a0894e35add28aec55a46808a02b0ad93f0",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Tangut.js",
+      "source_sha256": "6a970324e281fcfac55985e6e183fa62db6806f83afd4ad11a4fbfe750d25d15",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Unknown.js",
+      "source_sha256": "5eb338be37bf1cc32cb70168d13e398a1be40d32c8c4821f8b70ed6453f3a959",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Yi.js",
+      "source_sha256": "c456bbf427bbc2d3e642c53b4d499631b514f9d0b9edd57de04a9554b5d96bf0",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Unified_Ideograph.js",
+      "source_sha256": "6dc7688ea69dd4fb7c22f1030ab98e24fa6a2feb73e23f4114cfc7214b91468c",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/Uppercase.js",
+      "source_sha256": "f0676a7fe5bf22929004498e4b9792c3734a6a0a3cdff05a0d979024142fceca",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/XID_Continue.js",
+      "source_sha256": "f5d30098b0d4fa3958ebf1906d74d71446cbd62bd1a9adaa94f67217e44d26e9",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/property-escapes/generated/XID_Start.js",
+      "source_sha256": "2bd0a45e9c59a1b8f62acbb4a0c7812b8c9862b2aca86fcfc78e9fc9ad67df75",
+      "status": "failed",
+      "reason": "Err(Runtime(\"execution step limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/RegExp/prototype/Symbol.replace/coerce-global.js",
+      "source_sha256": "6a86894c0a3e7a8ac9ea101ac6c93a9e660674fdfbd7c7c0f924023d92d1f336",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"print is not defined\", value: Object(Js(Handle { heap: 2, index: 458, serial: 512 })) })); expected None",
+      "assertions": 0,
       "cleanup": true
     },
     {
@@ -18848,6 +19670,14 @@
       "cleanup": true
     },
     {
+      "path": "built-ins/String/prototype/match/this-value-not-obj-coercible.js",
+      "source_sha256": "0870986dc5c2c661d8ec27580bad46ad88edd7095f8518263b0312b1a0a4ea85",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 458, serial: 518 })) })); expected None",
+      "assertions": 1,
+      "cleanup": true
+    },
+    {
       "path": "built-ins/String/prototype/matchAll/cstm-matchall-on-bigint-primitive.js",
       "source_sha256": "96a48e61317a227e1c899fa33a8aba1e623e1b816e7fd9eda3c891c9c266132e",
       "status": "failed",
@@ -18933,6 +19763,22 @@
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"value is not callable\", value: Object(Js(Handle { heap: 2, index: 462, serial: 530 })) })); expected None",
       "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/String/prototype/matchAll/regexp-matchAll-not-callable.js",
+      "source_sha256": "4ff77da106b06e0718c24cf477f3fb765d8da47043bc81dbb00e6e0870c63e4f",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 458, serial: 518 })) })); expected None",
+      "assertions": 1,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/String/prototype/matchAll/regexp-prototype-has-no-matchAll.js",
+      "source_sha256": "19d687dcecb1a09ad63b3e33add25464472108e3d4dcab6c1b6668462a7e57e0",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 458, serial: 518 })) })); expected None",
+      "assertions": 1,
       "cleanup": true
     },
     {
@@ -19280,6 +20126,14 @@
       "cleanup": true
     },
     {
+      "path": "built-ins/String/prototype/search/this-value-not-obj-coercible.js",
+      "source_sha256": "f2dba61183f504525069621ebb25a28def703ab3a93639d1e1e864f37388b92f",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 458, serial: 518 })) })); expected None",
+      "assertions": 1,
+      "cleanup": true
+    },
+    {
       "path": "built-ins/String/prototype/split/checking-by-using-eval.js",
       "source_sha256": "dcc5c2fa6cc8c382fa298298528ee4ca62cc0940f882bf429165177e6bb7489d",
       "status": "failed",
@@ -19464,6 +20318,22 @@
       "cleanup": true
     },
     {
+      "path": "built-ins/String/prototype/toLocaleLowerCase/special_casing_conditional.js",
+      "source_sha256": "799c54133365d12ed50cd54f76cccc8fcfd1fc08c560e116e8f6c25118e1005e",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"value is not callable\", value: Object(Js(Handle { heap: 2, index: 458, serial: 514 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/String/prototype/toLocaleLowerCase/supplementary_plane.js",
+      "source_sha256": "a7a3ba936284aeda93738bf487644414c4403104510bdf0fabe3cd470a353d4e",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"value is not callable\", value: Object(Js(Handle { heap: 2, index: 458, serial: 514 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
       "path": "built-ins/String/prototype/toLocaleLowerCase/this-value-not-obj-coercible.js",
       "source_sha256": "6c1b57a7526f3872c90a5456c56bc2620dfcdfd4283ac827409d1c7b6f76ef97",
       "status": "failed",
@@ -19634,6 +20504,14 @@
     {
       "path": "built-ins/String/prototype/toLocaleUpperCase/special_casing.js",
       "source_sha256": "d22c86917ce9c75d6973549125e1a8fb59acf61c36d646de5018e76ff3958e98",
+      "status": "failed",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"value is not callable\", value: Object(Js(Handle { heap: 2, index: 458, serial: 514 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/String/prototype/toLocaleUpperCase/supplementary_plane.js",
+      "source_sha256": "6b9ea28edb7d84cc1ca5887c024f3117418975a3791702370d1c7f32d999de08",
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"value is not callable\", value: Object(Js(Handle { heap: 2, index: 458, serial: 514 })) })); expected None",
       "assertions": 0,
@@ -46710,6 +47588,62 @@
       "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"y is not defined\", value: Object(Js(Handle { heap: 2, index: 459, serial: 518 })) })); expected None",
       "assertions": 0,
       "cleanup": true
+    },
+    {
+      "path": "language/identifiers/start-unicode-10.0.0-escaped.js",
+      "source_sha256": "9e3ba6889c66f7eacc17a5b8fc9cb7040891b676ab1eb9396b9c5cfe0d1d0c8f",
+      "status": "failed",
+      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/language/identifiers/start-unicode-10.0.0-escaped.js']' timed out after 10 seconds",
+      "assertions": 0
+    },
+    {
+      "path": "language/identifiers/start-unicode-10.0.0.js",
+      "source_sha256": "fd256cf1f6538fbb3ee1d1c8eaa74b0da9549e6a19fd50d6edd294aa2cba2869",
+      "status": "failed",
+      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/language/identifiers/start-unicode-10.0.0.js']' timed out after 10 seconds",
+      "assertions": 0
+    },
+    {
+      "path": "language/identifiers/start-unicode-5.2.0-escaped.js",
+      "source_sha256": "a0c9f71e59b16411f7fab2e24bc88e9f1d3643df8736b77732ef3601ef035251",
+      "status": "failed",
+      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/language/identifiers/start-unicode-5.2.0-escaped.js']' timed out after 10 seconds",
+      "assertions": 0
+    },
+    {
+      "path": "language/identifiers/start-unicode-5.2.0.js",
+      "source_sha256": "c263caa5bcedf3263899322e5391361828b210177e54f670c4edcab1545f3dda",
+      "status": "failed",
+      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/language/identifiers/start-unicode-5.2.0.js']' timed out after 10 seconds",
+      "assertions": 0
+    },
+    {
+      "path": "language/identifiers/start-unicode-8.0.0-escaped.js",
+      "source_sha256": "3e93ab6f006e0a27bd9a86a8bc3c524122edfc1ebfc10f9ae1e2629b3fbb6c96",
+      "status": "failed",
+      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/language/identifiers/start-unicode-8.0.0-escaped.js']' timed out after 10 seconds",
+      "assertions": 0
+    },
+    {
+      "path": "language/identifiers/start-unicode-8.0.0.js",
+      "source_sha256": "5e3ee222b7e6471424f0fa5309c31ac0f8c4753f7a68dcc463c807baa0a3a3c7",
+      "status": "failed",
+      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/language/identifiers/start-unicode-8.0.0.js']' timed out after 10 seconds",
+      "assertions": 0
+    },
+    {
+      "path": "language/identifiers/start-unicode-9.0.0-escaped.js",
+      "source_sha256": "61bd94019d14b1cbdd732cb1017ec972dcfb162c607700f20c2ad7684a8837e3",
+      "status": "failed",
+      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/language/identifiers/start-unicode-9.0.0-escaped.js']' timed out after 10 seconds",
+      "assertions": 0
+    },
+    {
+      "path": "language/identifiers/start-unicode-9.0.0.js",
+      "source_sha256": "5eb51398aba1647c2c17bf12707d27a19baccc6703d170f837820dcd685b3c19",
+      "status": "failed",
+      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/language/identifiers/start-unicode-9.0.0.js']' timed out after 10 seconds",
+      "assertions": 0
     },
     {
       "path": "language/statements/async-generator/return-undefined-implicit-and-explicit.js",

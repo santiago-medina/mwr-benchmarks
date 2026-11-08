@@ -27,6 +27,10 @@ pub enum Expr {
     String(String),
     Number(String),
     BigInt(String),
+    RegExp {
+        pattern: String,
+        flags: String,
+    },
     Bool(bool),
     Null,
     Undefined,
@@ -237,6 +241,12 @@ enum Token {
         tail: bool,
     },
     Name(String),
+    /// An identifier written with `\u` escapes that spells a keyword: never a keyword.
+    EscapedName(String),
+    RegExp {
+        pattern: String,
+        flags: String,
+    },
     String(String),
     Number(String),
     BigInt(String),
@@ -256,7 +266,7 @@ struct Parser<'a> {
     super_call: bool,
 }
 fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
-    if source.len() > 65536 {
+    if source.len() > 8 << 20 {
         return Err(SyntaxError {
             offset: 0,
             message: "source limit",
@@ -264,6 +274,9 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
     }
     let mut tokens = vec![];
     let mut templates: Vec<usize> = vec![];
+    // Per open `{`: does it open an expression (object literal)? Decides `}` then `/`.
+    let mut braces: Vec<bool> = vec![];
+    let mut closed_expression = false;
     let mut chars = source.char_indices().peekable();
     while let Some((offset, c)) = chars.next() {
         if super::strings::whitespace(c) {
@@ -302,12 +315,17 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
                 if let Some(depth) = templates.last_mut() {
                     *depth += 1;
                 }
+                braces.push(
+                    brace_opens_expression(tokens.last().map(|(t, _)| t))
+                        || function_expression_body(&tokens),
+                );
                 Token::Punct(c)
             }
             '}' => {
                 if let Some(depth) = templates.last_mut() {
                     *depth -= 1;
                 }
+                closed_expression = braces.pop().unwrap_or(false);
                 Token::Punct(c)
             }
             '/' if chars.peek().is_some_and(|(_, c)| *c == '/' || *c == '*') => {
@@ -333,28 +351,25 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
                 }
                 continue;
             }
-            'a'..='z' | 'A'..='Z' | '_' | '$' => {
-                let mut n = c.to_string();
-                while chars
-                    .peek()
-                    .is_some_and(|(_, c)| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
-                {
-                    n.push(chars.next().unwrap().1);
+            '/' if regexp_allowed(tokens.last().map(|(t, _)| t), closed_expression) => {
+                let (pattern, flags) = super::identifiers::regexp(&mut chars, offset)?;
+                Token::RegExp { pattern, flags }
+            }
+            c if super::identifiers::starts_identifier(c) => {
+                let (n, escaped) = super::identifiers::identifier(&mut chars, c, offset)?;
+                if escaped && (reserved(&n) || contextual_keyword(&n)) {
+                    Token::EscapedName(n)
+                } else {
+                    Token::Name(n)
                 }
-                Token::Name(n)
             }
             '#' if chars
                 .peek()
-                .is_some_and(|(_, c)| c.is_ascii_alphabetic() || *c == '_' || *c == '$') =>
+                .is_some_and(|(_, c)| super::identifiers::starts_identifier(*c)) =>
             {
-                let mut n = c.to_string();
-                while chars
-                    .peek()
-                    .is_some_and(|(_, c)| c.is_ascii_alphanumeric() || *c == '_' || *c == '$')
-                {
-                    n.push(chars.next().unwrap().1);
-                }
-                Token::PrivateName(n)
+                let first = chars.next().unwrap().1;
+                let (n, _) = super::identifiers::identifier(&mut chars, first, offset)?;
+                Token::PrivateName(format!("#{n}"))
             }
             '0'..='9' | '.'
                 if c != '.' || chars.peek().is_some_and(|(_, c)| c.is_ascii_digit()) =>
@@ -436,48 +451,40 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
                 }
             }
             '\'' | '"' => {
-                let mut s = String::new();
-                let mut closed = false;
-                while let Some((_, ch)) = chars.next() {
+                let start = offset + 1;
+                let mut end = None;
+                while let Some((at, ch)) = chars.next() {
                     if ch == c {
-                        closed = true;
+                        end = Some(at);
                         break;
                     }
                     if ch == '\n' || ch == '\r' {
                         return Err(error("newline in string"));
                     }
-                    if ch != '\\' {
-                        s.push(ch);
-                        continue;
-                    }
-                    let escaped = chars.next().ok_or(error("unterminated escape"))?.1;
-                    s.push(match escaped {
-                        'n' => '\n',
-                        'r' => '\r',
-                        't' => '\t',
-                        'b' => '\x08',
-                        'f' => '\x0c',
-                        'v' => '\x0b',
-                        '0' => '\0',
-                        '\\' => '\\',
-                        '\'' => '\'',
-                        '"' => '"',
-                        'u' | 'x' => {
-                            let mut hex = String::new();
-                            for _ in 0..if escaped == 'u' { 4 } else { 2 } {
-                                hex.push(chars.next().ok_or(error("unterminated escape"))?.1);
+                    if ch == '\\' {
+                        // A CRLF line continuation is consumed as one terminator below.
+                        if let Some((_, '\r')) = chars.next() {
+                            if chars.peek().is_some_and(|(_, c)| *c == '\n') {
+                                chars.next();
                             }
-                            let n = u32::from_str_radix(&hex, 16)
-                                .map_err(|_| error("invalid escape"))?;
-                            char::from_u32(n).ok_or(error("surrogate strings unsupported"))?
                         }
-                        _ => return Err(error("unsupported escape")),
-                    });
+                    }
                 }
-                if !closed {
-                    return Err(error("unterminated string"));
+                let end = end.ok_or(error("unterminated string"))?;
+                let raw = &source[start..end];
+                let normalized;
+                let raw = if raw.contains('\r') {
+                    normalized = raw.replace("\r\n", "\n").replace('\r', "\n");
+                    normalized.as_str()
+                } else {
+                    raw
+                };
+                // Strict code: legacy octal and \8 \9 escapes are early errors, as in templates.
+                match super::template_lex::cook(raw) {
+                    Ok(Some(s)) => Token::String(s),
+                    Ok(None) => return Err(error("invalid escape")),
+                    Err(()) => return Err(error("surrogate strings unsupported")),
                 }
-                Token::String(s)
             }
             '.' if source[offset..].starts_with("...") => {
                 chars.next();
@@ -513,7 +520,7 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
             _ => return Err(error("unsupported character")),
         };
         tokens.push((token, offset));
-        if tokens.len() > 8192 {
+        if tokens.len() > 1 << 20 {
             return Err(error("token limit"));
         }
     }
@@ -594,13 +601,19 @@ impl Parser<'_> {
             }
             self.take();
             Ok(n)
+        } else if let Token::EscapedName(n) = self.current().clone() {
+            if reserved(&n) {
+                return Err(self.error("escaped reserved word"));
+            }
+            self.take();
+            Ok(n)
         } else {
             Err(self.error("expected identifier"))
         }
     }
     fn key(&mut self) -> Result<String, SyntaxError> {
         match self.take() {
-            Token::Name(s) | Token::String(s) => Ok(s),
+            Token::Name(s) | Token::EscapedName(s) | Token::String(s) => Ok(s),
             Token::Number(s) => Ok(super::execute::number_string(s.parse().unwrap())),
             Token::BigInt(s) => super::bigint::Big::parse(&s)
                 .map(|n| n.radix_string(10))
@@ -707,7 +720,8 @@ impl Parser<'_> {
                     self.expect(':')?;
                     (PatternKey::Computed(expression), self.binding_element()?)
                 } else {
-                    let shorthand = matches!(self.current(), Token::Name(_));
+                    let shorthand =
+                        matches!(self.current(), Token::Name(_) | Token::EscapedName(_));
                     let key = self.key()?;
                     let pattern = if self.punct(':') {
                         self.binding_element()?
@@ -786,7 +800,7 @@ impl Parser<'_> {
             return Ok((String::new(), Property::Spread(self.expression()?)));
         }
         let mut generator = self.op("*");
-        let identifier = matches!(self.current(), Token::Name(_));
+        let identifier = matches!(self.current(), Token::Name(_) | Token::EscapedName(_));
         let (mut key, mut computed) = self.literal_key()?;
         let asynchronous = !generator
             && computed.is_none()
@@ -795,6 +809,7 @@ impl Parser<'_> {
             && (matches!(
                 self.current(),
                 Token::Name(_)
+                    | Token::EscapedName(_)
                     | Token::String(_)
                     | Token::Number(_)
                     | Token::BigInt(_)
@@ -967,6 +982,7 @@ impl Parser<'_> {
             matches!(
                 t,
                 Token::Name(_)
+                    | Token::EscapedName(_)
                     | Token::String(_)
                     | Token::Number(_)
                     | Token::BigInt(_)
@@ -1928,7 +1944,7 @@ impl Parser<'_> {
                 body,
             });
         }
-        if matches!(self.current(),Token::Name(name) if !reserved(name))
+        if matches!(self.current(),Token::Name(name) | Token::EscapedName(name) if !reserved(name))
             && self
                 .tokens
                 .get(self.cursor + 1)
@@ -2073,6 +2089,9 @@ impl Parser<'_> {
                 _ if reserved(&n) => Err(self.error("unsupported reserved expression")),
                 _ => Ok(Expr::Name(n)),
             },
+            Token::EscapedName(n) if !reserved(&n) => Ok(Expr::Name(n)),
+            Token::EscapedName(_) => Err(self.error("escaped reserved word")),
+            Token::RegExp { pattern, flags } => Ok(Expr::RegExp { pattern, flags }),
             Token::String(s) => Ok(Expr::String(s)),
             Token::Number(n) => Ok(Expr::Number(n)),
             Token::BigInt(n) => Ok(Expr::BigInt(n)),
@@ -2168,6 +2187,104 @@ impl Parser<'_> {
             }
         }
         Err(self.error("postfix nesting limit"))
+    }
+}
+/// Words the grammar recognises by spelling outside the reserved set.
+fn contextual_keyword(n: &str) -> bool {
+    matches!(
+        n,
+        "get" | "set" | "static" | "async" | "of" | "as" | "from" | "target" | "meta"
+    )
+}
+/// Whether a `/` after this token starts a RegularExpressionLiteral rather than a division.
+/// Heuristic for the lexer: whether a `{` after this token opens an object literal.
+/// True when a `{` follows the parameter list of a function expression, so the
+/// matching `}` ends an expression and a following `/` is division.
+fn function_expression_body(tokens: &[(Token, usize)]) -> bool {
+    if !matches!(tokens.last(), Some((Token::Punct(')'), _))) {
+        return false;
+    }
+    let mut depth = 0usize;
+    let mut i = tokens.len();
+    loop {
+        if i == 0 {
+            return false;
+        }
+        i -= 1;
+        match &tokens[i].0 {
+            Token::Punct(')') => depth += 1,
+            Token::Punct('(') => {
+                depth -= 1;
+                if depth == 0 {
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let at = |j: usize| tokens.get(j).map(|(t, _)| t);
+    if i > 0 && matches!(at(i - 1), Some(Token::Name(n)) if n != "function") {
+        i -= 1;
+    }
+    if i > 0 && matches!(at(i - 1), Some(Token::Op(op)) if op == "*") {
+        i -= 1;
+    }
+    if i == 0 || !matches!(at(i - 1), Some(Token::Name(n)) if n == "function") {
+        return false;
+    }
+    i -= 1;
+    if i > 0 && matches!(at(i - 1), Some(Token::Name(n)) if n == "async") {
+        i -= 1;
+    }
+    i > 0 && brace_opens_expression(at(i - 1))
+}
+fn brace_opens_expression(previous: Option<&Token>) -> bool {
+    match previous {
+        Some(Token::Punct(c)) => matches!(c, '(' | '[' | ',' | ':' | '?'),
+        Some(Token::Op(op)) => op != "=>",
+        Some(Token::Template { tail, .. }) => !tail,
+        Some(Token::Name(n)) => matches!(
+            n.as_str(),
+            "return"
+                | "typeof"
+                | "void"
+                | "delete"
+                | "in"
+                | "instanceof"
+                | "new"
+                | "throw"
+                | "yield"
+                | "await"
+                | "of"
+        ),
+        _ => false,
+    }
+}
+fn regexp_allowed(previous: Option<&Token>, closed_expression: bool) -> bool {
+    match previous {
+        None => true,
+        Some(Token::Punct('}')) => !closed_expression,
+        Some(Token::Punct(c)) => !matches!(c, ')' | ']'),
+        Some(Token::Op(op)) => op != "++" && op != "--",
+        Some(Token::Template { tail, .. }) => !tail,
+        Some(Token::Name(n)) => matches!(
+            n.as_str(),
+            "return"
+                | "typeof"
+                | "instanceof"
+                | "in"
+                | "new"
+                | "delete"
+                | "void"
+                | "throw"
+                | "case"
+                | "do"
+                | "else"
+                | "yield"
+                | "await"
+                | "extends"
+        ),
+        Some(_) => false,
     }
 }
 fn reserved(n: &str) -> bool {

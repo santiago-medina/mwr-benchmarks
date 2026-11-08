@@ -30,9 +30,9 @@ fn rejects_unsupported_or_malformed_input_with_an_offset() {
 }
 #[test]
 fn parser_enforces_source_token_and_recursion_limits() {
-    assert!(parse(&" ".repeat(65_537)).is_err());
+    assert!(parse(&" ".repeat((8 << 20) + 1)).is_err());
     assert!(parse(&format!("{}'x'{};", "(".repeat(100), ")".repeat(100))).is_err());
-    assert!(parse(&"x;".repeat(5000)).is_err());
+    assert!(parse(&"x;".repeat(600_000)).is_err());
 }
 
 #[test]

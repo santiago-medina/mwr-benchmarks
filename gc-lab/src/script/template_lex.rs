@@ -28,7 +28,7 @@ pub(super) fn segment(
     }
     Err(error("unterminated template literal"))
 }
-fn cook(raw: &str) -> Result<Option<String>, ()> {
+pub(super) fn cook(raw: &str) -> Result<Option<String>, ()> {
     let mut chars = raw.chars().peekable();
     let mut units = vec![];
     while let Some(ch) = chars.next() {

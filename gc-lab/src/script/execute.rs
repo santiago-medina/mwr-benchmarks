@@ -601,6 +601,7 @@ impl Engine<'_> {
             Expr::This => self.lookup(env, "this"),
             Expr::String(s) => Ok(Value::String(s.clone())),
             Expr::BigInt(s) => self.big_literal(s),
+            Expr::RegExp { .. } => Err(ScriptError::Unsupported("RegExp literal")),
             Expr::Number(n) => Ok(Value::number(n.parse().unwrap())),
             Expr::Bool(b) => Ok(Value::Bool(*b)),
             Expr::Null => Ok(Value::Null),
