@@ -6,6 +6,49 @@ use super::{
 use crate::dual::Id;
 type Result<T> = std::result::Result<T, ScriptError>;
 impl Engine<'_> {
+    pub(super) fn switch_statement(
+        &mut self,
+        expression: &Expr,
+        cases: &[(Option<Expr>, Vec<Stmt>)],
+        env: Id,
+        can_return: bool,
+    ) -> Result<Option<Value>> {
+        let value = self.eval(expression, env)?;
+        self.protect(&value)?;
+        let all: Vec<Stmt> = cases
+            .iter()
+            .flat_map(|(_, body)| body.iter().cloned())
+            .collect();
+        let local = self.new_environment(Some(env), &all, false)?;
+        self.protect(&Value::Object(local))?;
+        self.hoist_functions(&all, local)?;
+        let mut selected = None;
+        let mut default = None;
+        for (index, (test, _)) in cases.iter().enumerate() {
+            if let Some(test) = test {
+                let other = self.frame(|e| e.eval(test, local))?;
+                if value.strict_equal(&other) {
+                    selected = Some(index);
+                    break;
+                }
+            } else {
+                default = Some(index);
+            }
+        }
+        if let Some(start) = selected.or(default) {
+            for (_, body) in &cases[start..] {
+                for statement in body {
+                    self.tick()?;
+                    match self.frame(|e| e.statement(statement, local, can_return)) {
+                        Ok(None) => {}
+                        Err(ScriptError::LoopBreak) => return Ok(None),
+                        other => return other,
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
     pub(super) fn clone_iteration(&mut self, env: Id, names: &[String]) -> Result<Id> {
         let parent = match self.objects.get(&env) {
             Some(Object::Environment { parent, .. }) => *parent,

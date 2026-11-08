@@ -101,6 +101,12 @@ pub(super) fn stmt_await(s: &Stmt) -> bool {
                     .is_some_and(|(_, b)| b.iter().any(stmt_await))
                 || finally.as_ref().is_some_and(|b| b.iter().any(stmt_await))
         }
+        Stmt::Switch(value, cases) => {
+            expr_await(value)
+                || cases.iter().any(|(test, body)| {
+                    test.as_ref().is_some_and(expr_await) || body.iter().any(stmt_await)
+                })
+        }
         Stmt::While { test, body, .. } => expr_await(test) || stmt_await(body),
         Stmt::For {
             init,
@@ -382,6 +388,47 @@ impl Compiler {
     }
     fn statement(&mut self, s: &Stmt) -> Result<()> {
         match s {
+            Stmt::Switch(expression, cases) => {
+                let value = self.expression(expression)?;
+                let all = cases
+                    .iter()
+                    .flat_map(|(_, body)| body.iter().cloned())
+                    .collect();
+                self.emit(Op::Enter(all));
+                let handler = self.emit(Op::Loop(0, usize::MAX));
+                let mut branches = vec![];
+                let mut default = None;
+                for (index, (test, _)) in cases.iter().enumerate() {
+                    if let Some(test) = test {
+                        let test = self.expression(test)?;
+                        let equal = self.eval(Expr::Binary(
+                            "===".into(),
+                            Box::new(read(value)),
+                            Box::new(read(test)),
+                        ));
+                        let branch = self.emit(Op::Branch(equal, 0, 0));
+                        branches.push((branch, index, equal));
+                    } else {
+                        default = Some(index);
+                    }
+                }
+                let fallback = self.emit(Op::Jump(0));
+                let mut bodies = vec![];
+                for (_, body) in cases {
+                    bodies.push(self.ops.len());
+                    for statement in body {
+                        self.statement(statement)?;
+                    }
+                }
+                let exit = self.emit(Op::EndLoop);
+                let end = self.ops.len();
+                self.emit(Op::Exit);
+                for (branch, index, test) in branches {
+                    self.ops[branch] = Op::Branch(test, bodies[index], branch + 1);
+                }
+                self.ops[fallback] = Op::Jump(default.map(|index| bodies[index]).unwrap_or(exit));
+                self.ops[handler] = Op::Loop(end, usize::MAX);
+            }
             Stmt::While { test, body, post } => {
                 let handler = self.emit(Op::Loop(0, 0));
                 let start = self.ops.len();
@@ -782,7 +829,7 @@ impl Engine<'_> {
             };
             frame.envs.truncate(h.depth);
             if let Some((stop, again)) = h.loop_to {
-                if matches!(completion, Completion::Continue) {
+                if matches!(completion, Completion::Continue) && again != usize::MAX {
                     frame.ip = again;
                     return Ok(false);
                 }

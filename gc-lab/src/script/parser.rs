@@ -58,6 +58,7 @@ pub enum Property {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Stmt {
     Empty,
+    Switch(Expr, Vec<(Option<Expr>, Vec<Stmt>)>),
     While {
         test: Expr,
         body: Box<Stmt>,
@@ -529,6 +530,36 @@ impl Parser<'_> {
                 update,
                 body: Box::new(self.statement()?),
             });
+        }
+        if self.word("switch") {
+            self.expect('(')?;
+            let value = self.sequence()?;
+            self.expect(')')?;
+            self.expect('{')?;
+            let mut cases = vec![];
+            let mut default = false;
+            while !self.punct('}') {
+                let test = if self.word("case") {
+                    Some(self.sequence()?)
+                } else if self.word("default") {
+                    if default {
+                        return Err(self.error("duplicate switch default"));
+                    }
+                    default = true;
+                    None
+                } else {
+                    return Err(self.error("expected switch case"));
+                };
+                self.expect(':')?;
+                let mut body = vec![];
+                while !matches!(self.current(), Token::Punct('}') | Token::End)
+                    && !matches!(self.current(),Token::Name(n) if n=="case"||n=="default")
+                {
+                    body.push(self.statement()?);
+                }
+                cases.push((test, body));
+            }
+            return Ok(Stmt::Switch(value, cases));
         }
         if self.current() == &Token::Name("async".into())
             && self.tokens.get(self.cursor + 1).is_some_and(|(t, offset)| {
@@ -1112,7 +1143,7 @@ fn validate(
     can_return: bool,
     depth: usize,
 ) -> Result<(), SyntaxError> {
-    validate_loop(body, params, can_return, depth, false, false)
+    validate_loop(body, params, can_return, depth, false, false, false)
 }
 fn validate_loop(
     body: &[Stmt],
@@ -1121,6 +1152,7 @@ fn validate_loop(
     depth: usize,
     in_loop: bool,
     in_async: bool,
+    in_switch: bool,
 ) -> Result<(), SyntaxError> {
     let err = |message| SyntaxError { offset: 0, message };
     if depth >= 64 {
@@ -1159,6 +1191,7 @@ fn validate_loop(
                     depth + 1,
                     false,
                     matches!(s, Stmt::AsyncFunction(..)),
+                    false,
                 )?;
             }
             Stmt::Return(e) => {
@@ -1171,10 +1204,26 @@ fn validate_loop(
                 work.push((a, depth));
                 work.push((b, depth));
             }
-            Stmt::Break | Stmt::Continue => {
-                if !in_loop {
-                    return Err(err("loop control outside loop"));
+            Stmt::Break => {
+                if !in_loop && !in_switch {
+                    return Err(err("break outside loop or switch"));
                 }
+            }
+            Stmt::Continue => {
+                if !in_loop {
+                    return Err(err("continue outside loop"));
+                }
+            }
+            Stmt::Switch(value, cases) => {
+                work.push((value, depth));
+                let mut all = vec![];
+                for (test, body) in cases {
+                    if let Some(test) = test {
+                        work.push((test, depth));
+                    }
+                    all.extend(body.iter().cloned());
+                }
+                validate_loop(&all, &[], can_return, depth + 1, in_loop, in_async, true)?;
             }
             Stmt::Empty => {}
             Stmt::While { test, body, .. } => {
@@ -1186,6 +1235,7 @@ fn validate_loop(
                     depth + 1,
                     true,
                     in_async,
+                    in_switch,
                 )?;
             }
             Stmt::For {
@@ -1202,6 +1252,7 @@ fn validate_loop(
                         depth + 1,
                         false,
                         in_async,
+                        false,
                     )?;
                     if let Stmt::Let(name, _) | Stmt::Const(name, _) = init.as_ref() {
                         let mut vars = vec![];
@@ -1224,6 +1275,7 @@ fn validate_loop(
                     depth + 1,
                     true,
                     in_async,
+                    in_switch,
                 )?;
             }
             Stmt::ForOf { iterable, body, .. } | Stmt::ForIn { iterable, body, .. } => {
@@ -1235,9 +1287,12 @@ fn validate_loop(
                     depth + 1,
                     true,
                     in_async,
+                    in_switch,
                 )?;
             }
-            Stmt::Block(b) => validate_loop(b, &[], can_return, depth + 1, in_loop, in_async)?,
+            Stmt::Block(b) => {
+                validate_loop(b, &[], can_return, depth + 1, in_loop, in_async, in_switch)?
+            }
             Stmt::If(e, a, b) => {
                 work.push((e, depth));
                 validate_loop(
@@ -1247,6 +1302,7 @@ fn validate_loop(
                     depth + 1,
                     in_loop,
                     in_async,
+                    in_switch,
                 )?;
                 if let Some(b) = b {
                     validate_loop(
@@ -1256,6 +1312,7 @@ fn validate_loop(
                         depth + 1,
                         in_loop,
                         in_async,
+                        in_switch,
                     )?;
                 }
             }
@@ -1264,7 +1321,15 @@ fn validate_loop(
                 catch,
                 finally,
             } => {
-                validate_loop(body, &[], can_return, depth + 1, in_loop, in_async)?;
+                validate_loop(
+                    body,
+                    &[],
+                    can_return,
+                    depth + 1,
+                    in_loop,
+                    in_async,
+                    in_switch,
+                )?;
                 if let Some((n, b)) = catch {
                     validate_loop(
                         b,
@@ -1273,10 +1338,11 @@ fn validate_loop(
                         depth + 1,
                         in_loop,
                         in_async,
+                        in_switch,
                     )?;
                 }
                 if let Some(b) = finally {
-                    validate_loop(b, &[], can_return, depth + 1, in_loop, in_async)?;
+                    validate_loop(b, &[], can_return, depth + 1, in_loop, in_async, in_switch)?;
                 }
             }
         }
@@ -1293,7 +1359,7 @@ fn validate_loop(
                 work.push((value, d + 1));
             }
             Expr::AsyncArrow { params, body } | Expr::AsyncFunction { params, body, .. } => {
-                validate_loop(body, params, true, d + 1, false, true)?
+                validate_loop(body, params, true, d + 1, false, true, false)?
             }
             Expr::Arrow { params, body } | Expr::Function { params, body, .. } => {
                 validate(body, params, true, d + 1)?
@@ -1341,6 +1407,11 @@ pub use module_syntax::{parse_module, Export, Import, Module};
 pub(super) fn var_names(body: &[Stmt], out: &mut Vec<String>) {
     for s in body {
         match s {
+            Stmt::Switch(_, cases) => {
+                for (_, body) in cases {
+                    var_names(body, out);
+                }
+            }
             Stmt::While { body, .. } => var_names(std::slice::from_ref(body), out),
             Stmt::For { init, body, .. } => {
                 if let Some(init) = init {

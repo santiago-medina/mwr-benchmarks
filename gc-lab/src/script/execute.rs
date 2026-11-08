@@ -232,6 +232,9 @@ impl Engine<'_> {
     ) -> Result<Option<Value>> {
         match s {
             Stmt::Empty => {}
+            Stmt::Switch(value, cases) => {
+                return self.switch_statement(value, cases, env, can_return)
+            }
             Stmt::While { test, body, post } => {
                 return self.while_loop(test, body, *post, env, can_return)
             }
