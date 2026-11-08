@@ -38,3 +38,5 @@ mod errors;
 mod promise_combinators;
 
 mod references;
+
+mod loops;

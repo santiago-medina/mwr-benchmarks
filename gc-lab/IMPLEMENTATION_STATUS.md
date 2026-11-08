@@ -19,3 +19,5 @@ String additions (unverified): primitive prototype property lookup without eager
 Promise/error additions (unverified): all/race/allSettled/any, withResolvers and try, traced aggregate state and per-element once guards, AggregateError, Error.prototype.toString, cause options, and Error newTarget prototypes. These reuse the existing job queue and iterator closing; no tests have been added or run.
 
 Reference/operator additions (unverified): shared once-evaluated assignment references, prefix/postfix increment/decrement, arithmetic/bitwise/logical compound assignment, nullish coalescing with parenthesization restrictions, and async lowering that stores canonical property keys before suspension. Existing plain assignments now use the same reference path.
+
+Control-flow additions (unverified): while, do/while, classic for, empty/debugger statements and comma expressions. Let loop environments are copied per iteration, and resumable loop handlers route break/continue through finally blocks. Await inside for-of remains a separate missing path at this checkpoint.

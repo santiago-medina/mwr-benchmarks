@@ -9,6 +9,9 @@ type Result<T> = std::result::Result<T, ScriptError>;
 #[derive(Clone)]
 pub(super) enum Op {
     Eval(Expr, usize),
+    Loop(usize, usize),
+    EndLoop,
+    CloneIteration(Vec<String>),
     CheckBase(usize),
     PropertyKey(usize, usize, usize),
     Invoke {
@@ -54,6 +57,7 @@ fn read(r: usize) -> Expr {
 fn expr_await(e: &Expr) -> bool {
     match e {
         Expr::Await(_) => true,
+        Expr::Sequence(items) => items.iter().any(expr_await),
         Expr::Function { .. }
         | Expr::Arrow { .. }
         | Expr::AsyncFunction { .. }
@@ -93,6 +97,18 @@ pub(super) fn stmt_await(s: &Stmt) -> bool {
                     .as_ref()
                     .is_some_and(|(_, b)| b.iter().any(stmt_await))
                 || finally.as_ref().is_some_and(|b| b.iter().any(stmt_await))
+        }
+        Stmt::While { test, body, .. } => expr_await(test) || stmt_await(body),
+        Stmt::For {
+            init,
+            test,
+            update,
+            body,
+        } => {
+            init.as_ref().is_some_and(|s| stmt_await(s))
+                || test.as_ref().is_some_and(expr_await)
+                || update.as_ref().is_some_and(expr_await)
+                || stmt_await(body)
         }
         Stmt::ForOf { iterable, body, .. } => expr_await(iterable) || stmt_await(body),
         _ => false,
@@ -158,6 +174,13 @@ impl Compiler {
             return Ok(self.eval(e.clone()));
         }
         Ok(match e {
+            Expr::Sequence(items) => {
+                let mut out = self.eval(Expr::Undefined);
+                for item in items {
+                    out = self.expression(item)?;
+                }
+                out
+            }
             Expr::Await(e) => {
                 let value = self.expression(e)?;
                 let out = self.reg();
@@ -354,6 +377,89 @@ impl Compiler {
     }
     fn statement(&mut self, s: &Stmt) -> Result<()> {
         match s {
+            Stmt::While { test, body, post } => {
+                let handler = self.emit(Op::Loop(0, 0));
+                let start = self.ops.len();
+                let branch = if !post {
+                    let test = self.expression(test)?;
+                    Some(self.emit(Op::Branch(test, 0, 0)))
+                } else {
+                    None
+                };
+                let body_start = self.ops.len();
+                self.statement(body)?;
+                let continue_to = if *post { self.ops.len() } else { start };
+                if *post {
+                    let test = self.expression(test)?;
+                    let branch = self.emit(Op::Branch(test, body_start, 0));
+                    let end = self.ops.len();
+                    self.ops[branch] = Op::Branch(test, body_start, end);
+                } else {
+                    self.emit(Op::Jump(start));
+                }
+                let exit = self.emit(Op::EndLoop);
+                let end = self.ops.len();
+                if let Some(branch) = branch {
+                    let Op::Branch(test, _, _) = self.ops[branch] else {
+                        unreachable!()
+                    };
+                    self.ops[branch] = Op::Branch(test, body_start, exit);
+                }
+                self.ops[handler] = Op::Loop(end, continue_to);
+            }
+            Stmt::For {
+                init,
+                test,
+                update,
+                body,
+            } => {
+                let lexical = init
+                    .as_ref()
+                    .is_some_and(|s| matches!(s.as_ref(), Stmt::Let(..) | Stmt::Const(..)));
+                if lexical {
+                    self.emit(Op::Enter(vec![init.as_ref().unwrap().as_ref().clone()]));
+                }
+                if let Some(init) = init {
+                    self.statement(init)?;
+                }
+                let names = match init.as_deref() {
+                    Some(Stmt::Let(name, _)) => vec![name.clone()],
+                    _ => vec![],
+                };
+                if !names.is_empty() {
+                    self.emit(Op::CloneIteration(names.clone()));
+                }
+                let handler = self.emit(Op::Loop(0, 0));
+                let start = self.ops.len();
+                let branch = if let Some(test) = test {
+                    let test = self.expression(test)?;
+                    Some(self.emit(Op::Branch(test, 0, 0)))
+                } else {
+                    None
+                };
+                let body_start = self.ops.len();
+                self.statement(body)?;
+                let continue_to = self.ops.len();
+                if !names.is_empty() {
+                    self.emit(Op::CloneIteration(names));
+                }
+                if let Some(update) = update {
+                    self.expression(update)?;
+                }
+                self.emit(Op::Jump(start));
+                let exit = self.emit(Op::EndLoop);
+                let end = self.ops.len();
+                if let Some(branch) = branch {
+                    let Op::Branch(test, _, _) = self.ops[branch] else {
+                        unreachable!()
+                    };
+                    self.ops[branch] = Op::Branch(test, body_start, exit);
+                }
+                self.ops[handler] = Op::Loop(end, continue_to);
+                if lexical {
+                    self.emit(Op::Exit);
+                }
+            }
             Stmt::Function(..) | Stmt::AsyncFunction(..) => {}
             Stmt::Const(n, e) | Stmt::Let(n, e) => {
                 let value = self.expression(e)?;
@@ -484,6 +590,7 @@ enum Phase {
 }
 #[derive(Clone)]
 struct Handler {
+    loop_to: Option<(usize, usize)>,
     catch: Option<usize>,
     finally: Option<usize>,
     end: usize,
@@ -620,6 +727,23 @@ impl Engine<'_> {
                 return Ok(true);
             };
             frame.envs.truncate(h.depth);
+            if let Some((stop, again)) = h.loop_to {
+                match completion {
+                    Completion::Break => {
+                        frame.ip = stop;
+                        frame.handlers.pop();
+                        return Ok(false);
+                    }
+                    Completion::Continue => {
+                        frame.ip = again;
+                        return Ok(false);
+                    }
+                    _ => {
+                        frame.handlers.pop();
+                        continue;
+                    }
+                }
+            }
             if matches!(completion, Completion::Throw(_))
                 && h.phase == Phase::Try
                 && h.catch.is_some()
@@ -669,6 +793,22 @@ impl Engine<'_> {
                 let env = *frame.envs.last().unwrap();
                 let step = (|| -> Result<Option<Completion>> {
                     match op {
+                        Op::Loop(stop, again) => frame.handlers.push(Handler {
+                            loop_to: Some((stop, again)),
+                            catch: None,
+                            finally: None,
+                            end: stop,
+                            depth: frame.envs.len(),
+                            phase: Phase::Try,
+                            pending: Completion::Normal,
+                        }),
+                        Op::EndLoop => {
+                            frame.handlers.pop();
+                        }
+                        Op::CloneIteration(names) => {
+                            let next = e.clone_iteration(env, &names)?;
+                            *frame.envs.last_mut().unwrap() = next;
+                        }
                         Op::CheckBase(r) => {
                             let base = e.register(&frame, r)?;
                             if matches!(base, Value::Null | Value::Undefined) {
@@ -799,6 +939,7 @@ impl Engine<'_> {
                             finally,
                             end,
                         } => frame.handlers.push(Handler {
+                            loop_to: None,
                             catch,
                             finally,
                             end,

@@ -231,6 +231,26 @@ impl Engine<'_> {
         can_return: bool,
     ) -> Result<Option<Value>> {
         match s {
+            Stmt::Empty => {}
+            Stmt::While { test, body, post } => {
+                return self.while_loop(test, body, *post, env, can_return)
+            }
+            Stmt::For {
+                init,
+                test,
+                update,
+                body,
+            } => {
+                return self.for_loop(
+                    init.as_deref(),
+                    test.as_ref(),
+                    update.as_ref(),
+                    body,
+                    env,
+                    can_return,
+                )
+            }
+
             Stmt::Const(n, x) | Stmt::Let(n, x) => {
                 let v = self.eval(x, env)?;
                 self.initialize(env, n, v)?;
@@ -523,6 +543,13 @@ impl Engine<'_> {
             Expr::Compound(op, target, rhs) => self.compound(op, target, rhs, env),
             Expr::Update(target, increment, prefix) => {
                 self.update(target, *increment, *prefix, env)
+            }
+            Expr::Sequence(items) => {
+                let mut value = Value::Undefined;
+                for item in items {
+                    value = self.frame(|e| e.eval(item, env))?;
+                }
+                Ok(value)
             }
             Expr::Assign(a, b) => {
                 let reference = self.eval_reference(a, env)?;

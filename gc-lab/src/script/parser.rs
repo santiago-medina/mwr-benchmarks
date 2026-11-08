@@ -34,6 +34,7 @@ pub enum Expr {
         body: Vec<Stmt>,
     },
     Await(Box<Expr>),
+    Sequence(Vec<Expr>),
     Object(Vec<(String, Property)>),
     Array(Vec<Option<Expr>>),
     Member(Box<Expr>, String),
@@ -56,6 +57,18 @@ pub enum Property {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Stmt {
+    Empty,
+    While {
+        test: Expr,
+        body: Box<Stmt>,
+        post: bool,
+    },
+    For {
+        init: Option<Box<Stmt>>,
+        test: Option<Expr>,
+        update: Option<Expr>,
+        body: Box<Stmt>,
+    },
     Const(String, Expr),
     Let(String, Expr),
     Var(String, Option<Expr>),
@@ -403,29 +416,102 @@ impl Parser<'_> {
             self.semi()?;
             return Ok(Stmt::Continue);
         }
+        if self.punct(';') {
+            return Ok(Stmt::Empty);
+        }
+        if self.word("debugger") {
+            self.semi()?;
+            return Ok(Stmt::Empty);
+        }
+        if self.word("while") {
+            self.expect('(')?;
+            let test = self.sequence()?;
+            self.expect(')')?;
+            return Ok(Stmt::While {
+                test,
+                body: Box::new(self.statement()?),
+                post: false,
+            });
+        }
+        if self.word("do") {
+            let body = Box::new(self.statement()?);
+            if !self.word("while") {
+                return Err(self.error("do requires while"));
+            }
+            self.expect('(')?;
+            let test = self.sequence()?;
+            self.expect(')')?;
+            self.punct(';');
+            return Ok(Stmt::While {
+                test,
+                body,
+                post: true,
+            });
+        }
         if self.word("for") {
             self.expect('(')?;
             let kind = if self.word("const") {
-                "const"
+                Some("const")
             } else if self.word("let") {
-                "let"
+                Some("let")
             } else if self.word("var") {
-                "var"
+                Some("var")
             } else {
-                return Err(self.error("for-of requires declaration"));
+                None
             };
-            let name = self.name()?;
-            if !self.word("of") {
-                return Err(self.error("only for-of is supported"));
-            }
-            let iterable = self.expression()?;
-            self.expect(')')?;
-            let body = Box::new(self.statement()?);
-            return Ok(Stmt::ForOf {
-                kind: kind.into(),
-                name,
-                iterable,
-                body,
+            let init = if let Some(kind) = kind {
+                let name = self.name()?;
+                if self.word("of") {
+                    let iterable = self.expression()?;
+                    self.expect(')')?;
+                    return Ok(Stmt::ForOf {
+                        kind: kind.into(),
+                        name,
+                        iterable,
+                        body: Box::new(self.statement()?),
+                    });
+                }
+                let value = if self.op("=") {
+                    Some(self.expression()?)
+                } else {
+                    None
+                };
+                let stmt = match kind {
+                    "const" => Stmt::Const(
+                        name,
+                        value.ok_or_else(|| self.error("const requires initializer"))?,
+                    ),
+                    "let" => Stmt::Let(name, value.unwrap_or(Expr::Undefined)),
+                    _ => Stmt::Var(name, value),
+                };
+                self.expect(';')?;
+                Some(Box::new(stmt))
+            } else if self.punct(';') {
+                None
+            } else {
+                let value = self.sequence()?;
+                self.expect(';')?;
+                Some(Box::new(Stmt::Expr(value)))
+            };
+            let test = if self.punct(';') {
+                None
+            } else {
+                let value = self.sequence()?;
+                self.expect(';')?;
+                Some(value)
+            };
+            let update = if self.punct(')') {
+                None
+            } else {
+                let value = self.sequence()?;
+                self.expect(')')?;
+                Some(value)
+            };
+            return Ok(Stmt::For {
+                init,
+                test,
+                update,
+                body: Box::new(self.statement()?),
             });
         }
         if self.current() == &Token::Name("async".into())
@@ -447,7 +533,7 @@ impl Parser<'_> {
         }
         if self.word("if") {
             self.expect('(')?;
-            let c = self.expression()?;
+            let c = self.sequence()?;
             self.expect(')')?;
             let a = Box::new(self.statement()?);
             let b = if self.word("else") {
@@ -511,16 +597,16 @@ impl Parser<'_> {
                 ) {
                 Expr::Undefined
             } else {
-                self.expression()?
+                self.sequence()?
             };
             Stmt::Return(e)
         } else if self.word("throw") {
             if self.newline() {
                 return Err(self.error("newline after throw"));
             }
-            Stmt::Throw(self.expression()?)
+            Stmt::Throw(self.sequence()?)
         } else {
-            Stmt::Expr(self.expression()?)
+            Stmt::Expr(self.sequence()?)
         };
         self.semi()?;
         Ok(s)
@@ -542,6 +628,20 @@ impl Parser<'_> {
         }
         self.tokens.get(i).map(|t| &t.0) == Some(&Token::Punct(')'))
             && self.tokens.get(i + 1).map(|t| &t.0) == Some(&Token::Op("=>".into()))
+    }
+    fn sequence(&mut self) -> Result<Expr, SyntaxError> {
+        let first = self.expression()?;
+        if !self.punct(',') {
+            return Ok(first);
+        }
+        let mut items = vec![first];
+        loop {
+            items.push(self.expression()?);
+            if !self.punct(',') {
+                break;
+            }
+        }
+        Ok(Expr::Sequence(items))
     }
     fn expression(&mut self) -> Result<Expr, SyntaxError> {
         if self.depth >= 64 {
@@ -801,7 +901,7 @@ impl Parser<'_> {
             Token::String(s) => Ok(Expr::String(s)),
             Token::Number(n) => Ok(Expr::Number(n)),
             Token::Punct('(') => {
-                let e = self.expression()?;
+                let e = self.sequence()?;
                 self.expect(')')?;
                 Ok(e)
             }
@@ -923,7 +1023,7 @@ impl Parser<'_> {
             if self.punct('.') {
                 e = Expr::Member(Box::new(e), self.key()?);
             } else if self.punct('[') {
-                let k = self.expression()?;
+                let k = self.sequence()?;
                 self.expect(']')?;
                 e = Expr::Computed(Box::new(e), Box::new(k));
             } else if self.punct('(') {
@@ -1060,6 +1160,56 @@ fn validate_loop(
                     return Err(err("loop control outside loop"));
                 }
             }
+            Stmt::Empty => {}
+            Stmt::While { test, body, .. } => {
+                work.push((test, depth));
+                validate_loop(
+                    std::slice::from_ref(body),
+                    &[],
+                    can_return,
+                    depth + 1,
+                    true,
+                    in_async,
+                )?;
+            }
+            Stmt::For {
+                init,
+                test,
+                update,
+                body,
+            } => {
+                if let Some(init) = init {
+                    validate_loop(
+                        std::slice::from_ref(init),
+                        &[],
+                        false,
+                        depth + 1,
+                        false,
+                        in_async,
+                    )?;
+                    if let Stmt::Let(name, _) | Stmt::Const(name, _) = init.as_ref() {
+                        let mut vars = vec![];
+                        var_names(std::slice::from_ref(body), &mut vars);
+                        if vars.contains(name) {
+                            return Err(err("loop var conflicts with lexical initializer"));
+                        }
+                    }
+                }
+                if let Some(test) = test {
+                    work.push((test, depth));
+                }
+                if let Some(update) = update {
+                    work.push((update, depth));
+                }
+                validate_loop(
+                    std::slice::from_ref(body),
+                    &[],
+                    can_return,
+                    depth + 1,
+                    true,
+                    in_async,
+                )?;
+            }
             Stmt::ForOf { iterable, body, .. } => {
                 work.push((iterable, depth));
                 validate_loop(
@@ -1132,6 +1282,7 @@ fn validate_loop(
             Expr::Arrow { params, body } | Expr::Function { params, body, .. } => {
                 validate(body, params, true, d + 1)?
             }
+            Expr::Sequence(elements) => work.extend(elements.iter().map(|x| (x, d + 1))),
             Expr::Array(elements) => work.extend(elements.iter().flatten().map(|x| (x, d + 1))),
             Expr::Object(p) => {
                 for (_, p) in p {
@@ -1174,6 +1325,13 @@ pub use module_syntax::{parse_module, Export, Import, Module};
 pub(super) fn var_names(body: &[Stmt], out: &mut Vec<String>) {
     for s in body {
         match s {
+            Stmt::While { body, .. } => var_names(std::slice::from_ref(body), out),
+            Stmt::For { init, body, .. } => {
+                if let Some(init) = init {
+                    var_names(std::slice::from_ref(init), out);
+                }
+                var_names(std::slice::from_ref(body), out);
+            }
             Stmt::Var(n, _) => out.push(n.clone()),
             Stmt::ForOf {
                 kind, name, body, ..
