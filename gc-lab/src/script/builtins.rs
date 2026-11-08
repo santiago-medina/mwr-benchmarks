@@ -234,7 +234,11 @@ impl Engine<'_> {
             | "String.prototype.trimEnd"
             | "String.prototype.toLowerCase"
             | "String.prototype.toUpperCase" => 0,
-            "String.prototype.slice" | "String.prototype.substring" => 2,
+            "String.prototype.slice"
+            | "String.prototype.substring"
+            | "String.prototype.replace"
+            | "String.prototype.replaceAll"
+            | "String.prototype.split" => 2,
             "Math.atan2" | "Math.hypot" | "Math.imul" | "Math.max" | "Math.min" | "Math.pow" => 2,
             "Array.from"
             | "Array.prototype.slice"

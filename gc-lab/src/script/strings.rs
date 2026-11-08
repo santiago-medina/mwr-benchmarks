@@ -24,6 +24,9 @@ pub(super) const METHODS: &[&str] = &[
     "padEnd",
     "padStart",
     "repeat",
+    "replace",
+    "replaceAll",
+    "split",
     "slice",
     "startsWith",
     "substring",
@@ -33,7 +36,7 @@ pub(super) const METHODS: &[&str] = &[
     "trimEnd",
     "trimStart",
 ];
-fn string(units: &[u16]) -> Result<Value> {
+pub(super) fn string(units: &[u16]) -> Result<Value> {
     String::from_utf16(units)
         .map(Value::String)
         .map_err(|_| ScriptError::Unsupported("unpaired UTF-16 string storage"))
@@ -94,6 +97,12 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if matches!(
+            name,
+            "String.prototype.replace" | "String.prototype.replaceAll" | "String.prototype.split"
+        ) {
+            return self.string_search_builtin(name, receiver, args);
+        }
         let arg = |i| args.get(i).cloned().unwrap_or(Value::Undefined);
         if name == "%StringIteratorPrototype%.next" {
             let Value::Object(id) = receiver else {
@@ -224,6 +233,12 @@ impl Engine<'_> {
                 string(&units[start as usize..end.max(start) as usize])
             }
             "indexOf" | "lastIndexOf" | "includes" | "startsWith" | "endsWith" => {
+                if matches!(method, "includes" | "startsWith" | "endsWith")
+                    && self.string_is_regexp(arg(0))?
+                {
+                    return self
+                        .throw_error("TypeError", "regular expression search is not allowed");
+                }
                 let search: Vec<u16> = self.to_string(arg(0))?.encode_utf16().collect();
                 let n = if method == "lastIndexOf" {
                     let n = self.to_number(arg(1))?;

@@ -69,3 +69,7 @@ Classic `for` declarations and `for…in`/`for…of` declaration headers now sha
 ### Catch binding forms (unverified)
 
 `catch` now supports omitted bindings and object/array binding patterns through the shared initializer. Catch parameter and body lexical environments are separate, and exceptions during destructuring become pending completions so `finally` can execute. Resumable catch scopes use the same environment split; suspension inside catch patterns is explicitly unsupported. Corrected a stale parameter-record field in the parser left by the earlier binding-pattern refactor. Formatting only; no compilation or tests were run.
+
+### Literal string search/replacement protocols (unverified)
+
+Implemented string-pattern `replace`, `replaceAll`, and `split`, with object `Symbol.replace`/`Symbol.split` dispatch before receiver string conversion, callable replacers, UTF-16 match positions, empty-pattern advancement, split limits, and literal replacement tokens (`$$`, `$&`, prefix, suffix). `replaceAll` observes `Symbol.match` and global flags, and includes/startsWith/endsWith reject regexp-like objects through that marker. Shared bounds cap output and charge search comparisons. There is no RegExp internal implementation yet; symbol hooks work for user objects. Results needing isolated UTF-16 surrogates remain explicitly unsupported. Formatting only; no compilation or tests were run.

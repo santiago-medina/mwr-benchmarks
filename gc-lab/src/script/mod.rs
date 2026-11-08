@@ -32,6 +32,7 @@ mod json;
 
 mod numeric;
 
+mod string_search;
 mod strings;
 
 mod errors;
