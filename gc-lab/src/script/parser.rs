@@ -49,6 +49,13 @@ pub enum Expr {
         params: Vec<Param>,
         body: Vec<Stmt>,
     },
+    GeneratorFunction {
+        name: Option<String>,
+        params: Vec<Param>,
+        body: Vec<Stmt>,
+        method: bool,
+    },
+    Yield(Option<Box<Expr>>, bool),
     Await(Box<Expr>),
     Spread(Box<Expr>),
     Sequence(Vec<Expr>),
@@ -92,6 +99,7 @@ pub enum Stmt {
     Let(String, Expr),
     Var(String, Option<Expr>),
     Function(String, Vec<Param>, Vec<Stmt>),
+    GeneratorFunction(String, Vec<Param>, Vec<Stmt>),
     AsyncFunction(String, Vec<Param>, Vec<Stmt>),
     Set(Expr, String, Expr),
     Expr(Expr),
@@ -681,9 +689,15 @@ impl Parser<'_> {
             return Ok(Stmt::AsyncFunction(name, params, self.block()?));
         }
         if self.word("function") {
+            let generator = self.op("*");
             let n = self.name()?;
             let p = self.params()?;
-            return Ok(Stmt::Function(n, p, self.block()?));
+            let body = self.block()?;
+            return Ok(if generator {
+                Stmt::GeneratorFunction(n, p, body)
+            } else {
+                Stmt::Function(n, p, body)
+            });
         }
         if self.word("if") {
             self.expect('(')?;
@@ -810,6 +824,19 @@ impl Parser<'_> {
         r
     }
     fn assignment(&mut self) -> Result<Expr, SyntaxError> {
+        if self.word("yield") {
+            if self.newline()
+                || matches!(
+                    self.current(),
+                    Token::End | Token::Punct(';' | '}' | ')' | ']' | ',' | ':')
+                )
+            {
+                return Ok(Expr::Yield(None, false));
+            }
+            let delegate = self.op("*");
+            return Ok(Expr::Yield(Some(Box::new(self.expression()?)), delegate));
+        }
+
         let mut a = self.binary(1)?;
         if self.punct('?') {
             let yes = self.expression()?;
@@ -1050,6 +1077,7 @@ impl Parser<'_> {
             let save = self.cursor;
             self.take();
             if self.word("function") {
+                let generator = self.op("*");
                 let name = if self.current() == &Token::Punct('(') {
                     None
                 } else {
@@ -1083,11 +1111,21 @@ impl Parser<'_> {
                 Some(self.name()?)
             };
             let params = self.params()?;
-            return Ok(Expr::Function {
-                name,
-                params,
-                body: self.block()?,
-                method: false,
+            let body = self.block()?;
+            return Ok(if generator {
+                Expr::GeneratorFunction {
+                    name,
+                    params,
+                    body,
+                    method: false,
+                }
+            } else {
+                Expr::Function {
+                    name,
+                    params,
+                    body,
+                    method: false,
+                }
             });
         }
         if self.current() == &Token::Punct('(') && self.is_arrow() {
@@ -1141,6 +1179,28 @@ impl Parser<'_> {
                 let mut prototype = false;
                 if !self.punct('}') {
                     loop {
+                        if self.op("*") {
+                            let key = self.key()?;
+                            let params = self.params()?;
+                            let body = self.block()?;
+                            props.push((
+                                key,
+                                Property::Value(Expr::GeneratorFunction {
+                                    name: None,
+                                    params,
+                                    body,
+                                    method: true,
+                                }),
+                            ));
+                            if self.punct('}') {
+                                break;
+                            }
+                            self.expect(',')?;
+                            if self.punct('}') {
+                                break;
+                            }
+                            continue;
+                        }
                         if self.op("...") {
                             let value = self.expression()?;
                             props.push((String::new(), Property::Spread(value)));
@@ -1333,6 +1393,7 @@ fn validate_function(
     params: &[Param],
     depth: usize,
     asynchronous: bool,
+    generator: bool,
 ) -> Result<(), SyntaxError> {
     let names: Vec<_> = params.iter().map(|p| p.name.clone()).collect();
     if params.iter().any(|p| p.default.is_some() || p.rest) {
@@ -1364,7 +1425,16 @@ fn validate_function(
             }
         }
     }
-    validate_loop(body, &[], true, depth, false, asynchronous, false)
+    validate_loop(
+        body,
+        &[],
+        true,
+        depth,
+        false,
+        asynchronous,
+        false,
+        generator,
+    )
 }
 fn validate(
     body: &[Stmt],
@@ -1372,7 +1442,7 @@ fn validate(
     can_return: bool,
     depth: usize,
 ) -> Result<(), SyntaxError> {
-    validate_loop(body, params, can_return, depth, false, false, false)
+    validate_loop(body, params, can_return, depth, false, false, false, false)
 }
 fn validate_loop(
     body: &[Stmt],
@@ -1382,6 +1452,7 @@ fn validate_loop(
     in_loop: bool,
     in_async: bool,
     in_switch: bool,
+    in_generator: bool,
 ) -> Result<(), SyntaxError> {
     let err = |message| SyntaxError { offset: 0, message };
     if depth >= 64 {
@@ -1409,11 +1480,19 @@ fn validate_loop(
                     work.push((e, depth));
                 }
             }
-            Stmt::Function(n, p, b) | Stmt::AsyncFunction(n, p, b) => {
+            Stmt::Function(n, p, b)
+            | Stmt::AsyncFunction(n, p, b)
+            | Stmt::GeneratorFunction(n, p, b) => {
                 if names.contains(n.as_str()) {
                     return Err(err("function conflicts with lexical binding"));
                 }
-                validate_function(b, p, depth + 1, matches!(s, Stmt::AsyncFunction(..)))?;
+                validate_function(
+                    b,
+                    p,
+                    depth + 1,
+                    matches!(s, Stmt::AsyncFunction(..)),
+                    matches!(s, Stmt::GeneratorFunction(..)),
+                )?;
             }
             Stmt::Return(e) => {
                 if !can_return {
@@ -1444,7 +1523,16 @@ fn validate_loop(
                     }
                     all.extend(body.iter().cloned());
                 }
-                validate_loop(&all, &[], can_return, depth + 1, in_loop, in_async, true)?;
+                validate_loop(
+                    &all,
+                    &[],
+                    can_return,
+                    depth + 1,
+                    in_loop,
+                    in_async,
+                    true,
+                    in_generator,
+                )?;
             }
             Stmt::Empty => {}
             Stmt::While { test, body, .. } => {
@@ -1457,6 +1545,7 @@ fn validate_loop(
                     true,
                     in_async,
                     in_switch,
+                    in_generator,
                 )?;
             }
             Stmt::For {
@@ -1474,6 +1563,7 @@ fn validate_loop(
                         false,
                         in_async,
                         false,
+                        in_generator,
                     )?;
                     if let Stmt::Let(name, _) | Stmt::Const(name, _) = init.as_ref() {
                         let mut vars = vec![];
@@ -1497,6 +1587,7 @@ fn validate_loop(
                     true,
                     in_async,
                     in_switch,
+                    in_generator,
                 )?;
             }
             Stmt::ForOf { iterable, body, .. } | Stmt::ForIn { iterable, body, .. } => {
@@ -1509,11 +1600,19 @@ fn validate_loop(
                     true,
                     in_async,
                     in_switch,
+                    in_generator,
                 )?;
             }
-            Stmt::Block(b) => {
-                validate_loop(b, &[], can_return, depth + 1, in_loop, in_async, in_switch)?
-            }
+            Stmt::Block(b) => validate_loop(
+                b,
+                &[],
+                can_return,
+                depth + 1,
+                in_loop,
+                in_async,
+                in_switch,
+                in_generator,
+            )?,
             Stmt::If(e, a, b) => {
                 work.push((e, depth));
                 validate_loop(
@@ -1524,6 +1623,7 @@ fn validate_loop(
                     in_loop,
                     in_async,
                     in_switch,
+                    in_generator,
                 )?;
                 if let Some(b) = b {
                     validate_loop(
@@ -1534,6 +1634,7 @@ fn validate_loop(
                         in_loop,
                         in_async,
                         in_switch,
+                        in_generator,
                     )?;
                 }
             }
@@ -1550,6 +1651,7 @@ fn validate_loop(
                     in_loop,
                     in_async,
                     in_switch,
+                    in_generator,
                 )?;
                 if let Some((n, b)) = catch {
                     validate_loop(
@@ -1560,10 +1662,20 @@ fn validate_loop(
                         in_loop,
                         in_async,
                         in_switch,
+                        in_generator,
                     )?;
                 }
                 if let Some(b) = finally {
-                    validate_loop(b, &[], can_return, depth + 1, in_loop, in_async, in_switch)?;
+                    validate_loop(
+                        b,
+                        &[],
+                        can_return,
+                        depth + 1,
+                        in_loop,
+                        in_async,
+                        in_switch,
+                        in_generator,
+                    )?;
                 }
             }
         }
@@ -1573,6 +1685,17 @@ fn validate_loop(
             return Err(err("AST nesting limit"));
         }
         match e {
+            Expr::GeneratorFunction { params, body, .. } => {
+                validate_function(body, params, d + 1, false, true)?
+            }
+            Expr::Yield(value, _) => {
+                if !in_generator {
+                    return Err(err("yield outside generator"));
+                }
+                if let Some(value) = value {
+                    work.push((value, d + 1));
+                }
+            }
             Expr::Await(value) => {
                 if !in_async {
                     return Err(err("await outside async function"));
@@ -1580,10 +1703,10 @@ fn validate_loop(
                 work.push((value, d + 1));
             }
             Expr::AsyncArrow { params, body } | Expr::AsyncFunction { params, body, .. } => {
-                validate_function(body, params, d + 1, true)?
+                validate_function(body, params, d + 1, true, false)?
             }
             Expr::Arrow { params, body } | Expr::Function { params, body, .. } => {
-                validate_function(body, params, d + 1, false)?
+                validate_function(body, params, d + 1, false, false)?
             }
             Expr::Sequence(elements) => work.extend(elements.iter().map(|x| (x, d + 1))),
             Expr::Array(elements) => work.extend(elements.iter().flatten().map(|x| (x, d + 1))),
@@ -1595,7 +1718,7 @@ fn validate_loop(
                         }
                         Property::Getter(b) => validate(b, &[], true, d + 1)?,
                         Property::Setter(n, b) => {
-                            validate_function(b, std::slice::from_ref(n), d + 1, false)?
+                            validate_function(b, std::slice::from_ref(n), d + 1, false, false)?
                         }
                     }
                 }

@@ -67,9 +67,10 @@ fn read(r: usize) -> Expr {
 }
 fn expr_await(e: &Expr) -> bool {
     match e {
-        Expr::Await(_) => true,
+        Expr::Await(_) | Expr::Yield(..) => true,
         Expr::Sequence(items) => items.iter().any(expr_await),
-        Expr::Function { .. }
+        Expr::GeneratorFunction{..}
+        | Expr::Function { .. }
         | Expr::Arrow { .. }
         | Expr::AsyncFunction { .. }
         | Expr::AsyncArrow { .. } => false,
@@ -198,6 +199,21 @@ impl Compiler {
                 for item in items {
                     out = self.expression(item)?;
                 }
+                out
+            }
+            Expr::Yield(value, delegate) => {
+                if *delegate {
+                    return Err(ScriptError::Unsupported(
+                        "yield delegation is not yet implemented",
+                    ));
+                }
+                let value = if let Some(value) = value {
+                    self.expression(value)?
+                } else {
+                    self.eval(Expr::Undefined)
+                };
+                let out = self.reg();
+                self.emit(Op::Yield(value, out));
                 out
             }
             Expr::Await(e) => {
@@ -543,7 +559,7 @@ impl Compiler {
                     self.emit(Op::Exit);
                 }
             }
-            Stmt::Function(..) | Stmt::AsyncFunction(..) => {}
+            Stmt::Function(..) | Stmt::AsyncFunction(..) | Stmt::GeneratorFunction(..) => {}
             Stmt::Const(n, e) | Stmt::Let(n, e) => {
                 let value = self.expression(e)?;
                 self.emit(Op::Init(n.clone(), value, false));

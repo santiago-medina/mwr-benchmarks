@@ -477,6 +477,7 @@ impl Engine<'_> {
         self.bootstrap_bigint(env, &mut objects)?;
         self.bootstrap_buffers(env, &mut objects)?;
         self.bootstrap_typed(env, &mut objects)?;
+        self.bootstrap_generators(env, &mut objects, iterator)?;
         let constructors: Vec<_> = self
             .intrinsics
             .as_ref()
@@ -848,6 +849,14 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name.starts_with("%Generator%.") {
+            return self.generator_builtin(name, receiver, args);
+        }
+        if name == "GeneratorFunction" {
+            return Err(ScriptError::Unsupported(
+                "dynamic GeneratorFunction construction",
+            ));
+        }
         if super::typed_arrays::kind(name).is_some() || name.starts_with("%TypedArray%") {
             return self.typed_builtin(name, receiver, args);
         }

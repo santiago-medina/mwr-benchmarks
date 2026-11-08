@@ -110,7 +110,11 @@ impl Engine<'_> {
         self.runtime.link(id, env)?;
         let program = if matches!(
             kind,
-            FunctionKind::Async | FunctionKind::AsyncArrow | FunctionKind::AsyncMethod
+            FunctionKind::Async
+                | FunctionKind::AsyncArrow
+                | FunctionKind::AsyncMethod
+                | FunctionKind::Generator
+                | FunctionKind::GeneratorMethod
         ) {
             Some(super::asynchronous::compile(body)?)
         } else {
@@ -132,6 +136,11 @@ impl Engine<'_> {
             id,
             Data::new(Some(
                 if matches!(
+                    kind,
+                    FunctionKind::Generator | FunctionKind::GeneratorMethod
+                ) {
+                    self.intrinsics.as_ref().unwrap().collection["GeneratorFunction"]
+                } else if matches!(
                     kind,
                     FunctionKind::Async | FunctionKind::AsyncArrow | FunctionKind::AsyncMethod
                 ) {
@@ -164,6 +173,23 @@ impl Engine<'_> {
                 ..Descriptor::default()
             },
         )?;
+        if matches!(
+            kind,
+            FunctionKind::Generator | FunctionKind::GeneratorMethod
+        ) {
+            let prototype = self.intrinsics.as_ref().unwrap().collection["Generator"];
+            let prototype = self.new_object(Some(prototype))?;
+            self.protect(&Value::Object(prototype))?;
+            self.define(
+                id,
+                "prototype",
+                Descriptor {
+                    value: Some(Value::Object(prototype)),
+                    writable: Some(true),
+                    ..Descriptor::default()
+                },
+            )?;
+        }
         if kind == FunctionKind::Ordinary {
             let p = self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;
             self.protect(&Value::Object(p))?;
@@ -196,8 +222,13 @@ impl Engine<'_> {
     }
     pub(super) fn hoist_functions(&mut self, body: &[Stmt], env: Id) -> Result<()> {
         for s in body {
-            if let Stmt::Function(n, p, b) | Stmt::AsyncFunction(n, p, b) = s {
-                let kind = if matches!(s, Stmt::AsyncFunction(..)) {
+            if let Stmt::Function(n, p, b)
+            | Stmt::AsyncFunction(n, p, b)
+            | Stmt::GeneratorFunction(n, p, b) = s
+            {
+                let kind = if matches!(s, Stmt::GeneratorFunction(..)) {
+                    FunctionKind::Generator
+                } else if matches!(s, Stmt::AsyncFunction(..)) {
                     FunctionKind::Async
                 } else {
                     FunctionKind::Ordinary
@@ -285,7 +316,7 @@ impl Engine<'_> {
                 iterable,
                 body,
             } => return self.for_of(kind, name, iterable, body, env, can_return, true),
-            Stmt::Function(..) | Stmt::AsyncFunction(..) => {}
+            Stmt::Function(..) | Stmt::AsyncFunction(..) | Stmt::GeneratorFunction(..) => {}
             Stmt::Expr(x) => {
                 self.eval(x, env)?;
             }
@@ -508,6 +539,26 @@ impl Engine<'_> {
                 name.is_some(),
             ),
             Expr::Await(_) => Err(ScriptError::Runtime("await requires continuation")),
+            Expr::Yield(..) => Err(ScriptError::Unsupported(
+                "yield requires a generator activation",
+            )),
+            Expr::GeneratorFunction {
+                name,
+                params,
+                body,
+                method,
+            } => self.make_function(
+                env,
+                name.as_deref(),
+                params,
+                body,
+                if *method {
+                    FunctionKind::GeneratorMethod
+                } else {
+                    FunctionKind::Generator
+                },
+                name.is_some(),
+            ),
             Expr::AsyncArrow { params, body } => {
                 self.make_function(env, None, params, body, FunctionKind::AsyncArrow, false)
             }
@@ -747,6 +798,21 @@ impl Engine<'_> {
                 program,
                 ..
             }) => {
+                if matches!(
+                    kind,
+                    FunctionKind::Generator | FunctionKind::GeneratorMethod
+                ) {
+                    return self.start_generator(
+                        id,
+                        environment,
+                        params,
+                        body,
+                        kind,
+                        receiver,
+                        args,
+                        program.unwrap(),
+                    );
+                }
                 if let Some(program) = program {
                     return self.start_async(
                         environment,

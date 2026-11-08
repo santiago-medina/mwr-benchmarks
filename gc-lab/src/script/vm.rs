@@ -76,6 +76,8 @@ pub(super) enum FunctionKind {
     Async,
     AsyncArrow,
     AsyncMethod,
+    Generator,
+    GeneratorMethod,
 }
 #[derive(Clone)]
 pub(super) enum Object {
@@ -439,7 +441,9 @@ impl<'host> Engine<'host> {
                         mutable.insert(n.clone());
                     }
                 }
-                Stmt::Function(n, ..) | Stmt::AsyncFunction(n, ..) => {
+                Stmt::Function(n, ..)
+                | Stmt::AsyncFunction(n, ..)
+                | Stmt::GeneratorFunction(n, ..) => {
                     bindings.insert(n.clone(), Some(Value::Undefined));
                     mutable.insert(n.clone());
                 }
@@ -463,7 +467,10 @@ impl<'host> Engine<'host> {
             parser::var_names(body, &mut names);
             object_bindings.extend(names);
             for s in body {
-                if let Stmt::Function(n, ..) | Stmt::AsyncFunction(n, ..) = s {
+                if let Stmt::Function(n, ..)
+                | Stmt::AsyncFunction(n, ..)
+                | Stmt::GeneratorFunction(n, ..) = s
+                {
                     object_bindings.insert(n.clone());
                 }
             }

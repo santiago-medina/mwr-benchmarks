@@ -171,7 +171,8 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
                     | Stmt::Let(n, _)
                     | Stmt::Var(n, _)
                     | Stmt::Function(n, ..)
-                    | Stmt::AsyncFunction(n, ..) => n.clone(),
+                    | Stmt::AsyncFunction(n, ..)
+                    | Stmt::GeneratorFunction(n, ..) => n.clone(),
                     _ => return Err(p.error("unsupported export declaration")),
                 };
                 module.exports.push(Export {
@@ -201,7 +202,8 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
         if let Stmt::Const(n, _)
         | Stmt::Let(n, _)
         | Stmt::Function(n, ..)
-        | Stmt::AsyncFunction(n, ..) = statement
+        | Stmt::AsyncFunction(n, ..)
+        | Stmt::GeneratorFunction(n, ..) = statement
         {
             if !lexical.insert(n.clone()) {
                 return Err(p.error("duplicate module binding"));
@@ -214,7 +216,7 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
         return Err(p.error("var conflicts with module binding"));
     }
     let params = imports.into_iter().collect::<Vec<_>>();
-    validate_loop(&module.body, &params, false, 0, false, true, false)?;
+    validate_loop(&module.body, &params, false, 0, false, true, false, false)?;
     let mut exports = HashSet::new();
     for export in &module.exports {
         if !exports.insert(&export.exported) {
