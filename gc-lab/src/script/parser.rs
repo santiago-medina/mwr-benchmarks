@@ -2091,7 +2091,12 @@ impl Parser<'_> {
             },
             Token::EscapedName(n) if !reserved(&n) => Ok(Expr::Name(n)),
             Token::EscapedName(_) => Err(self.error("escaped reserved word")),
-            Token::RegExp { pattern, flags } => Ok(Expr::RegExp { pattern, flags }),
+            Token::RegExp { pattern, flags } => {
+                if !super::regexp_builtins::literal_ok(&pattern, &flags) {
+                    return Err(self.error("invalid regular expression"));
+                }
+                Ok(Expr::RegExp { pattern, flags })
+            }
             Token::String(s) => Ok(Expr::String(s)),
             Token::Number(n) => Ok(Expr::Number(n)),
             Token::BigInt(n) => Ok(Expr::BigInt(n)),

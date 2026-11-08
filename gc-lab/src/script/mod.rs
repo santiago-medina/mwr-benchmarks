@@ -68,6 +68,8 @@ mod buffers;
 
 mod typed_arrays;
 
+mod regexp;
+mod regexp_tables;
 mod sorting;
 mod typed_methods;
 
@@ -80,6 +82,7 @@ mod delegation;
 mod calendar;
 
 mod dates;
+mod regexp_builtins;
 
 mod patterns;
 

@@ -19,9 +19,7 @@ impl Engine<'_> {
         if !matches!(value, Value::Object(_)) {
             return Ok(false);
         }
-        // There is no RegExp internal slot yet; an explicit @@match is observable now.
-        let marker = self.get_member(value, Key::Symbol(6))?;
-        Ok(marker != Value::Undefined && marker.truthy())
+        self.is_regexp(value)
     }
     fn literal_index(
         &mut self,

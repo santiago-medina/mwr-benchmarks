@@ -601,7 +601,7 @@ impl Engine<'_> {
             Expr::This => self.lookup(env, "this"),
             Expr::String(s) => Ok(Value::String(s.clone())),
             Expr::BigInt(s) => self.big_literal(s),
-            Expr::RegExp { .. } => Err(ScriptError::Unsupported("RegExp literal")),
+            Expr::RegExp { pattern, flags } => self.regexp_literal(pattern, flags),
             Expr::Number(n) => Ok(Value::number(n.parse().unwrap())),
             Expr::Bool(b) => Ok(Value::Bool(*b)),
             Expr::Null => Ok(Value::Null),
@@ -1001,6 +1001,7 @@ impl Engine<'_> {
                             | "GeneratorFunction"
                             | "AsyncGeneratorFunction"
                             | "Date"
+                            | "RegExp"
                             | "String"
                             | "Number"
                             | "Boolean"
@@ -1041,6 +1042,9 @@ impl Engine<'_> {
             Some(Object::Builtin { name, .. }) => {
                 if name == "Date" {
                     return self.construct_date(new_target, args);
+                }
+                if name == "RegExp" {
+                    return self.construct_regexp(new_target, args, false);
                 }
                 if name == "GeneratorFunction" || name == "AsyncGeneratorFunction" {
                     return self.dynamic_function_kind(

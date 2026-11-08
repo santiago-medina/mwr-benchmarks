@@ -560,7 +560,6 @@ impl<'host> Engine<'host> {
                 | "BigInt"
                 | "Proxy"
                 | "Date"
-                | "RegExp"
                 | "Promise"
                 | "Map"
                 | "Set"

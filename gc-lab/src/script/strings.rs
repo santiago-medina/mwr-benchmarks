@@ -26,6 +26,9 @@ pub(super) const METHODS: &[&str] = &[
     "repeat",
     "replace",
     "replaceAll",
+    "match",
+    "matchAll",
+    "search",
     "split",
     "slice",
     "startsWith",
@@ -105,6 +108,12 @@ impl Engine<'_> {
             "String.prototype.replace" | "String.prototype.replaceAll" | "String.prototype.split"
         ) {
             return self.string_search_builtin(name, receiver, args);
+        }
+        if matches!(
+            name,
+            "String.prototype.match" | "String.prototype.matchAll" | "String.prototype.search"
+        ) {
+            return self.string_regexp_method(name, receiver, args);
         }
         let arg = |i| args.get(i).cloned().unwrap_or(Value::Undefined);
         if name == "%StringIteratorPrototype%.next" {

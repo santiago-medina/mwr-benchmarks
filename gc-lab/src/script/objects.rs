@@ -90,6 +90,8 @@ pub(super) struct Data {
     pub boxed: Option<Value>,
     pub source: Option<String>,
     pub date: Option<u64>,
+    pub regexp: Option<std::rc::Rc<super::regexp_builtins::Matcher>>,
+    pub regexp_cursor: Option<super::regexp_builtins::Cursor>,
     pub buffer: Option<super::buffers::Store>,
     pub view: Option<super::buffers::View>,
     pub typed: Option<super::typed_arrays::Typed>,
@@ -119,6 +121,8 @@ impl Data {
             boxed: None,
             source: None,
             date: None,
+            regexp: None,
+            regexp_cursor: None,
             buffer: None,
             view: None,
             typed: None,
@@ -149,6 +153,7 @@ impl Data {
             .chain(self.typed.as_ref().map(|t| t.view.buffer))
             .chain(self.boxed.as_ref().and_then(Value::id))
             .chain(self.iterator.as_ref().and_then(|i| i.target))
+            .chain(self.regexp_cursor.as_ref().map(|c| c.regexp))
             .chain(self.request.as_ref().into_iter().flat_map(|r| r.edges()))
             .chain(self.activation.as_ref().into_iter().flat_map(|a| a.edges()))
             .chain(self.generator.as_ref().into_iter().flat_map(|g| g.edges()))

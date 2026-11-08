@@ -399,6 +399,7 @@ impl Engine<'_> {
             "ArrayBuffer",
             "DataView",
             "Date",
+            "RegExp",
             "%ThrowTypeError%",
         ];
         names.extend(super::typed_arrays::NAMES.iter().map(|(name, _)| *name));
@@ -492,6 +493,7 @@ impl Engine<'_> {
         self.bootstrap_typed(env, &mut objects)?;
         self.bootstrap_generators(env, &mut objects, iterator)?;
         self.bootstrap_dates(env, &mut objects)?;
+        self.bootstrap_regexp(env, &mut objects, iterator)?;
         let constructors: Vec<_> = self
             .intrinsics
             .as_ref()
@@ -881,6 +883,12 @@ impl Engine<'_> {
         if name == "Date" || name.starts_with("Date.") {
             return self.date_builtin(name, receiver, args);
         }
+        if name == "RegExp"
+            || name.starts_with("RegExp.")
+            || name == "%RegExpStringIteratorPrototype%.next"
+        {
+            return self.regexp_builtin(name, receiver, args);
+        }
         if name.starts_with("%AsyncGenerator%.") {
             return self.async_generator_builtin(name, receiver, args);
         }
@@ -1157,6 +1165,8 @@ impl Engine<'_> {
                         let d = self.data(*id)?;
                         if d.date.is_some() {
                             "Date"
+                        } else if d.regexp.is_some() {
+                            "RegExp"
                         } else if d.array {
                             "Array"
                         } else if d.iterator.is_some() {
