@@ -9,8 +9,9 @@ type Result<T> = std::result::Result<T, ScriptError>;
 #[derive(Clone)]
 pub(super) enum Op {
     Eval(Expr, usize),
+    Enumerate(usize, usize, usize),
     Iterator(usize, usize, usize),
-    IteratorNext(usize, usize, usize, usize),
+    IteratorNext(usize, usize, usize, usize, bool),
     Loop(usize, usize),
     EndLoop,
     CloneIteration(Vec<String>),
@@ -112,7 +113,9 @@ pub(super) fn stmt_await(s: &Stmt) -> bool {
                 || update.as_ref().is_some_and(expr_await)
                 || stmt_await(body)
         }
-        Stmt::ForOf { iterable, body, .. } => expr_await(iterable) || stmt_await(body),
+        Stmt::ForOf { iterable, body, .. } | Stmt::ForIn { iterable, body, .. } => {
+            expr_await(iterable) || stmt_await(body)
+        }
         _ => false,
     }
 }
@@ -547,7 +550,14 @@ impl Compiler {
                 name,
                 iterable,
                 body,
+            }
+            | Stmt::ForIn {
+                kind,
+                name,
+                iterable,
+                body,
             } => {
+                let enumeration = matches!(s, Stmt::ForIn { .. });
                 let declaration = if kind == "const" {
                     Stmt::Const(name.clone(), Expr::Undefined)
                 } else {
@@ -559,7 +569,11 @@ impl Compiler {
                 let source = self.expression(iterable)?;
                 let iterator = self.reg();
                 let next = self.reg();
-                self.emit(Op::Iterator(source, iterator, next));
+                self.emit(if enumeration {
+                    Op::Enumerate(source, iterator, next)
+                } else {
+                    Op::Iterator(source, iterator, next)
+                });
                 if kind != "var" {
                     self.emit(Op::Exit);
                 }
@@ -567,7 +581,7 @@ impl Compiler {
                 let again = self.ops.len();
                 let value = self.reg();
                 let done = self.reg();
-                self.emit(Op::IteratorNext(iterator, next, value, done));
+                self.emit(Op::IteratorNext(iterator, next, value, done, !enumeration));
                 let branch = self.emit(Op::Branch(done, 0, 0));
                 let body_start = self.ops.len();
                 if kind != "var" {
@@ -845,6 +859,14 @@ impl Engine<'_> {
                 let env = *frame.envs.last().unwrap();
                 let step = (|| -> Result<Option<Completion>> {
                     match op {
+                        Op::Enumerate(source, iterator, next) => {
+                            let source = e.register(&frame, source)?;
+                            let value = e.enumeration(source)?;
+                            e.store(&frame, iterator, value)?;
+                            let method = e.intrinsics.as_ref().unwrap().functions
+                                ["%ForInIteratorPrototype%.next"];
+                            e.store(&frame, next, Value::Object(method))?;
+                        }
                         Op::Iterator(source, iterator, next) => {
                             let source = e.register(&frame, source)?;
                             let method =
@@ -854,7 +876,7 @@ impl Engine<'_> {
                             e.store(&frame, iterator, value)?;
                             e.store(&frame, next, method)?;
                         }
-                        Op::IteratorNext(iterator, next, value, done) => {
+                        Op::IteratorNext(iterator, next, value, done, close) => {
                             frame.handlers.last_mut().unwrap().iterator = None;
                             let target = e.register(&frame, iterator)?;
                             let next = e.register(&frame, next)?;
@@ -872,7 +894,7 @@ impl Engine<'_> {
                             };
                             e.store(&frame, value, result)?;
                             e.store(&frame, done, Value::Bool(finished))?;
-                            if !finished {
+                            if !finished && close {
                                 frame.handlers.last_mut().unwrap().iterator = Some(iterator);
                             }
                         }

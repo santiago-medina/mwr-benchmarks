@@ -89,6 +89,7 @@ pub(super) struct Data {
     pub error_class: Option<String>,
     pub boxed: Option<Value>,
     pub source: Option<String>,
+    pub enumeration: Option<super::enumeration::Cursor>,
     pub arguments: bool,
     pub array: bool,
     pub response: Option<super::network::Response>,
@@ -112,6 +113,7 @@ impl Data {
             error_class: None,
             boxed: None,
             source: None,
+            enumeration: None,
             arguments: false,
             array: false,
             iterator: None,
@@ -132,6 +134,7 @@ impl Data {
             .into_iter()
             .chain(self.collection.as_ref().into_iter().flat_map(|t| t.edges()))
             .chain(self.collection_cursor.as_ref().and_then(|c| c.target))
+            .chain(self.enumeration.as_ref().and_then(|c| c.current))
             .chain(self.boxed.as_ref().and_then(Value::id))
             .chain(self.iterator.as_ref().and_then(|i| i.target))
             .chain(self.request.as_ref().into_iter().flat_map(|r| r.edges()))

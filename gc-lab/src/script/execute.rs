@@ -269,7 +269,13 @@ impl Engine<'_> {
                 name,
                 iterable,
                 body,
-            } => return self.for_of(kind, name, iterable, body, env, can_return),
+            } => return self.for_of(kind, name, iterable, body, env, can_return, false),
+            Stmt::ForIn {
+                kind,
+                name,
+                iterable,
+                body,
+            } => return self.for_of(kind, name, iterable, body, env, can_return, true),
             Stmt::Function(..) | Stmt::AsyncFunction(..) => {}
             Stmt::Expr(x) => {
                 self.eval(x, env)?;
@@ -347,6 +353,7 @@ impl Engine<'_> {
         body: &Stmt,
         env: Id,
         can_return: bool,
+        enumeration: bool,
     ) -> Result<Option<Value>> {
         let scope = if kind == "var" {
             env
@@ -361,9 +368,18 @@ impl Engine<'_> {
         };
         let value = self.eval(source, scope)?;
         self.protect(&value)?;
-        let method = self.get_member(value.clone(), Key::Symbol(0))?;
-        self.protect(&method)?;
-        let (iterator, next) = self.open_iterator(value, method)?;
+        let (iterator, next) = if enumeration {
+            (
+                self.enumeration(value)?,
+                Value::Object(
+                    self.intrinsics.as_ref().unwrap().functions["%ForInIteratorPrototype%.next"],
+                ),
+            )
+        } else {
+            let method = self.get_member(value.clone(), Key::Symbol(0))?;
+            self.protect(&method)?;
+            self.open_iterator(value, method)?
+        };
         loop {
             self.tick()?;
             let (done, completion) = self.frame(|e| {
@@ -395,6 +411,8 @@ impl Engine<'_> {
                 });
                 match pending {
                     Ok(None) | Err(ScriptError::LoopContinue) => Ok((false, None)),
+                    Err(ScriptError::LoopBreak) if enumeration => Ok((true, None)),
+                    other if enumeration => other.map(|v| (true, v)),
                     Err(ScriptError::LoopBreak) => e
                         .close_iterator(iterator.clone(), Ok(None))
                         .map(|v| (true, v)),

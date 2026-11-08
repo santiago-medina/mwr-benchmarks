@@ -221,7 +221,9 @@ impl Engine<'_> {
             | "Array.prototype.with"
             | "Array.prototype.toSpliced" => 2,
             "Array.prototype.toReversed" => 0,
-            "Promise.withResolvers" | "Error.prototype.toString" => 0,
+            "Promise.withResolvers"
+            | "Error.prototype.toString"
+            | "%ForInIteratorPrototype%.next" => 0,
             "Math.random"
             | "String.prototype.iterator"
             | "%StringIteratorPrototype%.next"
@@ -465,6 +467,7 @@ impl Engine<'_> {
         self.bootstrap_math(env, &mut objects)?;
         self.bootstrap_strings(env, &mut objects, iterator)?;
         self.bootstrap_symbols(env, &mut objects)?;
+        self.bootstrap_enumeration(env, iterator)?;
         let constructors: Vec<_> = self
             .intrinsics
             .as_ref()
@@ -832,6 +835,9 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name == "%ForInIteratorPrototype%.next" {
+            return self.enumeration_next(receiver);
+        }
         if matches!(
             name,
             "encodeURI" | "encodeURIComponent" | "decodeURI" | "decodeURIComponent"

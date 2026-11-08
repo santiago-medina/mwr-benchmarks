@@ -82,6 +82,12 @@ pub enum Stmt {
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
     Break,
     Continue,
+    ForIn {
+        kind: String,
+        name: String,
+        iterable: Expr,
+        body: Box<Stmt>,
+    },
     ForOf {
         kind: String,
         name: String,
@@ -461,6 +467,16 @@ impl Parser<'_> {
             };
             let init = if let Some(kind) = kind {
                 let name = self.name()?;
+                if self.word("in") {
+                    let iterable = self.sequence()?;
+                    self.expect(')')?;
+                    return Ok(Stmt::ForIn {
+                        kind: kind.into(),
+                        name,
+                        iterable,
+                        body: Box::new(self.statement()?),
+                    });
+                }
                 if self.word("of") {
                     let iterable = self.expression()?;
                     self.expect(')')?;
@@ -1210,7 +1226,7 @@ fn validate_loop(
                     in_async,
                 )?;
             }
-            Stmt::ForOf { iterable, body, .. } => {
+            Stmt::ForOf { iterable, body, .. } | Stmt::ForIn { iterable, body, .. } => {
                 work.push((iterable, depth));
                 validate_loop(
                     std::slice::from_ref(body),
@@ -1334,6 +1350,9 @@ pub(super) fn var_names(body: &[Stmt], out: &mut Vec<String>) {
             }
             Stmt::Var(n, _) => out.push(n.clone()),
             Stmt::ForOf {
+                kind, name, body, ..
+            }
+            | Stmt::ForIn {
                 kind, name, body, ..
             } => {
                 if kind == "var" {
