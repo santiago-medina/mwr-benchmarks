@@ -117,6 +117,11 @@ impl Engine<'_> {
                 | FunctionKind::GeneratorMethod
         ) {
             Some(super::asynchronous::compile(body)?)
+        } else if matches!(
+            kind,
+            FunctionKind::AsyncGenerator | FunctionKind::AsyncGeneratorMethod
+        ) {
+            Some(super::asynchronous::compile_kind(body, true)?)
         } else {
             None
         };
@@ -140,6 +145,11 @@ impl Engine<'_> {
                     FunctionKind::Generator | FunctionKind::GeneratorMethod
                 ) {
                     self.intrinsics.as_ref().unwrap().collection["GeneratorFunction"]
+                } else if matches!(
+                    kind,
+                    FunctionKind::AsyncGenerator | FunctionKind::AsyncGeneratorMethod
+                ) {
+                    self.intrinsics.as_ref().unwrap().collection["AsyncGeneratorFunction"]
                 } else if matches!(
                     kind,
                     FunctionKind::Async | FunctionKind::AsyncArrow | FunctionKind::AsyncMethod
@@ -175,9 +185,19 @@ impl Engine<'_> {
         )?;
         if matches!(
             kind,
-            FunctionKind::Generator | FunctionKind::GeneratorMethod
+            FunctionKind::Generator
+                | FunctionKind::GeneratorMethod
+                | FunctionKind::AsyncGenerator
+                | FunctionKind::AsyncGeneratorMethod
         ) {
-            let prototype = self.intrinsics.as_ref().unwrap().collection["Generator"];
+            let prototype = self.intrinsics.as_ref().unwrap().collection[if matches!(
+                kind,
+                FunctionKind::Generator | FunctionKind::GeneratorMethod
+            ) {
+                "Generator"
+            } else {
+                "AsyncGenerator"
+            }];
             let prototype = self.new_object(Some(prototype))?;
             self.protect(&Value::Object(prototype))?;
             self.define(
@@ -224,9 +244,11 @@ impl Engine<'_> {
         for s in body {
             if let Stmt::Function(n, p, b)
             | Stmt::AsyncFunction(n, p, b)
-            | Stmt::GeneratorFunction(n, p, b) = s
+            | Stmt::GeneratorFunction(n, p, b, _) = s
             {
-                let kind = if matches!(s, Stmt::GeneratorFunction(..)) {
+                let kind = if matches!(s, Stmt::GeneratorFunction(.., true)) {
+                    FunctionKind::AsyncGenerator
+                } else if matches!(s, Stmt::GeneratorFunction(..)) {
                     FunctionKind::Generator
                 } else if matches!(s, Stmt::AsyncFunction(..)) {
                     FunctionKind::Async
@@ -330,10 +352,18 @@ impl Engine<'_> {
             Stmt::Break => return Err(ScriptError::LoopBreak),
             Stmt::Continue => return Err(ScriptError::LoopContinue),
             Stmt::ForOf {
+                asynchronous: true, ..
+            } => {
+                return Err(ScriptError::Unsupported(
+                    "for-await requires an async function",
+                ))
+            }
+            Stmt::ForOf {
                 kind,
                 binding,
                 iterable,
                 body,
+                ..
             } => return self.for_of(kind, binding, iterable, body, env, can_return, false),
             Stmt::ForIn {
                 kind,
@@ -604,15 +634,17 @@ impl Engine<'_> {
                 params,
                 body,
                 method,
+                asynchronous,
             } => self.make_function(
                 env,
                 name.as_deref(),
                 params,
                 body,
-                if *method {
-                    FunctionKind::GeneratorMethod
-                } else {
-                    FunctionKind::Generator
+                match (*method, *asynchronous) {
+                    (true, false) => FunctionKind::GeneratorMethod,
+                    (false, false) => FunctionKind::Generator,
+                    (true, true) => FunctionKind::AsyncGeneratorMethod,
+                    (false, true) => FunctionKind::AsyncGenerator,
                 },
                 name.is_some(),
             ),
@@ -888,7 +920,10 @@ impl Engine<'_> {
             }) => {
                 if matches!(
                     kind,
-                    FunctionKind::Generator | FunctionKind::GeneratorMethod
+                    FunctionKind::Generator
+                        | FunctionKind::GeneratorMethod
+                        | FunctionKind::AsyncGenerator
+                        | FunctionKind::AsyncGeneratorMethod
                 ) {
                     return self.start_generator(
                         id,
@@ -963,6 +998,7 @@ impl Engine<'_> {
                             | "Function"
                             | "AsyncFunction"
                             | "GeneratorFunction"
+                            | "AsyncGeneratorFunction"
                             | "Date"
                             | "String"
                             | "Number"
@@ -1005,9 +1041,13 @@ impl Engine<'_> {
                 if name == "Date" {
                     return self.construct_date(new_target, args);
                 }
-                if name == "GeneratorFunction" {
+                if name == "GeneratorFunction" || name == "AsyncGeneratorFunction" {
                     return self.dynamic_function_kind(
-                        FunctionKind::Generator,
+                        if name == "GeneratorFunction" {
+                            FunctionKind::Generator
+                        } else {
+                            FunctionKind::AsyncGenerator
+                        },
                         args,
                         Some(new_target),
                     );

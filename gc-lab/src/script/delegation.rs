@@ -9,6 +9,8 @@ pub(super) struct Delegation {
     pub iterator: Value,
     pub next: Value,
     pub output: usize,
+    /// Async yield-star over a sync iterator (CreateAsyncFromSyncIterator).
+    pub sync: bool,
 }
 pub(super) enum Delegated {
     Yield(Value),

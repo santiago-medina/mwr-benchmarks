@@ -27,15 +27,17 @@ impl Engine<'_> {
         args: Vec<Value>,
         new_target: Option<Value>,
     ) -> Result<Value> {
-        let asynchronous = kind == FunctionKind::Async;
-        let generator = kind == FunctionKind::Generator;
+        let asynchronous = matches!(kind, FunctionKind::Async | FunctionKind::AsyncGenerator);
+        let generator = matches!(kind, FunctionKind::Generator | FunctionKind::AsyncGenerator);
         let mut strings = vec![];
         for value in args {
             strings.push(self.to_string(value)?);
         }
         let body = strings.pop().unwrap_or_default();
         let parameters = strings.join(",");
-        let prefix = if generator {
+        let prefix = if generator && asynchronous {
+            "async function*"
+        } else if generator {
             "function*"
         } else if asynchronous {
             "async function"
@@ -63,7 +65,9 @@ impl Engine<'_> {
         };
         let (params, body) = match parsed.as_slice() {
             [Stmt::Function(_, params, body)] if !asynchronous && !generator => (params, body),
-            [Stmt::GeneratorFunction(_, params, body)] if generator => (params, body),
+            [Stmt::GeneratorFunction(_, params, body, a)] if generator && *a == asynchronous => {
+                (params, body)
+            }
             [Stmt::AsyncFunction(_, params, body)] if asynchronous => (params, body),
             _ => return self.throw_error("SyntaxError", "invalid dynamic function syntax"),
         };

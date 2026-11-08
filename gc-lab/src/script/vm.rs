@@ -78,6 +78,8 @@ pub(super) enum FunctionKind {
     AsyncMethod,
     Generator,
     GeneratorMethod,
+    AsyncGenerator,
+    AsyncGeneratorMethod,
     ClassConstructor,
     DerivedConstructor,
 }

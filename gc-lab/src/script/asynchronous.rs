@@ -6,12 +6,16 @@ use super::{
 use crate::dual::Id;
 use std::sync::Arc;
 type Result<T> = std::result::Result<T, ScriptError>;
+const ASYNC_ITERATOR: u64 = 12;
 #[derive(Clone)]
 pub(super) enum Op {
     Eval(Expr, usize),
     Enumerate(usize, usize, usize),
     Iterator(usize, usize, usize),
     IteratorNext(usize, usize, usize, usize, bool),
+    AsyncIterator(usize, usize, usize, usize),
+    AsyncNext(usize, usize, usize, usize),
+    IteratorStep(usize, usize, usize, usize),
     Loop(usize, usize),
     EndLoop,
     CloneIteration(Vec<String>),
@@ -153,6 +157,9 @@ pub(super) fn stmt_await(s: &Stmt) -> bool {
                 || stmt_await(body)
         }
         Stmt::ForOf {
+            asynchronous: true, ..
+        } => true,
+        Stmt::ForOf {
             binding,
             iterable,
             body,
@@ -174,6 +181,7 @@ pub(super) fn stmt_await(s: &Stmt) -> bool {
 struct Compiler {
     ops: Vec<Op>,
     next: usize,
+    async_generator: bool,
 }
 impl Compiler {
     fn emit(&mut self, op: Op) -> usize {
@@ -286,6 +294,13 @@ impl Compiler {
                     self.expression(value)?
                 } else {
                     self.eval(Expr::Undefined)
+                };
+                let value = if self.async_generator && !*delegate {
+                    let awaited = self.reg();
+                    self.emit(Op::Await(value, awaited));
+                    awaited
+                } else {
+                    value
                 };
                 let out = self.reg();
                 self.emit(if *delegate {
@@ -765,6 +780,7 @@ impl Compiler {
                 binding,
                 iterable,
                 body,
+                ..
             }
             | Stmt::ForIn {
                 kind,
@@ -773,6 +789,13 @@ impl Compiler {
                 body,
             } => {
                 let enumeration = matches!(s, Stmt::ForIn { .. });
+                let asynchronous = matches!(
+                    s,
+                    Stmt::ForOf {
+                        asynchronous: true,
+                        ..
+                    }
+                );
                 let lexical = kind == "let" || kind == "const";
                 if binding.expressions().into_iter().any(expr_await) {
                     return Err(ScriptError::Unsupported(
@@ -794,7 +817,10 @@ impl Compiler {
                 let source = self.expression(iterable)?;
                 let iterator = self.reg();
                 let next = self.reg();
-                self.emit(if enumeration {
+                let sync = self.reg();
+                self.emit(if asynchronous {
+                    Op::AsyncIterator(source, iterator, next, sync)
+                } else if enumeration {
                     Op::Enumerate(source, iterator, next)
                 } else {
                     Op::Iterator(source, iterator, next)
@@ -806,7 +832,15 @@ impl Compiler {
                 let again = self.ops.len();
                 let value = self.reg();
                 let done = self.reg();
-                self.emit(Op::IteratorNext(iterator, next, value, done, !enumeration));
+                if asynchronous {
+                    let raw = self.reg();
+                    self.emit(Op::AsyncNext(iterator, next, sync, raw));
+                    let result = self.reg();
+                    self.emit(Op::Await(raw, result));
+                    self.emit(Op::IteratorStep(result, iterator, value, done));
+                } else {
+                    self.emit(Op::IteratorNext(iterator, next, value, done, !enumeration));
+                }
                 let branch = self.emit(Op::Branch(done, 0, 0));
                 let body_start = self.ops.len();
                 if lexical {
@@ -838,9 +872,13 @@ impl Compiler {
     }
 }
 pub(super) fn compile(body: &[Stmt]) -> Result<Arc<Program>> {
+    compile_kind(body, false)
+}
+pub(super) fn compile_kind(body: &[Stmt], async_generator: bool) -> Result<Arc<Program>> {
     let mut c = Compiler {
         ops: vec![],
         next: 0,
+        async_generator,
     };
     c.body(body, false)?;
     if c.ops.len() > 16384 {
@@ -888,6 +926,13 @@ struct Handler {
 pub(super) enum Target {
     Promise(super::promises::Capability),
     Generator(Id),
+    AsyncGenerator(Id),
+}
+/// Why an async-generator frame is suspended on an await that is not an `await` expression.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Pending {
+    Return,
+    Delegate(super::generators::Resume),
 }
 #[derive(Clone)]
 pub(super) struct Activation {
@@ -900,14 +945,21 @@ pub(super) struct Activation {
     incoming: Option<Value>,
     awaiting: Option<usize>,
     delegate: Option<super::delegation::Delegation>,
+    pending: Option<Pending>,
 }
 impl Activation {
+    pub fn async_generator(&self) -> Option<Id> {
+        match self.target {
+            Target::AsyncGenerator(id) => Some(id),
+            _ => None,
+        }
+    }
     pub fn edges(&self) -> Vec<Id> {
         let mut ids = self.envs.clone();
         ids.push(self.root);
         match &self.target {
             Target::Promise(cap) => ids.extend(cap.values().iter().filter_map(Value::id)),
-            Target::Generator(id) => ids.push(*id),
+            Target::Generator(id) | Target::AsyncGenerator(id) => ids.push(*id),
         }
         if let Some(delegate) = &self.delegate {
             ids.extend(delegate.iterator.id());
@@ -977,6 +1029,7 @@ impl Engine<'_> {
             incoming: None,
             awaiting: None,
             delegate: None,
+            pending: None,
         });
         self.replace_data(id, data)?;
         Ok(id)
@@ -1022,6 +1075,9 @@ impl Engine<'_> {
             }
             Target::Generator(generator) => {
                 self.generator_output(*generator, value, reject, true)?
+            }
+            Target::AsyncGenerator(generator) => {
+                self.async_generator_settle(*generator, value, reject, true)?
             }
         }
 
@@ -1126,6 +1182,176 @@ impl Engine<'_> {
             }
         }
     }
+    /// Applies one step outcome; true when the activation suspended or finished.
+    fn settle_step(
+        &mut self,
+        id: Id,
+        frame: &mut Activation,
+        step: Result<Option<Completion>>,
+    ) -> Result<bool> {
+        match step {
+            Ok(Some(Completion::Normal)) => Ok(true),
+            Ok(Some(completion)) => self.route_async(id, frame, completion),
+            Err(ScriptError::Thrown(error)) => {
+                self.route_async(id, frame, Completion::Throw(error.value))
+            }
+            Err(error) => Err(error),
+            Ok(None) => Ok(false),
+        }
+    }
+    fn await_value(
+        &mut self,
+        id: Id,
+        frame: &mut Activation,
+        value: Value,
+        out: Option<usize>,
+        pending: Option<Pending>,
+    ) -> Result<Option<Completion>> {
+        let promise = self.promise_resolve(
+            Value::Object(self.intrinsics.as_ref().unwrap().functions["Promise"]),
+            value,
+        )?;
+        self.protect(&promise)?;
+        frame.awaiting = Some(out.unwrap_or(usize::MAX));
+        frame.pending = pending;
+        self.save_activation(id, frame.clone())?;
+        let yes = self.internal_function(
+            super::promises::Internal::AsyncResume {
+                activation: id,
+                reject: false,
+            },
+            1,
+        )?;
+        let no = self.internal_function(
+            super::promises::Internal::AsyncResume {
+                activation: id,
+                reject: true,
+            },
+            1,
+        )?;
+        let Value::Object(p) = promise else {
+            unreachable!()
+        };
+        self.attach_reaction(p, Some(yes), Some(no), None)?;
+        Ok(Some(Completion::Normal))
+    }
+    /// `return v` in an async generator awaits v before completing.
+    fn return_value(
+        &mut self,
+        id: Id,
+        frame: &mut Activation,
+        value: Value,
+    ) -> Result<Option<Completion>> {
+        if frame.async_generator().is_some() {
+            self.await_value(id, frame, value, None, Some(Pending::Return))
+        } else {
+            Ok(Some(Completion::Return(value)))
+        }
+    }
+    /// CreateAsyncFromSyncIterator step: a sync result becomes a promise for {value, done}.
+    pub(super) fn async_from_sync(&mut self, result: Value) -> Result<Value> {
+        if !matches!(result, Value::Object(_)) {
+            return self.throw_error("TypeError", "iterator result is not an object");
+        }
+        let done = self.get_member(result.clone(), "done")?.truthy();
+        let value = self.get_member(result, "value")?;
+        self.protect(&value)?;
+        let ctor = Value::Object(self.intrinsics.as_ref().unwrap().functions["Promise"]);
+        let promise = self.promise_resolve(ctor.clone(), value)?;
+        self.protect(&promise)?;
+        let cap = self.capability(ctor)?;
+        let wrap = self.internal_function(super::promises::Internal::IterResult { done }, 1)?;
+        let Value::Object(p) = promise else {
+            unreachable!()
+        };
+        self.attach_reaction(p, Some(wrap), None, Some(cap.clone()))?;
+        Ok(cap.promise)
+    }
+    fn async_delegate_call(
+        &mut self,
+        id: Id,
+        frame: &mut Activation,
+        input: Value,
+        mode: super::generators::Resume,
+    ) -> Result<Option<Completion>> {
+        let result = self.async_delegate_call_inner(id, frame, input, mode);
+        if result.is_err() {
+            frame.delegate = None;
+        }
+        result
+    }
+    fn async_delegate_call_inner(
+        &mut self,
+        id: Id,
+        frame: &mut Activation,
+        input: Value,
+        mode: super::generators::Resume,
+    ) -> Result<Option<Completion>> {
+        use super::generators::Resume;
+        let delegate = frame.delegate.clone().unwrap();
+        let method = if mode == Resume::Next {
+            delegate.next.clone()
+        } else {
+            let method = self.get_member(
+                delegate.iterator.clone(),
+                if mode == Resume::Throw {
+                    "throw"
+                } else {
+                    "return"
+                },
+            )?;
+            self.protect(&method)?;
+            if matches!(method, Value::Null | Value::Undefined) {
+                frame.delegate = None;
+                if mode == Resume::Return {
+                    return self.await_value(id, frame, input, None, Some(Pending::Return));
+                }
+                self.close_iterator(delegate.iterator.clone(), Ok(None))?;
+                return self.throw_error("TypeError", "delegated iterator has no throw method");
+            }
+            method
+        };
+        let result = self.invoke_this(method, delegate.iterator.clone(), vec![input])?;
+        self.protect(&result)?;
+        let result = if delegate.sync {
+            self.async_from_sync(result)?
+        } else {
+            result
+        };
+        self.await_value(id, frame, result, None, Some(Pending::Delegate(mode)))
+    }
+    fn async_delegate_result(
+        &mut self,
+        id: Id,
+        frame: &mut Activation,
+        result: Value,
+        mode: super::generators::Resume,
+    ) -> Result<Option<Completion>> {
+        let step = (|| -> Result<Option<Completion>> {
+            if !matches!(result, Value::Object(_)) {
+                return self.throw_error("TypeError", "delegated iterator result is not an object");
+            }
+            let done = self.get_member(result.clone(), "done")?.truthy();
+            let value = self.get_member(result, "value")?;
+            self.protect(&value)?;
+            if done {
+                let output = frame.delegate.take().unwrap().output;
+                if mode == super::generators::Resume::Return {
+                    return Ok(Some(Completion::Return(value)));
+                }
+                self.store(frame, output, value)?;
+                return Ok(None);
+            }
+            self.save_activation(id, frame.clone())?;
+            let generator = frame.async_generator().unwrap();
+            self.async_generator_settle(generator, value, false, false)?;
+            Ok(Some(Completion::Normal))
+        })();
+        if step.is_err() {
+            frame.delegate = None;
+        }
+        step
+    }
     pub(super) fn resume_async(&mut self, id: Id, value: Value, reject: bool) -> Result<Value> {
         self.resume_program(
             id,
@@ -1149,24 +1375,35 @@ impl Engine<'_> {
             let Some(mut frame) = e.data(id)?.activation.clone() else {
                 return Ok(Value::Undefined);
             };
-            if frame.delegate.is_some() {
-                match e.process_delegate(id, &mut frame, value, mode) {
-                    Ok(Some(Completion::Normal)) => return Ok(Value::Undefined),
-                    Ok(Some(completion)) => {
-                        if e.route_async(id, &mut frame, completion)? {
-                            return Ok(Value::Undefined);
-                        }
+            if let Some(pending) = frame.pending.take() {
+                frame.awaiting = None;
+                let step = match (pending, mode) {
+                    (_, super::generators::Resume::Throw) => {
+                        frame.delegate = None;
+                        Ok(Some(Completion::Throw(value)))
                     }
-                    Err(ScriptError::Thrown(error)) => {
-                        if e.route_async(id, &mut frame, Completion::Throw(error.value))? {
-                            return Ok(Value::Undefined);
-                        }
-                    }
-                    Err(error) => return Err(error),
-                    Ok(None) => {}
+                    (Pending::Return, _) => Ok(Some(Completion::Return(value))),
+                    (Pending::Delegate(m), _) => e.async_delegate_result(id, &mut frame, value, m),
+                };
+                if e.settle_step(id, &mut frame, step)? {
+                    return Ok(Value::Undefined);
+                }
+            } else if frame.delegate.is_some() {
+                let step = if frame.async_generator().is_some() {
+                    e.async_delegate_call(id, &mut frame, value, mode)
+                } else {
+                    e.process_delegate(id, &mut frame, value, mode)
+                };
+                if e.settle_step(id, &mut frame, step)? {
+                    return Ok(Value::Undefined);
                 }
             } else if let Some(register) = frame.awaiting.take() {
-                if mode != super::generators::Resume::Next {
+                if mode == super::generators::Resume::Return && frame.async_generator().is_some() {
+                    let step = e.await_value(id, &mut frame, value, None, Some(Pending::Return));
+                    if e.settle_step(id, &mut frame, step)? {
+                        return Ok(Value::Undefined);
+                    }
+                } else if mode != super::generators::Resume::Next {
                     let completion = if mode == super::generators::Resume::Throw {
                         Completion::Throw(value)
                     } else {
@@ -1226,6 +1463,60 @@ impl Engine<'_> {
                             e.store(&frame, value, result)?;
                             e.store(&frame, done, Value::Bool(finished))?;
                             if !finished && close {
+                                frame.handlers.last_mut().unwrap().iterator = Some(iterator);
+                            }
+                        }
+                        Op::AsyncIterator(source, iterator, next, sync) => {
+                            let source = e.register(&frame, source)?;
+                            let method = e.get_member(
+                                source.clone(),
+                                super::objects::Key::Symbol(ASYNC_ITERATOR),
+                            )?;
+                            e.protect(&method)?;
+                            let (method, wrapped) =
+                                if matches!(method, Value::Null | Value::Undefined) {
+                                    let method = e.get_member(
+                                        source.clone(),
+                                        super::objects::Key::Symbol(0),
+                                    )?;
+                                    e.protect(&method)?;
+                                    (method, true)
+                                } else {
+                                    (method, false)
+                                };
+                            let (value, method) = e.open_iterator(source, method)?;
+                            e.store(&frame, iterator, value)?;
+                            e.store(&frame, next, method)?;
+                            e.store(&frame, sync, Value::Bool(wrapped))?;
+                        }
+                        Op::AsyncNext(iterator, next, sync, out) => {
+                            frame.handlers.last_mut().unwrap().iterator = None;
+                            let target = e.register(&frame, iterator)?;
+                            let next = e.register(&frame, next)?;
+                            let result = e.invoke_this(next, target, vec![])?;
+                            e.protect(&result)?;
+                            let result = if e.register(&frame, sync)?.truthy() {
+                                e.async_from_sync(result)?
+                            } else {
+                                result
+                            };
+                            e.store(&frame, out, result)?;
+                        }
+                        Op::IteratorStep(result, iterator, value, done) => {
+                            let step = e.register(&frame, result)?;
+                            if !matches!(step, Value::Object(_)) {
+                                return e
+                                    .throw_error("TypeError", "iterator result is not an object");
+                            }
+                            let finished = e.get_member(step.clone(), "done")?.truthy();
+                            let result = if finished {
+                                Value::Undefined
+                            } else {
+                                e.get_member(step, "value")?
+                            };
+                            e.store(&frame, value, result)?;
+                            e.store(&frame, done, Value::Bool(finished))?;
+                            if !finished {
                                 frame.handlers.last_mut().unwrap().iterator = Some(iterator);
                             }
                         }
@@ -1354,15 +1645,37 @@ impl Engine<'_> {
                         Op::Jump(ip) => frame.ip = ip,
                         Op::Delegate(source, out) => {
                             let source = e.register(&frame, source)?;
-                            let method =
-                                e.get_member(source.clone(), super::objects::Key::Symbol(0))?;
-                            e.protect(&method)?;
+                            let asynchronous = frame.async_generator().is_some();
+                            let mut sync = false;
+                            let mut method = Value::Undefined;
+                            if asynchronous {
+                                method = e.get_member(
+                                    source.clone(),
+                                    super::objects::Key::Symbol(ASYNC_ITERATOR),
+                                )?;
+                                e.protect(&method)?;
+                            }
+                            if matches!(method, Value::Null | Value::Undefined) {
+                                sync = asynchronous;
+                                method =
+                                    e.get_member(source.clone(), super::objects::Key::Symbol(0))?;
+                                e.protect(&method)?;
+                            }
                             let (iterator, next) = e.open_iterator(source, method)?;
                             frame.delegate = Some(super::delegation::Delegation {
                                 iterator,
                                 next,
                                 output: out,
+                                sync,
                             });
+                            if asynchronous {
+                                return e.async_delegate_call(
+                                    id,
+                                    &mut frame,
+                                    Value::Undefined,
+                                    super::generators::Resume::Next,
+                                );
+                            }
                             return e.process_delegate(
                                 id,
                                 &mut frame,
@@ -1371,6 +1684,13 @@ impl Engine<'_> {
                             );
                         }
                         Op::Yield(r, out) => {
+                            if let Some(generator) = frame.async_generator() {
+                                let value = e.register(&frame, r)?;
+                                frame.awaiting = Some(out);
+                                e.save_activation(id, frame.clone())?;
+                                e.async_generator_settle(generator, value, false, false)?;
+                                return Ok(Some(Completion::Normal));
+                            }
                             let Target::Generator(generator) = frame.target.clone() else {
                                 return Err(ScriptError::Unsupported(
                                     "yield outside generator activation",
@@ -1384,35 +1704,11 @@ impl Engine<'_> {
                         }
                         Op::Await(r, out) => {
                             let value = e.register(&frame, r)?;
-                            let promise = e.promise_resolve(
-                                Value::Object(e.intrinsics.as_ref().unwrap().functions["Promise"]),
-                                value,
-                            )?;
-                            e.protect(&promise)?;
-                            frame.awaiting = Some(out);
-                            e.save_activation(id, frame.clone())?;
-                            let yes = e.internal_function(
-                                super::promises::Internal::AsyncResume {
-                                    activation: id,
-                                    reject: false,
-                                },
-                                1,
-                            )?;
-                            let no = e.internal_function(
-                                super::promises::Internal::AsyncResume {
-                                    activation: id,
-                                    reject: true,
-                                },
-                                1,
-                            )?;
-                            let Value::Object(p) = promise else {
-                                unreachable!()
-                            };
-                            e.attach_reaction(p, Some(yes), Some(no), None)?;
-                            return Ok(Some(Completion::Normal));
+                            return e.await_value(id, &mut frame, value, Some(out), None);
                         }
                         Op::Return(r) => {
-                            return Ok(Some(Completion::Return(e.register(&frame, r)?)))
+                            let value = e.register(&frame, r)?;
+                            return e.return_value(id, &mut frame, value);
                         }
                         Op::Throw(r) => return Ok(Some(Completion::Throw(e.register(&frame, r)?))),
                         Op::TemplateObject(template, out) => {
@@ -1500,7 +1796,7 @@ impl Engine<'_> {
                             }
                         }
                         Op::Sync(s) => match e.statement(&s, env, true) {
-                            Ok(Some(v)) => return Ok(Some(Completion::Return(v))),
+                            Ok(Some(v)) => return e.return_value(id, &mut frame, v),
                             Err(ScriptError::LoopBreak) => return Ok(Some(Completion::Break)),
                             Err(ScriptError::LoopContinue) => {
                                 return Ok(Some(Completion::Continue))

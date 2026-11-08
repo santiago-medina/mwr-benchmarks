@@ -91,9 +91,20 @@ impl Engine<'_> {
     fn method_function(&mut self, env: Id, name: &str, method: &Expr) -> Result<Value> {
         let (params, body, kind) = match method {
             Expr::Function { params, body, .. } => (params, body, FunctionKind::Method),
-            Expr::GeneratorFunction { params, body, .. } => {
-                (params, body, FunctionKind::GeneratorMethod)
-            }
+            Expr::GeneratorFunction {
+                params,
+                body,
+                asynchronous,
+                ..
+            } => (
+                params,
+                body,
+                if *asynchronous {
+                    FunctionKind::AsyncGeneratorMethod
+                } else {
+                    FunctionKind::GeneratorMethod
+                },
+            ),
             Expr::AsyncFunction { params, body, .. } => (params, body, FunctionKind::AsyncMethod),
             _ => return Err(ScriptError::Runtime("invalid class method")),
         };

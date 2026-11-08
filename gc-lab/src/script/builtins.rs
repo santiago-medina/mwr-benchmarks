@@ -155,7 +155,10 @@ const METHODS: &[(&str, &[&str])] = &[
     ("String.prototype", &["valueOf", "toString"]),
     ("Number.prototype", &["valueOf", "toString"]),
     ("Boolean.prototype", &["valueOf", "toString"]),
-    ("assert", &["sameValue", "notSameValue", "throws"]),
+    (
+        "assert",
+        &["sameValue", "notSameValue", "throws", "compareArray"],
+    ),
     ("Test262Error", &["thrower"]),
 ];
 impl Engine<'_> {
@@ -204,6 +207,8 @@ impl Engine<'_> {
             "%IteratorPrototype%.iterator" | "String.prototype.iterator"
         ) {
             "[Symbol.iterator]"
+        } else if name == "%AsyncIteratorPrototype%.asyncIterator" {
+            "[Symbol.asyncIterator]"
         } else if matches!(name, "Array.species" | "Promise.species") {
             "get [Symbol.species]"
         } else if name == "Function.prototype" {
@@ -265,7 +270,8 @@ impl Engine<'_> {
             | "Object.is"
             | "assert.throws"
             | "assert.sameValue"
-            | "assert.notSameValue" => 2,
+            | "assert.notSameValue"
+            | "assert.compareArray" => 2,
             "JSON.stringify"
             | "Reflect.apply"
             | "Object.defineProperty"
@@ -278,6 +284,7 @@ impl Engine<'_> {
             | "Array.prototype.toString"
             | "%ArrayIteratorPrototype%.next"
             | "%IteratorPrototype%.iterator"
+            | "%AsyncIteratorPrototype%.asyncIterator"
             | "Promise.species"
             | "Array.species"
             | "Symbol"
@@ -506,14 +513,19 @@ impl Engine<'_> {
                 self.hidden(*p, "constructor", Value::Object(*id))?;
             }
         }
-        self.define(
-            objects["GeneratorFunction.prototype"],
-            "constructor",
-            Descriptor {
-                writable: Some(false),
-                ..Descriptor::default()
-            },
-        )?;
+        for owner in [
+            "GeneratorFunction.prototype",
+            "AsyncGeneratorFunction.prototype",
+        ] {
+            self.define(
+                objects[owner],
+                "constructor",
+                Descriptor {
+                    writable: Some(false),
+                    ..Descriptor::default()
+                },
+            )?;
+        }
         for (owner, methods) in METHODS {
             if matches!(*owner, "assert" | "Test262Error") && !self.test_harness {
                 continue;
@@ -746,6 +758,8 @@ impl Engine<'_> {
             self.put_data(id, &i.to_string(), v.clone())?;
         }
         self.hidden(id, "length", Value::number(args.len() as f64))?;
+        let values = self.intrinsics.as_ref().unwrap().functions["Array.prototype.values"];
+        self.hidden(id, super::objects::Key::Symbol(0), Value::Object(values))?;
         let f = Value::Object(self.intrinsics.as_ref().unwrap().functions["%ThrowTypeError%"]);
         self.define(
             id,
@@ -866,6 +880,15 @@ impl Engine<'_> {
     ) -> Result<Value> {
         if name == "Date" || name.starts_with("Date.") {
             return self.date_builtin(name, receiver, args);
+        }
+        if name.starts_with("%AsyncGenerator%.") {
+            return self.async_generator_builtin(name, receiver, args);
+        }
+        if name == "%AsyncIteratorPrototype%.asyncIterator" {
+            return Ok(receiver);
+        }
+        if name == "AsyncGeneratorFunction" {
+            return self.dynamic_function_kind(super::vm::FunctionKind::AsyncGenerator, args, None);
         }
         if name.starts_with("%Generator%.") {
             return self.generator_builtin(name, receiver, args);
@@ -1461,6 +1484,29 @@ impl Engine<'_> {
             _ => Err(ScriptError::Unsupported("builtin operation")),
         }
     }
+    /// assert.compareArray from test262's assert.js: same length and SameValue per index.
+    fn compare_array(&mut self, actual: Value, expected: Value) -> Result<bool> {
+        if !matches!(actual, Value::Object(_)) || !matches!(expected, Value::Object(_)) {
+            return Ok(false);
+        }
+        let length = |engine: &mut Self, v: &Value| -> Result<f64> {
+            let n = engine.get_member(v.clone(), "length")?;
+            engine.to_number(n)
+        };
+        let (a, b) = (length(self, &actual)?, length(self, &expected)?);
+        if a != b {
+            return Ok(false);
+        }
+        for i in 0..a as usize {
+            let x = self.get_member(actual.clone(), &i.to_string())?;
+            self.protect(&x)?;
+            let y = self.get_member(expected.clone(), &i.to_string())?;
+            if !x.same_value(&y) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
     fn assert_builtin(&mut self, name: &str, args: Vec<Value>) -> Result<Value> {
         self.assertions += 1;
         let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Undefined);
@@ -1468,6 +1514,7 @@ impl Engine<'_> {
             "assert" => arg(0) == Value::Bool(true),
             "assert.sameValue" => arg(0).same_value(&arg(1)),
             "assert.notSameValue" => !arg(0).same_value(&arg(1)),
+            "assert.compareArray" => self.compare_array(arg(0), arg(1))?,
             "assert.throws" => {
                 if !self.callable(&arg(0)) || !self.callable(&arg(1)) {
                     return self.throw_error(

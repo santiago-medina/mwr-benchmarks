@@ -88,6 +88,13 @@ pub(super) enum Internal {
         value: Value,
         reject: bool,
     },
+    IterResult {
+        done: bool,
+    },
+    AsyncGeneratorReturn {
+        generator: Id,
+        reject: bool,
+    },
 }
 impl Internal {
     pub fn edges(&self) -> Vec<Id> {
@@ -105,6 +112,8 @@ impl Internal {
                 .filter_map(Value::id)
                 .collect(),
             Self::Thunk { value, .. } => value.id().into_iter().collect(),
+            Self::IterResult { .. } => vec![],
+            Self::AsyncGeneratorReturn { generator, .. } => vec![*generator],
         }
     }
 }
@@ -591,7 +600,25 @@ impl Engine<'_> {
             } => self.aggregate_element(group, guard, index, reject, arg(0)),
             Internal::ModuleSettled { index, reject } => self.module_settled(index, arg(0), reject),
             Internal::AsyncResume { activation, reject } => {
-                self.resume_async(activation, arg(0), reject)
+                let generator = self
+                    .data(activation)?
+                    .activation
+                    .as_ref()
+                    .and_then(|a| a.async_generator());
+                if let Some(generator) = generator {
+                    // The finished activation no longer reaches the generator; keep it for the drain.
+                    self.protect(&Value::Object(generator))?;
+                }
+                self.resume_async(activation, arg(0), reject)?;
+                if let Some(generator) = generator {
+                    self.async_generator_drain(generator)?;
+                }
+                Ok(Value::Undefined)
+            }
+            Internal::IterResult { done } => self.iterator_result(arg(0), done),
+            Internal::AsyncGeneratorReturn { generator, reject } => {
+                self.async_generator_awaited_return(generator, arg(0), reject)?;
+                Ok(Value::Undefined)
             }
             Internal::Resolve { cell, reject } => {
                 let mut data = self.data(cell)?.clone();

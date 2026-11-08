@@ -56,6 +56,7 @@ pub enum Expr {
         params: Vec<Param>,
         body: Vec<Stmt>,
         method: bool,
+        asynchronous: bool,
     },
     Yield(Option<Box<Expr>>, bool),
     Await(Box<Expr>),
@@ -164,7 +165,7 @@ pub enum Stmt {
     Let(String, Expr),
     Var(String, Option<Expr>),
     Function(String, Vec<Param>, Vec<Stmt>),
-    GeneratorFunction(String, Vec<Param>, Vec<Stmt>),
+    GeneratorFunction(String, Vec<Param>, Vec<Stmt>, bool),
     AsyncFunction(String, Vec<Param>, Vec<Stmt>),
     Set(Expr, String, Expr),
     Expr(Expr),
@@ -185,6 +186,7 @@ pub enum Stmt {
         binding: Pattern,
         iterable: Expr,
         body: Box<Stmt>,
+        asynchronous: bool,
     },
     Try {
         body: Vec<Stmt>,
@@ -783,7 +785,7 @@ impl Parser<'_> {
         if self.op("...") {
             return Ok((String::new(), Property::Spread(self.expression()?)));
         }
-        let generator = self.op("*");
+        let mut generator = self.op("*");
         let identifier = matches!(self.current(), Token::Name(_));
         let (mut key, mut computed) = self.literal_key()?;
         let asynchronous = !generator
@@ -799,9 +801,7 @@ impl Parser<'_> {
                     | Token::Punct('[')
             ) || self.current() == &Token::Op("*".into()));
         if asynchronous {
-            if self.op("*") {
-                return Err(self.error("async generator methods are not implemented"));
-            }
+            generator = self.op("*");
             (key, computed) = self.literal_key()?;
         }
         let property = if !generator && !asynchronous && self.punct(':') {
@@ -842,6 +842,7 @@ impl Parser<'_> {
                     params,
                     body,
                     method: true,
+                    asynchronous,
                 }
             } else if asynchronous {
                 Expr::AsyncFunction {
@@ -1007,7 +1008,7 @@ impl Parser<'_> {
                 }
             }
             let next = self.tokens.get(self.cursor + 1).map(|t| t.0.clone());
-            let generator = self.op("*");
+            let mut generator = self.op("*");
             let mut asynchronous = false;
             let mut accessor = None;
             if !generator
@@ -1018,9 +1019,7 @@ impl Parser<'_> {
             {
                 self.take();
                 asynchronous = true;
-                if self.op("*") {
-                    return Err(self.error("async generator methods are not implemented"));
-                }
+                generator = self.op("*");
             } else if !generator
                 && matches!(self.current(), Token::Name(n) if n == "get" || n == "set")
                 && next
@@ -1098,6 +1097,7 @@ impl Parser<'_> {
                             params,
                             body,
                             method: true,
+                            asynchronous,
                         }
                     } else if asynchronous {
                         Expr::AsyncFunction {
@@ -1290,6 +1290,7 @@ impl Parser<'_> {
             });
         }
         if self.word("for") {
+            let asynchronous = self.word("await");
             self.expect('(')?;
             let kind = if self.word("const") {
                 Some("const")
@@ -1320,6 +1321,7 @@ impl Parser<'_> {
                         binding,
                         iterable,
                         body: Box::new(self.statement()?),
+                        asynchronous,
                     });
                 }
                 let stmt = self.declaration_tail(kind, binding)?;
@@ -1348,6 +1350,7 @@ impl Parser<'_> {
                         binding,
                         iterable,
                         body,
+                        asynchronous,
                     }
                 });
             } else {
@@ -1415,8 +1418,12 @@ impl Parser<'_> {
         {
             self.take();
             self.take();
+            let generator = self.op("*");
             let name = self.name()?;
             let (params, body) = self.function_rest(false, false)?;
+            if generator {
+                return Ok(Stmt::GeneratorFunction(name, params, body, true));
+            }
             return Ok(Stmt::AsyncFunction(name, params, body));
         }
         if self.word("class") {
@@ -1429,7 +1436,7 @@ impl Parser<'_> {
             let n = self.name()?;
             let (p, body) = self.function_rest(false, false)?;
             return Ok(if generator {
-                Stmt::GeneratorFunction(n, p, body)
+                Stmt::GeneratorFunction(n, p, body, false)
             } else {
                 Stmt::Function(n, p, body)
             });
@@ -1950,15 +1957,22 @@ impl Parser<'_> {
             let save = self.cursor;
             self.take();
             if self.word("function") {
-                if self.op("*") {
-                    return Err(self.error("unsupported async generator"));
-                }
+                let generator = self.op("*");
                 let name = if self.current() == &Token::Punct('(') {
                     None
                 } else {
                     Some(self.name()?)
                 };
                 let (params, body) = self.function_rest(false, false)?;
+                if generator {
+                    return Ok(Expr::GeneratorFunction {
+                        name,
+                        params,
+                        body,
+                        method: false,
+                        asynchronous: true,
+                    });
+                }
                 return Ok(Expr::AsyncFunction {
                     name,
                     params,
@@ -1993,6 +2007,7 @@ impl Parser<'_> {
                     params,
                     body,
                     method: false,
+                    asynchronous: false,
                 }
             } else {
                 Expr::Function {
@@ -2327,7 +2342,7 @@ fn validate_loop(
             }
             Stmt::Function(n, p, b)
             | Stmt::AsyncFunction(n, p, b)
-            | Stmt::GeneratorFunction(n, p, b) => {
+            | Stmt::GeneratorFunction(n, p, b, ..) => {
                 if names.contains(n.as_str()) {
                     return Err(err("function conflicts with lexical binding"));
                 }
@@ -2335,7 +2350,10 @@ fn validate_loop(
                     b,
                     p,
                     depth + 1,
-                    matches!(s, Stmt::AsyncFunction(..)),
+                    matches!(
+                        s,
+                        Stmt::AsyncFunction(..) | Stmt::GeneratorFunction(.., true)
+                    ),
                     matches!(s, Stmt::GeneratorFunction(..)),
                 )?;
             }
@@ -2439,6 +2457,7 @@ fn validate_loop(
                 binding,
                 iterable,
                 body,
+                ..
             }
             | Stmt::ForIn {
                 kind,
@@ -2567,9 +2586,12 @@ fn validate_loop(
             return Err(err("AST nesting limit"));
         }
         match e {
-            Expr::GeneratorFunction { params, body, .. } => {
-                validate_function(body, params, d + 1, false, true)?
-            }
+            Expr::GeneratorFunction {
+                params,
+                body,
+                asynchronous,
+                ..
+            } => validate_function(body, params, d + 1, *asynchronous, true)?,
             Expr::Yield(value, _) => {
                 if !in_generator {
                     return Err(err("yield outside generator"));
