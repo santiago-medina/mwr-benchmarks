@@ -42,3 +42,6 @@ mod references;
 mod loops;
 
 mod symbols;
+
+mod array_copy;
+mod object_methods;

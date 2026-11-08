@@ -20,7 +20,7 @@ impl Table {
             .flatten()
             .collect()
     }
-    fn find(&self, key: &Value) -> Option<usize> {
+    pub(super) fn find(&self, key: &Value) -> Option<usize> {
         self.entries
             .iter()
             .position(|entry| entry.as_ref().is_some_and(|(k, _)| k.same_value_zero(key)))

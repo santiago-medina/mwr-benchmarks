@@ -503,7 +503,7 @@ impl Engine<'_> {
                 }
                 Ok(receiver)
             }
-            _ => Err(ScriptError::Unsupported("array operation")),
+            _ => self.array_copy(name, id, len, args),
         }
     }
     fn sort_compare(&mut self, callback: &Value, a: &Value, b: &Value) -> Result<i8> {

@@ -32,6 +32,7 @@ const ERRORS: &[&str] = &[
 ];
 const METHODS: &[(&str, &[&str])] = &[
     ("Error.prototype", &["toString"]),
+    ("Map", &["groupBy"]),
     ("JSON", &["parse", "stringify"]),
     (
         "Number",
@@ -41,6 +42,12 @@ const METHODS: &[(&str, &[&str])] = &[
         "Object",
         &[
             "create",
+            "hasOwn",
+            "values",
+            "entries",
+            "fromEntries",
+            "getOwnPropertyDescriptors",
+            "groupBy",
             "defineProperty",
             "defineProperties",
             "getOwnPropertyDescriptor",
@@ -135,6 +142,13 @@ const METHODS: &[(&str, &[&str])] = &[
             "reduce",
             "reduceRight",
             "sort",
+            "concat",
+            "flat",
+            "flatMap",
+            "toReversed",
+            "toSorted",
+            "toSpliced",
+            "with",
         ],
     ),
     ("Function.prototype", &["call", "bind", "apply", "toString"]),
@@ -200,7 +214,13 @@ impl Engine<'_> {
             "Symbol.prototype.description"
             | "Symbol.prototype.toString"
             | "Symbol.prototype.valueOf" => 0,
-            "AggregateError" => 2,
+            "AggregateError"
+            | "Object.hasOwn"
+            | "Object.groupBy"
+            | "Map.groupBy"
+            | "Array.prototype.with"
+            | "Array.prototype.toSpliced" => 2,
+            "Array.prototype.toReversed" => 0,
             "Promise.withResolvers" | "Error.prototype.toString" => 0,
             "Math.random"
             | "String.prototype.iterator"
@@ -808,6 +828,18 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if matches!(
+            name,
+            "Object.hasOwn"
+                | "Object.values"
+                | "Object.entries"
+                | "Object.fromEntries"
+                | "Object.getOwnPropertyDescriptors"
+                | "Object.groupBy"
+                | "Map.groupBy"
+        ) {
+            return self.object_extended(name, args);
+        }
         if name == "Symbol" || name.starts_with("Symbol.") {
             return self.symbol_builtin(name, receiver, args);
         }
