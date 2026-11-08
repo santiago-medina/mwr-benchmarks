@@ -1,6 +1,6 @@
 //! Resumable control flow; await-free operations reuse the existing evaluator.
 use super::{
-    parser::{Expr, Property, Stmt},
+    parser::{Expr, Param, Property, Stmt},
     vm::{Engine, FunctionKind, ScriptError, Value},
 };
 use crate::dual::Id;
@@ -759,7 +759,7 @@ impl Engine<'_> {
     pub(super) fn start_async(
         &mut self,
         env: Id,
-        params: Vec<String>,
+        params: Vec<Param>,
         body: Vec<Stmt>,
         kind: FunctionKind,
         receiver: Value,
@@ -769,16 +769,15 @@ impl Engine<'_> {
         let cap = self.capability(Value::Object(
             self.intrinsics.as_ref().unwrap().functions["Promise"],
         ))?;
-        let local = self.new_environment(Some(env), &body, true)?;
-        self.protect(&Value::Object(local))?;
-        if kind != FunctionKind::AsyncArrow {
-            self.initialize(local, "this", receiver)?;
-            let arguments = self.arguments_object(&args)?;
-            self.initialize(local, "arguments", arguments)?;
-        }
-        for (i, n) in params.iter().enumerate() {
-            self.mutable_binding(local, n, args.get(i).cloned().unwrap_or(Value::Undefined))?;
-        }
+        let local = match self.function_environment(env, &params, &body, kind, receiver, &args) {
+            Ok(local) => local,
+            Err(ScriptError::Thrown(error)) => {
+                self.protect(&error.value)?;
+                self.invoke(cap.reject, vec![error.value])?;
+                return Ok(cap.promise);
+            }
+            Err(error) => return Err(error),
+        };
         self.start_program(local, program, cap)
     }
     pub(super) fn start_program(

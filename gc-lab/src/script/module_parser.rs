@@ -214,7 +214,7 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
         return Err(p.error("var conflicts with module binding"));
     }
     let params = imports.into_iter().collect::<Vec<_>>();
-    validate_loop(&module.body, &params, false, 0, false, true)?;
+    validate_loop(&module.body, &params, false, 0, false, true, false)?;
     let mut exports = HashSet::new();
     for export in &module.exports {
         if !exports.insert(&export.exported) {

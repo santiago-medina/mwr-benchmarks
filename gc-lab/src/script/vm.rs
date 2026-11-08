@@ -107,7 +107,7 @@ pub(super) enum Object {
         program: Option<std::sync::Arc<super::asynchronous::Program>>,
         data: Data,
         environment: Id,
-        params: Vec<String>,
+        params: Vec<parser::Param>,
         body: Vec<Stmt>,
     },
 }

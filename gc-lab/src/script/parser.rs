@@ -5,6 +5,21 @@ pub struct SyntaxError {
     pub message: &'static str,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Param {
+    pub name: String,
+    pub default: Option<Expr>,
+    pub rest: bool,
+}
+impl From<String> for Param {
+    fn from(name: String) -> Self {
+        Self {
+            name,
+            default: None,
+            rest: false,
+        }
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Expr {
     Name(String),
     String(String),
@@ -14,23 +29,23 @@ pub enum Expr {
     Undefined,
     This,
     Arrow {
-        params: Vec<String>,
+        params: Vec<Param>,
         body: Vec<Stmt>,
     },
     Function {
         name: Option<String>,
-        params: Vec<String>,
+        params: Vec<Param>,
         body: Vec<Stmt>,
         method: bool,
     },
     AsyncFunction {
         name: Option<String>,
-        params: Vec<String>,
+        params: Vec<Param>,
         body: Vec<Stmt>,
         method: bool,
     },
     AsyncArrow {
-        params: Vec<String>,
+        params: Vec<Param>,
         body: Vec<Stmt>,
     },
     Await(Box<Expr>),
@@ -55,7 +70,7 @@ pub enum Property {
     Value(Expr),
     Prototype(Expr),
     Getter(Vec<Stmt>),
-    Setter(String, Vec<Stmt>),
+    Setter(Param, Vec<Stmt>),
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Stmt {
@@ -75,8 +90,8 @@ pub enum Stmt {
     Const(String, Expr),
     Let(String, Expr),
     Var(String, Option<Expr>),
-    Function(String, Vec<String>, Vec<Stmt>),
-    AsyncFunction(String, Vec<String>, Vec<Stmt>),
+    Function(String, Vec<Param>, Vec<Stmt>),
+    AsyncFunction(String, Vec<Param>, Vec<Stmt>),
     Set(Expr, String, Expr),
     Expr(Expr),
     Return(Expr),
@@ -391,23 +406,42 @@ impl Parser<'_> {
         self.depth -= 1;
         r
     }
-    fn params(&mut self) -> Result<Vec<String>, SyntaxError> {
+    fn params(&mut self) -> Result<Vec<Param>, SyntaxError> {
         self.expect('(')?;
-        let mut p = vec![];
+        let mut params: Vec<Param> = vec![];
         if !self.punct(')') {
             loop {
-                let n = self.name()?;
-                if p.contains(&n) {
+                let rest = self.op("...");
+                let name = self.name()?;
+                if params.iter().any(|p| p.name == name) {
                     return Err(self.error("duplicate parameter"));
                 }
-                p.push(n);
+                let default = if self.op("=") {
+                    if rest {
+                        return Err(self.error("rest parameter cannot have a default"));
+                    }
+                    Some(self.expression()?)
+                } else {
+                    None
+                };
+                params.push(Param {
+                    name,
+                    default,
+                    rest,
+                });
                 if self.punct(')') {
                     break;
                 }
+                if rest {
+                    return Err(self.error("rest parameter must be last"));
+                }
                 self.expect(',')?;
+                if self.punct(')') {
+                    break;
+                }
             }
         }
-        Ok(p)
+        Ok(params)
     }
     fn statement(&mut self) -> Result<Stmt, SyntaxError> {
         if self.depth >= 64 {
@@ -666,22 +700,25 @@ impl Parser<'_> {
         Ok(s)
     }
     fn is_arrow(&self) -> bool {
-        let mut i = self.cursor + 1;
-        if self.tokens.get(i).map(|t| &t.0) != Some(&Token::Punct(')')) {
-            loop {
-                if !matches!(self.tokens.get(i), Some((Token::Name(_), _))) {
-                    return false;
+        let mut depth = 0usize;
+        for index in self.cursor..self.tokens.len() {
+            match &self.tokens[index].0 {
+                Token::Punct('(') => depth += 1,
+                Token::Punct(')') => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return self.tokens.get(index + 1).is_some_and(|(t, offset)| {
+                            matches!(t,Token::Op(op) if op=="=>")
+                                && !self.source[self.tokens[index].1..*offset]
+                                    .contains(['\n', '\r'])
+                        });
+                    }
                 }
-                i += 1;
-                if self.tokens.get(i).map(|t| &t.0) == Some(&Token::Punct(',')) {
-                    i += 1;
-                } else {
-                    break;
-                }
+                Token::End => break,
+                _ => {}
             }
         }
-        self.tokens.get(i).map(|t| &t.0) == Some(&Token::Punct(')'))
-            && self.tokens.get(i + 1).map(|t| &t.0) == Some(&Token::Op("=>".into()))
+        false
     }
     fn sequence(&mut self) -> Result<Expr, SyntaxError> {
         let first = self.expression()?;
@@ -883,7 +920,58 @@ impl Parser<'_> {
         let a = self.primary()?;
         self.postfix(a)
     }
+    fn arrow_body(&mut self) -> Result<Vec<Stmt>, SyntaxError> {
+        if self.current() == &Token::Punct('{') {
+            self.block()
+        } else {
+            Ok(vec![Stmt::Return(self.expression()?)])
+        }
+    }
     fn primary(&mut self) -> Result<Expr, SyntaxError> {
+        if self.current() == &Token::Name("async".into())
+            && self
+                .tokens
+                .get(self.cursor + 1)
+                .is_some_and(|(token, offset)| {
+                    matches!(token,Token::Name(name) if !reserved(name))
+                        && !self.source[self.tokens[self.cursor].1..*offset].contains(['\n', '\r'])
+                })
+            && self
+                .tokens
+                .get(self.cursor + 2)
+                .is_some_and(|(token, offset)| {
+                    matches!(token,Token::Op(op) if op=="=>")
+                        && !self.source[self.tokens[self.cursor + 1].1..*offset]
+                            .contains(['\n', '\r'])
+                })
+        {
+            self.take();
+            let name = self.name()?;
+            self.op("=>");
+            let body = self.arrow_body()?;
+            return Ok(Expr::AsyncArrow {
+                params: vec![name.into()],
+                body,
+            });
+        }
+        if matches!(self.current(),Token::Name(name) if !reserved(name))
+            && self
+                .tokens
+                .get(self.cursor + 1)
+                .is_some_and(|(token, offset)| {
+                    matches!(token,Token::Op(op) if op=="=>")
+                        && !self.source[self.tokens[self.cursor].1..*offset].contains(['\n', '\r'])
+                })
+        {
+            let name = self.name()?;
+            self.op("=>");
+            let body = self.arrow_body()?;
+            return Ok(Expr::Arrow {
+                params: vec![name.into()],
+                body,
+            });
+        }
+
         if self.current() == &Token::Name("async".into())
             && self.tokens.get(self.cursor + 1).is_some_and(|(t, offset)| {
                 !self.source[self.tokens[self.cursor].1..*offset].contains(['\n', '\r'])
@@ -1042,7 +1130,7 @@ impl Parser<'_> {
                             let b = self.block()?;
                             match (key.as_str(), p.as_slice()) {
                                 ("get", []) => (n, Property::Getter(b)),
-                                ("set", [p]) => (n, Property::Setter(p.clone(), b)),
+                                ("set", [p]) if !p.rest => (n, Property::Setter(p.clone(), b)),
                                 _ => return Err(self.error("invalid accessor parameters")),
                             }
                         } else if self.current() == &Token::Punct('(') {
@@ -1167,6 +1255,44 @@ fn reserved(n: &str) -> bool {
             | "await"
     )
 }
+fn validate_function(
+    body: &[Stmt],
+    params: &[Param],
+    depth: usize,
+    asynchronous: bool,
+) -> Result<(), SyntaxError> {
+    let names: Vec<_> = params.iter().map(|p| p.name.clone()).collect();
+    if params.iter().any(|p| p.default.is_some() || p.rest) {
+        for statement in body {
+            match statement {
+                Stmt::Expr(Expr::String(text)) if text == "use strict" => {
+                    return Err(SyntaxError {
+                        offset: 0,
+                        message: "strict directive with non-simple parameters",
+                    })
+                }
+                Stmt::Expr(Expr::String(_)) => {}
+                _ => break,
+            }
+        }
+    }
+    for param in params {
+        if let Some(default) = &param.default {
+            validate(&[Stmt::Expr(default.clone())], &names, false, depth + 1)?;
+        }
+    }
+    for statement in body {
+        if let Stmt::Let(name, _) | Stmt::Const(name, _) = statement {
+            if names.contains(name) {
+                return Err(SyntaxError {
+                    offset: 0,
+                    message: "parameter conflicts with lexical binding",
+                });
+            }
+        }
+    }
+    validate_loop(body, &[], true, depth, false, asynchronous, false)
+}
 fn validate(
     body: &[Stmt],
     params: &[String],
@@ -1214,15 +1340,7 @@ fn validate_loop(
                 if names.contains(n.as_str()) {
                     return Err(err("function conflicts with lexical binding"));
                 }
-                validate_loop(
-                    b,
-                    p,
-                    true,
-                    depth + 1,
-                    false,
-                    matches!(s, Stmt::AsyncFunction(..)),
-                    false,
-                )?;
+                validate_function(b, p, depth + 1, matches!(s, Stmt::AsyncFunction(..)))?;
             }
             Stmt::Return(e) => {
                 if !can_return {
@@ -1389,10 +1507,10 @@ fn validate_loop(
                 work.push((value, d + 1));
             }
             Expr::AsyncArrow { params, body } | Expr::AsyncFunction { params, body, .. } => {
-                validate_loop(body, params, true, d + 1, false, true, false)?
+                validate_function(body, params, d + 1, true)?
             }
             Expr::Arrow { params, body } | Expr::Function { params, body, .. } => {
-                validate(body, params, true, d + 1)?
+                validate_function(body, params, d + 1, false)?
             }
             Expr::Sequence(elements) => work.extend(elements.iter().map(|x| (x, d + 1))),
             Expr::Array(elements) => work.extend(elements.iter().flatten().map(|x| (x, d + 1))),
@@ -1404,7 +1522,7 @@ fn validate_loop(
                         }
                         Property::Getter(b) => validate(b, &[], true, d + 1)?,
                         Property::Setter(n, b) => {
-                            validate(b, std::slice::from_ref(n), true, d + 1)?
+                            validate_function(b, std::slice::from_ref(n), d + 1, false)?
                         }
                     }
                 }

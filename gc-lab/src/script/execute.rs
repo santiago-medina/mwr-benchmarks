@@ -1,7 +1,7 @@
 //! Evaluation and completion propagation. Every allocating operation runs under a root frame.
 use super::{
     objects::{Data, Descriptor, Key, Kind},
-    parser::{Expr, Property as Literal, Stmt},
+    parser::{Expr, Param, Property as Literal, Stmt},
     vm::{Engine, Exception, FunctionKind, Object, ScriptError, Value},
 };
 use crate::dual::{Domain, Id};
@@ -93,7 +93,7 @@ impl Engine<'_> {
         &mut self,
         env: Id,
         name: Option<&str>,
-        params: &[String],
+        params: &[Param],
         body: &[Stmt],
         kind: FunctionKind,
         named: bool,
@@ -153,7 +153,12 @@ impl Engine<'_> {
             id,
             "length",
             Descriptor {
-                value: Some(Value::number(params.len() as f64)),
+                value: Some(Value::number(
+                    params
+                        .iter()
+                        .take_while(|p| p.default.is_none() && !p.rest)
+                        .count() as f64,
+                )),
                 configurable: Some(true),
                 ..Descriptor::default()
             },
@@ -751,20 +756,8 @@ impl Engine<'_> {
                         program,
                     );
                 }
-                let local = self.new_environment(Some(environment), &body, true)?;
-                self.protect(&Value::Object(local))?;
-                if kind != FunctionKind::Arrow {
-                    self.initialize(local, "this", receiver)?;
-                    let a = self.arguments_object(&args)?;
-                    self.initialize(local, "arguments", a)?;
-                }
-                for (i, n) in params.iter().enumerate() {
-                    self.mutable_binding(
-                        local,
-                        n,
-                        args.get(i).cloned().unwrap_or(Value::Undefined),
-                    )?;
-                }
+                let local =
+                    self.function_environment(environment, &params, &body, kind, receiver, &args)?;
                 Ok(self.block(&body, local, true)?.unwrap_or(Value::Undefined))
             }
             _ => self.throw_error("TypeError", "value is not callable"),
