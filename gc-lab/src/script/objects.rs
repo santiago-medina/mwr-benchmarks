@@ -89,6 +89,8 @@ pub(super) struct Data {
     pub error_class: Option<String>,
     pub boxed: Option<Value>,
     pub source: Option<String>,
+    pub buffer: Option<super::buffers::Store>,
+    pub view: Option<super::buffers::View>,
     pub enumeration: Option<super::enumeration::Cursor>,
     pub arguments: bool,
     pub array: bool,
@@ -113,6 +115,8 @@ impl Data {
             error_class: None,
             boxed: None,
             source: None,
+            buffer: None,
+            view: None,
             enumeration: None,
             arguments: false,
             array: false,
@@ -135,6 +139,7 @@ impl Data {
             .chain(self.collection.as_ref().into_iter().flat_map(|t| t.edges()))
             .chain(self.collection_cursor.as_ref().and_then(|c| c.target))
             .chain(self.enumeration.as_ref().and_then(|c| c.current))
+            .chain(self.view.as_ref().map(|v| v.buffer))
             .chain(self.boxed.as_ref().and_then(Value::id))
             .chain(self.iterator.as_ref().and_then(|i| i.target))
             .chain(self.request.as_ref().into_iter().flat_map(|r| r.edges()))

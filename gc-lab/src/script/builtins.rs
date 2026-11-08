@@ -384,6 +384,8 @@ impl Engine<'_> {
             "Number",
             "Boolean",
             "BigInt",
+            "ArrayBuffer",
+            "DataView",
             "%ThrowTypeError%",
         ];
         names.extend(ERRORS.iter().copied());
@@ -472,6 +474,7 @@ impl Engine<'_> {
         self.bootstrap_symbols(env, &mut objects)?;
         self.bootstrap_enumeration(env, iterator)?;
         self.bootstrap_bigint(env, &mut objects)?;
+        self.bootstrap_buffers(env, &mut objects)?;
         let constructors: Vec<_> = self
             .intrinsics
             .as_ref()
@@ -840,6 +843,12 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if matches!(name, "ArrayBuffer" | "DataView")
+            || name.starts_with("ArrayBuffer.")
+            || name.starts_with("DataView.")
+        {
+            return self.buffer_builtin(name, receiver, args);
+        }
         if name == "BigInt" || name.starts_with("BigInt.") {
             return self.bigint_builtin(name, receiver, args);
         }

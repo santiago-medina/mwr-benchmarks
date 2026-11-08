@@ -779,6 +779,8 @@ impl Engine<'_> {
                 matches!(
                     name.as_str(),
                     "Promise"
+                        | "ArrayBuffer"
+                        | "DataView"
                         | "Array"
                         | "Map"
                         | "Set"
@@ -822,6 +824,10 @@ impl Engine<'_> {
                 )
             }
             Some(Object::Builtin { name, .. }) => {
+                if matches!(name.as_str(), "ArrayBuffer" | "DataView") {
+                    return self.construct_buffer(&name, new_target, args);
+                }
+
                 if self.intrinsics.as_ref().unwrap().errors.contains_key(&name) {
                     return self.error_constructor(&name, args, Some(new_target));
                 }

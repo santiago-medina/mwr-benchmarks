@@ -54,7 +54,7 @@ fn round(n: f64) -> f64 {
         out
     }
 }
-fn f16(n: f64) -> f64 {
+pub(super) fn f16(n: f64) -> f64 {
     if n.is_nan() || n == 0.0 {
         return n;
     }
