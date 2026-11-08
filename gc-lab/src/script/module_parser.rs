@@ -172,16 +172,19 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
                     }));
             } else {
                 let statement = p.statement()?;
-                let names = match &statement {
-                    Stmt::Const(n, _)
-                    | Stmt::Let(n, _)
-                    | Stmt::Var(n, _)
-                    | Stmt::Function(n, ..)
-                    | Stmt::AsyncFunction(n, ..)
-                    | Stmt::GeneratorFunction(n, ..) => vec![n.clone()],
-                    Stmt::Bind { pattern, .. } => pattern.names(),
-                    _ => return Err(p.error("unsupported export declaration")),
-                };
+                let mut names = vec![];
+                for declaration in super::direct_statements(std::slice::from_ref(&statement)) {
+                    names.extend(match declaration {
+                        Stmt::Const(n, _)
+                        | Stmt::Let(n, _)
+                        | Stmt::Var(n, _)
+                        | Stmt::Function(n, ..)
+                        | Stmt::AsyncFunction(n, ..)
+                        | Stmt::GeneratorFunction(n, ..) => vec![n.clone()],
+                        Stmt::Bind { pattern, .. } => pattern.names(),
+                        _ => return Err(p.error("unsupported export declaration")),
+                    });
+                }
                 for name in names {
                     module.exports.push(Export {
                         exported: name.clone(),
@@ -207,7 +210,7 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
         }
     }
     let mut lexical = imports.clone();
-    for statement in &module.body {
+    for statement in super::direct_statements(&module.body) {
         let names = match statement {
             Stmt::Const(n, _)
             | Stmt::Let(n, _)

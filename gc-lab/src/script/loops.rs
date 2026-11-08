@@ -97,10 +97,7 @@ impl Engine<'_> {
         env: Id,
         can_return: bool,
     ) -> Result<Option<Value>> {
-        let lexical = init.is_some_and(|s| {
-            matches!(s, Stmt::Let(..) | Stmt::Const(..))
-                || matches!(s,Stmt::Bind{kind,..} if kind!="var")
-        });
+        let lexical = init.is_some_and(|s| !s.lexical_names().is_empty());
         let mut local = if lexical {
             let id = self.new_environment(Some(env), std::slice::from_ref(init.unwrap()), false)?;
             self.protect(&Value::Object(id))?;
@@ -111,11 +108,7 @@ impl Engine<'_> {
         if let Some(init) = init {
             self.statement(init, local, can_return)?;
         }
-        let names = match init {
-            Some(Stmt::Let(name, _)) => vec![name.clone()],
-            Some(Stmt::Bind { kind, pattern, .. }) if kind == "let" => pattern.names(),
-            _ => vec![],
-        };
+        let names = init.map(Stmt::iteration_names).unwrap_or_default();
         if !names.is_empty() {
             local = self.clone_iteration(local, &names)?;
         }

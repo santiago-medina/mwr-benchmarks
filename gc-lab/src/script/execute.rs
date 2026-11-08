@@ -268,6 +268,11 @@ impl Engine<'_> {
         can_return: bool,
     ) -> Result<Option<Value>> {
         match s {
+            Stmt::Declarations(items) => {
+                for item in items {
+                    self.statement(item, env, can_return)?;
+                }
+            }
             Stmt::Bind {
                 kind,
                 pattern,

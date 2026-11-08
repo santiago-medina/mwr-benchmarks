@@ -433,7 +433,7 @@ impl<'host> Engine<'host> {
     ) -> Result<Id> {
         let mut bindings = HashMap::new();
         let mut mutable = HashSet::new();
-        for stmt in body {
+        for stmt in parser::direct_statements(body) {
             match stmt {
                 Stmt::Bind { kind, pattern, .. } if kind != "var" => {
                     for name in pattern.names() {

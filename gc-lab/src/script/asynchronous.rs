@@ -92,6 +92,7 @@ fn expr_await(e: &Expr) -> bool {
 }
 pub(super) fn stmt_await(s: &Stmt) -> bool {
     match s {
+        Stmt::Declarations(items) => items.iter().any(stmt_await),
         Stmt::Bind { pattern, init, .. } => {
             init.as_ref().is_some_and(expr_await)
                 || pattern.expressions().into_iter().any(expr_await)
@@ -454,6 +455,11 @@ impl Compiler {
     }
     fn statement(&mut self, s: &Stmt) -> Result<()> {
         match s {
+            Stmt::Declarations(items) => {
+                for item in items {
+                    self.statement(item)?;
+                }
+            }
             Stmt::Bind {
                 kind,
                 pattern,
@@ -546,21 +552,17 @@ impl Compiler {
                 update,
                 body,
             } => {
-                let lexical = init.as_ref().is_some_and(|s| {
-                    matches!(s.as_ref(), Stmt::Let(..) | Stmt::Const(..))
-                        || matches!(s.as_ref(),Stmt::Bind{kind,..} if kind!="var")
-                });
+                let lexical = init.as_ref().is_some_and(|s| !s.lexical_names().is_empty());
                 if lexical {
                     self.emit(Op::Enter(vec![init.as_ref().unwrap().as_ref().clone()]));
                 }
                 if let Some(init) = init {
                     self.statement(init)?;
                 }
-                let names = match init.as_deref() {
-                    Some(Stmt::Let(name, _)) => vec![name.clone()],
-                    Some(Stmt::Bind { kind, pattern, .. }) if kind == "let" => pattern.names(),
-                    _ => vec![],
-                };
+                let names = init
+                    .as_ref()
+                    .map(|s| s.iteration_names())
+                    .unwrap_or_default();
                 if !names.is_empty() {
                     self.emit(Op::CloneIteration(names.clone()));
                 }

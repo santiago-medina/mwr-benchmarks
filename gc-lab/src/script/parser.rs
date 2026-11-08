@@ -84,6 +84,7 @@ pub enum Property {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Stmt {
     Empty,
+    Declarations(Vec<Stmt>),
     Bind {
         kind: String,
         pattern: Pattern,
@@ -132,6 +133,40 @@ pub enum Stmt {
         catch: Option<(Option<Pattern>, Vec<Stmt>)>,
         finally: Option<Vec<Stmt>>,
     },
+}
+/// Expand declaration lists without introducing a block or crossing a scope boundary.
+pub fn direct_statements(body: &[Stmt]) -> Vec<&Stmt> {
+    let mut out = vec![];
+    for statement in body {
+        if let Stmt::Declarations(items) = statement {
+            out.extend(direct_statements(items));
+        } else {
+            out.push(statement);
+        }
+    }
+    out
+}
+impl Stmt {
+    pub fn lexical_names(&self) -> Vec<String> {
+        direct_statements(std::slice::from_ref(self))
+            .into_iter()
+            .flat_map(|s| match s {
+                Stmt::Let(name, _) | Stmt::Const(name, _) => vec![name.clone()],
+                Stmt::Bind { kind, pattern, .. } if kind != "var" => pattern.names(),
+                _ => vec![],
+            })
+            .collect()
+    }
+    pub fn iteration_names(&self) -> Vec<String> {
+        direct_statements(std::slice::from_ref(self))
+            .into_iter()
+            .flat_map(|s| match s {
+                Stmt::Let(name, _) => vec![name.clone()],
+                Stmt::Bind { kind, pattern, .. } if kind == "let" => pattern.names(),
+                _ => vec![],
+            })
+            .collect()
+    }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Token {
@@ -580,6 +615,30 @@ impl Parser<'_> {
             },
         }
     }
+    fn declaration_tail(&mut self, kind: &str, first: Pattern) -> Result<Stmt, SyntaxError> {
+        let mut declarations = vec![];
+        let mut pattern = first;
+        loop {
+            let init = if self.op("=") {
+                Some(self.expression()?)
+            } else {
+                None
+            };
+            if init.is_none() && (kind == "const" || !matches!(pattern, Pattern::Name(_))) {
+                return Err(self.error("binding declaration requires initializer"));
+            }
+            declarations.push(Self::binding_statement(kind, pattern, init));
+            if !self.punct(',') {
+                break;
+            }
+            pattern = self.binding_pattern()?;
+        }
+        Ok(if declarations.len() == 1 {
+            declarations.pop().unwrap()
+        } else {
+            Stmt::Declarations(declarations)
+        })
+    }
     fn params(&mut self) -> Result<Vec<Param>, SyntaxError> {
         self.expect('(')?;
         let mut params: Vec<Param> = vec![];
@@ -708,15 +767,7 @@ impl Parser<'_> {
                         body: Box::new(self.statement()?),
                     });
                 }
-                let value = if self.op("=") {
-                    Some(self.expression()?)
-                } else {
-                    None
-                };
-                if value.is_none() && (kind == "const" || !matches!(binding, Pattern::Name(_))) {
-                    return Err(self.error("loop binding requires initializer"));
-                }
-                let stmt = Self::binding_statement(kind, binding, value);
+                let stmt = self.declaration_tail(kind, binding)?;
                 self.expect(';')?;
                 Some(Box::new(stmt))
             } else if self.punct(';') {
@@ -849,15 +900,7 @@ impl Parser<'_> {
                 unreachable!()
             };
             let pattern = self.binding_pattern()?;
-            let init = if self.op("=") {
-                Some(self.expression()?)
-            } else {
-                None
-            };
-            if init.is_none() && (kind == "const" || !matches!(pattern, Pattern::Name(_))) {
-                return Err(self.error("binding declaration requires initializer"));
-            }
-            Self::binding_statement(&kind, pattern, init)
+            self.declaration_tail(&kind, pattern)?
         } else if self.word("return") {
             let e = if self.newline()
                 || matches!(
@@ -1522,7 +1565,7 @@ fn validate_function(
             validate(&[Stmt::Expr(default.clone())], &names, false, depth + 1)?;
         }
     }
-    for statement in body {
+    for statement in direct_statements(body) {
         let bindings = match statement {
             Stmt::Let(name, _) | Stmt::Const(name, _) => vec![name.clone()],
             Stmt::Bind { kind, pattern, .. } if kind != "var" => pattern.names(),
@@ -1568,8 +1611,9 @@ fn validate_loop(
     if depth >= 64 {
         return Err(err("AST nesting limit"));
     }
+    let statements = direct_statements(body);
     let mut names: std::collections::HashSet<String> = params.iter().cloned().collect();
-    for s in body {
+    for &s in &statements {
         let bindings = match s {
             Stmt::Const(name, _) | Stmt::Let(name, _) => vec![name.clone()],
             Stmt::Bind { kind, pattern, .. } if kind != "var" => pattern.names(),
@@ -1582,8 +1626,9 @@ fn validate_loop(
         }
     }
     let mut work = vec![];
-    for s in body {
+    for &s in &statements {
         match s {
+            Stmt::Declarations(_) => unreachable!("declaration list was expanded"),
             Stmt::Bind {
                 kind,
                 pattern,
@@ -1698,11 +1743,7 @@ fn validate_loop(
                         false,
                         in_generator,
                     )?;
-                    let bindings = match init.as_ref() {
-                        Stmt::Let(name, _) | Stmt::Const(name, _) => vec![name.clone()],
-                        Stmt::Bind { kind, pattern, .. } if kind != "var" => pattern.names(),
-                        _ => vec![],
-                    };
+                    let bindings = init.lexical_names();
                     let mut vars = vec![];
                     var_names(std::slice::from_ref(body), &mut vars);
                     if bindings.iter().any(|name| vars.contains(name)) {
@@ -1927,7 +1968,7 @@ mod module_syntax;
 pub use module_syntax::{parse_module, Export, Import, Module};
 
 pub(super) fn var_names(body: &[Stmt], out: &mut Vec<String>) {
-    for s in body {
+    for s in direct_statements(body) {
         match s {
             Stmt::Bind { kind, pattern, .. } if kind == "var" => out.extend(pattern.names()),
             Stmt::Switch(_, cases) => {
