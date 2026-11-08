@@ -56,6 +56,7 @@ fn expr_await(e: &Expr) -> bool {
         | Expr::Arrow { .. }
         | Expr::AsyncFunction { .. }
         | Expr::AsyncArrow { .. } => false,
+        Expr::Conditional(a, b, c) => expr_await(a) || expr_await(b) || expr_await(c),
         Expr::Member(a, _) | Expr::Unary(_, a) => expr_await(a),
         Expr::Computed(a, b) | Expr::Binary(_, a, b) | Expr::Assign(a, b) => {
             expr_await(a) || expr_await(b)
@@ -189,6 +190,22 @@ impl Compiler {
             Expr::Unary(op, e) => {
                 let value = self.expression(e)?;
                 self.eval(Expr::Unary(op.clone(), Box::new(read(value))))
+            }
+            Expr::Conditional(condition, yes, no) => {
+                let condition = self.expression(condition)?;
+                let out = self.reg();
+                let branch = self.emit(Op::Branch(condition, 0, 0));
+                let yes_start = self.ops.len();
+                let yes = self.expression(yes)?;
+                self.emit(Op::Eval(read(yes), out));
+                let jump = self.emit(Op::Jump(0));
+                let no_start = self.ops.len();
+                let no = self.expression(no)?;
+                self.emit(Op::Eval(read(no), out));
+                let end = self.ops.len();
+                self.ops[branch] = Op::Branch(condition, yes_start, no_start);
+                self.ops[jump] = Op::Jump(end);
+                out
             }
             Expr::Binary(op, a, b) if op == "&&" || op == "||" => {
                 let left = self.expression(a)?;

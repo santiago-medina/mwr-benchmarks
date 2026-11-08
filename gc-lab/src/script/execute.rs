@@ -516,6 +516,10 @@ impl Engine<'_> {
             Expr::New(f, args) => self.eval_call(f, args, env, true),
             Expr::Unary(op, a) => self.eval_unary(op, a, env),
             Expr::Binary(op, a, b) => self.eval_binary(op, a, b, env),
+            Expr::Conditional(condition, yes, no) => {
+                let c = self.eval(condition, env)?;
+                self.eval(if c.truthy() { yes } else { no }, env)
+            }
             Expr::Assign(a, b) => match a.as_ref() {
                 Expr::Name(n) => {
                     let v = self.eval(b, env)?;
@@ -895,6 +899,9 @@ impl Engine<'_> {
         self.protect(&v)?;
         match op {
             "!" => Ok(Value::Bool(!v.truthy())),
+            "~" => Ok(Value::number(
+                (!(super::numeric::uint32(self.to_number(v)?) as i32)) as f64,
+            )),
             "void" => Ok(Value::Undefined),
             "+" => Ok(Value::number(self.to_number(v)?)),
             "-" => Ok(Value::number(-self.to_number(v)?)),
@@ -978,6 +985,31 @@ impl Engine<'_> {
                     "*" => Value::number(a * b),
                     "/" => Value::number(a / b),
                     "%" => Value::number(a % b),
+                    "**" => Value::number(super::numeric::pow(a, b)),
+                    "&" => Value::number(
+                        (super::numeric::uint32(a) as i32 & super::numeric::uint32(b) as i32)
+                            as f64,
+                    ),
+                    "|" => Value::number(
+                        (super::numeric::uint32(a) as i32 | super::numeric::uint32(b) as i32)
+                            as f64,
+                    ),
+                    "^" => Value::number(
+                        (super::numeric::uint32(a) as i32 ^ super::numeric::uint32(b) as i32)
+                            as f64,
+                    ),
+                    "<<" => Value::number(
+                        (super::numeric::uint32(a) as i32)
+                            .wrapping_shl(super::numeric::uint32(b) & 31)
+                            as f64,
+                    ),
+                    ">>" => Value::number(
+                        ((super::numeric::uint32(a) as i32) >> (super::numeric::uint32(b) & 31))
+                            as f64,
+                    ),
+                    ">>>" => Value::number(
+                        (super::numeric::uint32(a) >> (super::numeric::uint32(b) & 31)) as f64,
+                    ),
                     "<" => Value::Bool(a < b),
                     ">" => Value::Bool(a > b),
                     "<=" => Value::Bool(a <= b),

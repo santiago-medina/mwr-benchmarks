@@ -43,6 +43,7 @@ pub enum Expr {
     Unary(String, Box<Expr>),
     Binary(String, Box<Expr>, Box<Expr>),
     Assign(Box<Expr>, Box<Expr>),
+    Conditional(Box<Expr>, Box<Expr>, Box<Expr>),
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Property {
@@ -204,16 +205,19 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
                 }
                 Token::String(s)
             }
-            '(' | ')' | '{' | '}' | '[' | ']' | '.' | ',' | ';' | ':' => Token::Punct(c),
-            '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/' | '%' | '&' | '|' => {
+            '(' | ')' | '{' | '}' | '[' | ']' | '.' | ',' | ';' | ':' | '?' => Token::Punct(c),
+            '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^' | '~' => {
                 let mut op = c.to_string();
-                if chars.peek().is_some_and(|(_, p)| {
-                    *p == '=' || (c == '=' && *p == '>') || ((c == '&' || c == '|') && *p == c)
-                }) {
-                    op.push(chars.next().unwrap().1);
-                    if (op == "==" || op == "!=") && chars.peek().is_some_and(|(_, p)| *p == '=') {
-                        op.push(chars.next().unwrap().1);
+                const OPS: &[&str] = &[
+                    "===", "!==", ">>>", "**", "<<", ">>", "==", "!=", "<=", ">=", "&&", "||", "=>",
+                ];
+                loop {
+                    let Some((_, next)) = chars.peek() else { break };
+                    let candidate = format!("{op}{next}");
+                    if !OPS.iter().any(|known| known.starts_with(&candidate)) {
+                        break;
                     }
+                    op.push(chars.next().unwrap().1);
                 }
                 if op == "=>"
                     && tokens
@@ -544,7 +548,13 @@ impl Parser<'_> {
         r
     }
     fn assignment(&mut self) -> Result<Expr, SyntaxError> {
-        let a = self.binary(1)?;
+        let mut a = self.binary(1)?;
+        if self.punct('?') {
+            let yes = self.expression()?;
+            self.expect(':')?;
+            let no = self.expression()?;
+            a = Expr::Conditional(Box::new(a), Box::new(yes), Box::new(no));
+        }
         if self.op("=") {
             if !matches!(a, Expr::Name(_) | Expr::Member(..) | Expr::Computed(..)) {
                 return Err(self.error("invalid assignment target"));
@@ -555,6 +565,17 @@ impl Parser<'_> {
         }
     }
     fn binary(&mut self, min: u8) -> Result<Expr, SyntaxError> {
+        if self.depth >= 64 {
+            return Err(self.error("syntax nesting limit"));
+        }
+        self.depth += 1;
+        let result = self.binary_inner(min);
+        self.depth -= 1;
+        result
+    }
+    fn binary_inner(&mut self, min: u8) -> Result<Expr, SyntaxError> {
+        let unary_left = matches!(self.current(), Token::Op(s) if matches!(s.as_str(), "+"|"-"|"!"|"~"))
+            || matches!(self.current(), Token::Name(s) if matches!(s.as_str(), "typeof"|"void"|"delete"|"await"));
         let mut a = self.unary()?;
         loop {
             let op = match self.current() {
@@ -565,17 +586,25 @@ impl Parser<'_> {
             let p = match op.as_str() {
                 "||" => 1,
                 "&&" => 2,
-                "==" | "!=" | "===" | "!==" => 3,
-                "<" | ">" | "<=" | ">=" | "in" | "instanceof" => 4,
-                "+" | "-" => 5,
-                "*" | "/" | "%" => 6,
+                "|" => 3,
+                "^" => 4,
+                "&" => 5,
+                "==" | "!=" | "===" | "!==" => 6,
+                "<" | ">" | "<=" | ">=" | "in" | "instanceof" => 7,
+                "<<" | ">>" | ">>>" => 8,
+                "+" | "-" => 9,
+                "*" | "/" | "%" => 10,
+                "**" => 11,
                 _ => break,
             };
             if p < min {
                 break;
             }
+            if op == "**" && unary_left {
+                return Err(self.error("unparenthesized unary exponentiation operand"));
+            }
             self.take();
-            let b = self.binary(p + 1)?;
+            let b = self.binary(if op == "**" { p } else { p + 1 })?;
             a = Expr::Binary(op, Box::new(a), Box::new(b));
         }
         Ok(a)
@@ -591,7 +620,7 @@ impl Parser<'_> {
             return Ok(Expr::Await(Box::new(value?)));
         }
 
-        if matches!(self.current(),Token::Op(s)if s=="!"||s=="+"||s=="-")
+        if matches!(self.current(),Token::Op(s)if s=="!"||s=="+"||s=="-"||s=="~")
             || matches!(self.current(),Token::Name(s)if s=="typeof"||s=="delete"||s=="void")
         {
             let op = match self.take() {
@@ -1034,6 +1063,11 @@ fn validate_loop(
                 work.extend(b.iter().map(|e| (e, d + 1)));
             }
             Expr::Member(a, _) | Expr::Unary(_, a) => work.push((a, d + 1)),
+            Expr::Conditional(a, b, c) => {
+                work.push((a, d + 1));
+                work.push((b, d + 1));
+                work.push((c, d + 1));
+            }
             Expr::Computed(a, b) | Expr::Assign(a, b) | Expr::Binary(_, a, b) => {
                 work.push((a, d + 1));
                 work.push((b, d + 1));

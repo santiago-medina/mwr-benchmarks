@@ -29,3 +29,5 @@ mod collections;
 mod array_methods;
 
 mod json;
+
+mod numeric;
