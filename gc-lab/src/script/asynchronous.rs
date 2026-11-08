@@ -80,6 +80,9 @@ fn expr_await(e: &Expr) -> bool {
         Expr::Member(a, _) | Expr::Unary(_, a) | Expr::Update(a, ..) | Expr::Spread(a) => {
             expr_await(a)
         }
+        Expr::Destructure(pattern, value) => {
+            expr_await(value) || pattern.expressions().into_iter().any(expr_await)
+        }
         Expr::Computed(a, b)
         | Expr::Binary(_, a, b)
         | Expr::Assign(a, b)
@@ -92,6 +95,7 @@ fn expr_await(e: &Expr) -> bool {
 }
 fn property_await(p: &Property) -> bool {
     match p {
+        Property::CoverDefault(_, value) => expr_await(value),
         Property::Computed(key, property) => expr_await(key) || property_await(property),
         Property::Value(e) | Property::Prototype(e) | Property::Spread(e) => expr_await(e),
         _ => false,
@@ -349,6 +353,15 @@ impl Compiler {
                     };
                 }
                 out
+            }
+            Expr::Destructure(pattern, value) => {
+                if pattern.expressions().into_iter().any(expr_await) {
+                    return Err(ScriptError::Unsupported(
+                        "resumable assignment pattern expressions",
+                    ));
+                }
+                let value = self.expression(value)?;
+                self.eval(Expr::Destructure(pattern.clone(), Box::new(read(value))))
             }
             Expr::Assign(target, value) => {
                 let target = if matches!(target.as_ref(), Expr::Name(_)) {

@@ -69,6 +69,7 @@ pub enum Expr {
     Unary(String, Box<Expr>),
     Binary(String, Box<Expr>, Box<Expr>),
     Assign(Box<Expr>, Box<Expr>),
+    Destructure(Box<Pattern>, Box<Expr>),
     Compound(String, Box<Expr>, Box<Expr>),
     Update(Box<Expr>, bool, bool),
     Conditional(Box<Expr>, Box<Expr>, Box<Expr>),
@@ -87,6 +88,7 @@ impl Expr {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Property {
+    CoverDefault(String, Expr),
     Computed(Expr, Box<Property>),
     Spread(Expr),
     Value(Expr),
@@ -746,7 +748,11 @@ impl Parser<'_> {
             if computed.is_some() || !identifier {
                 return Err(self.error("invalid shorthand property"));
             }
-            Property::Value(Expr::Name(key.clone()))
+            if self.op("=") {
+                Property::CoverDefault(key.clone(), self.expression()?)
+            } else {
+                Property::Value(Expr::Name(key.clone()))
+            }
         };
         Ok((
             key,
@@ -1133,6 +1139,13 @@ impl Parser<'_> {
         };
         if let Some(op) = assignment {
             self.take();
+            if op == "=" && matches!(a, Expr::Array(_) | Expr::Object(_)) {
+                let pattern = self.assignment_pattern(a)?;
+                return Ok(Expr::Destructure(
+                    Box::new(pattern),
+                    Box::new(self.expression()?),
+                ));
+            }
             if !matches!(a, Expr::Name(_) | Expr::Member(..) | Expr::Computed(..)) {
                 return Err(self.error("invalid assignment target"));
             }
@@ -1147,6 +1160,76 @@ impl Parser<'_> {
         }
     }
 
+    fn assignment_pattern(&self, expression: Expr) -> Result<Pattern, SyntaxError> {
+        Ok(match expression {
+            Expr::Name(name) => Pattern::Name(name),
+            expression @ (Expr::Member(..) | Expr::Computed(..)) => {
+                Pattern::Target(Box::new(expression))
+            }
+            Expr::Assign(target, default) => {
+                Pattern::Default(Box::new(self.assignment_pattern(*target)?), *default)
+            }
+            Expr::Destructure(pattern, default) => Pattern::Default(pattern, *default),
+            Expr::Array(items) => {
+                let length = items.len();
+                let mut patterns = vec![];
+                let mut rest = None;
+                for (index, item) in items.into_iter().enumerate() {
+                    match item {
+                        Some(Expr::Spread(expression)) => {
+                            if index + 1 != length {
+                                return Err(self.error("assignment rest must be last"));
+                            }
+                            let pattern = self.assignment_pattern(*expression)?;
+                            if matches!(pattern, Pattern::Default(..)) {
+                                return Err(self.error("rest cannot have a default"));
+                            }
+                            rest = Some(Box::new(pattern));
+                        }
+                        Some(expression) => {
+                            patterns.push(Some(self.assignment_pattern(expression)?))
+                        }
+                        None => patterns.push(None),
+                    }
+                }
+                Pattern::Array(patterns, rest)
+            }
+            Expr::Object(properties) => {
+                let length = properties.len();
+                let mut patterns = vec![];
+                let mut rest = None;
+                for (index, (key, property)) in properties.into_iter().enumerate() {
+                    let (key, property) = match property {
+                        Property::Computed(key, property) => (PatternKey::Computed(key), *property),
+                        property => (PatternKey::Static(key), property),
+                    };
+                    match property {
+                        Property::CoverDefault(name, default) => patterns.push((
+                            key,
+                            Pattern::Default(Box::new(Pattern::Name(name)), default),
+                        )),
+                        Property::Value(expression) | Property::Prototype(expression) => {
+                            patterns.push((key, self.assignment_pattern(expression)?))
+                        }
+                        Property::Spread(expression) => {
+                            if index + 1 != length
+                                || !matches!(
+                                    expression,
+                                    Expr::Name(_) | Expr::Member(..) | Expr::Computed(..)
+                                )
+                            {
+                                return Err(self.error("invalid object assignment rest"));
+                            }
+                            rest = Some(Box::new(self.assignment_pattern(expression)?));
+                        }
+                        _ => return Err(self.error("invalid assignment property")),
+                    }
+                }
+                Pattern::Object(patterns, rest)
+            }
+            _ => return Err(self.error("invalid destructuring target")),
+        })
+    }
     fn binary(&mut self, min: u8) -> Result<Expr, SyntaxError> {
         if self.depth >= 64 {
             return Err(self.error("syntax nesting limit"));
@@ -1945,6 +2028,9 @@ fn validate_loop(
                 let mut properties = p.iter().map(|(_, p)| p).collect::<Vec<_>>();
                 while let Some(p) = properties.pop() {
                     match p {
+                        Property::CoverDefault(..) => {
+                            return Err(err("initialized shorthand requires an assignment pattern"))
+                        }
                         Property::Computed(key, property) => {
                             work.push((key, d + 1));
                             properties.push(property);
@@ -1970,6 +2056,10 @@ fn validate_loop(
                 work.push((a, d + 1));
                 work.push((b, d + 1));
                 work.push((c, d + 1));
+            }
+            Expr::Destructure(pattern, value) => {
+                work.push((value, d + 1));
+                work.extend(pattern.expressions().into_iter().map(|e| (e, d + 1)));
             }
             Expr::Computed(a, b)
             | Expr::Assign(a, b)

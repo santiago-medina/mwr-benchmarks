@@ -14,6 +14,7 @@ pub enum PatternKey {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Pattern {
     Name(String),
+    Target(Box<Expr>),
     Array(Vec<Option<Pattern>>, Option<Box<Pattern>>),
     Object(Vec<(PatternKey, Pattern)>, Option<Box<Pattern>>),
     Default(Box<Pattern>, Expr),
@@ -27,6 +28,7 @@ impl Pattern {
     fn collect_names(&self, names: &mut Vec<String>) {
         match self {
             Self::Name(name) => names.push(name.clone()),
+            Self::Target(_) => {}
             Self::Array(items, rest) => {
                 for item in items.iter().flatten() {
                     item.collect_names(names);
@@ -54,6 +56,7 @@ impl Pattern {
     fn collect_expressions<'a>(&'a self, expressions: &mut Vec<&'a Expr>) {
         match self {
             Self::Name(_) => {}
+            Self::Target(expression) => expressions.push(expression),
             Self::Array(items, rest) => {
                 for item in items.iter().flatten() {
                     item.collect_expressions(expressions);
@@ -109,16 +112,60 @@ impl Engine<'_> {
         env: Id,
         target: Id,
     ) -> Result<()> {
+        self.pattern_value(pattern, value, env, Some(target), None)
+    }
+    pub(super) fn assign_pattern(
+        &mut self,
+        pattern: &Pattern,
+        value: Value,
+        env: Id,
+    ) -> Result<()> {
+        let reference = self.pattern_reference(pattern, env, None)?;
+        self.pattern_value(pattern, value, env, None, reference)
+    }
+    fn pattern_reference(
+        &mut self,
+        pattern: &Pattern,
+        env: Id,
+        target: Option<Id>,
+    ) -> Result<Option<super::references::Reference>> {
+        if target.is_some() {
+            return Ok(None);
+        }
+        match pattern {
+            Pattern::Name(name) => self
+                .eval_reference(&Expr::Name(name.clone()), env)
+                .map(Some),
+            Pattern::Target(expression) => self.eval_reference(expression, env).map(Some),
+            Pattern::Default(pattern, _) => self.pattern_reference(pattern, env, target),
+            _ => Ok(None),
+        }
+    }
+    fn pattern_value(
+        &mut self,
+        pattern: &Pattern,
+        value: Value,
+        env: Id,
+        target: Option<Id>,
+        reference: Option<super::references::Reference>,
+    ) -> Result<()> {
         self.protect(&value)?;
         match pattern {
-            Pattern::Name(name) => self.initialize(target, name, value),
+            Pattern::Name(name) if target.is_some() => {
+                self.initialize(target.unwrap(), name, value)
+            }
+            Pattern::Name(_) | Pattern::Target(_) => {
+                let reference = reference
+                    .ok_or(ScriptError::Runtime("missing assignment pattern reference"))?;
+                self.reference_set(reference, value).map(|_| ())
+            }
             Pattern::Default(pattern, default) => {
                 let value = if value == Value::Undefined {
                     self.eval(default, env)?
                 } else {
                     value
                 };
-                self.bind_pattern(pattern, value, env, target)
+                self.pattern_value(pattern, value, env, target, reference)
             }
             Pattern::Object(properties, rest) => {
                 let source = self.object_coercible(value)?;
@@ -136,15 +183,17 @@ impl Engine<'_> {
                             }
                         };
                         excluded.push(key.clone());
+                        let reference = e.pattern_reference(pattern, env, target)?;
                         let value = e.get_member(Value::Object(source), key)?;
-                        e.bind_pattern(pattern, value, env, target)
+                        e.pattern_value(pattern, value, env, target, reference)
                     })?;
                 }
                 if let Some(rest) = rest {
+                    let reference = self.pattern_reference(rest, env, target)?;
                     let id = self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;
                     self.protect(&Value::Object(id))?;
                     self.copy_properties(id, Value::Object(source), &excluded)?;
-                    self.bind_pattern(rest, Value::Object(id), env, target)?;
+                    self.pattern_value(rest, Value::Object(id), env, target, reference)?;
                 }
                 Ok(())
             }
@@ -157,16 +206,22 @@ impl Engine<'_> {
                     for pattern in items {
                         self.tick()?;
                         self.frame(|e| {
+                            let reference = pattern
+                                .as_ref()
+                                .map(|p| e.pattern_reference(p, env, target))
+                                .transpose()?
+                                .flatten();
                             let value =
                                 e.binding_step(iterator.clone(), next.clone(), &mut done)?;
                             e.protect(&value)?;
                             if let Some(pattern) = pattern {
-                                e.bind_pattern(pattern, value, env, target)?;
+                                e.pattern_value(pattern, value, env, target, reference)?;
                             }
                             Ok(())
                         })?;
                     }
                     if let Some(rest) = rest {
+                        let reference = self.pattern_reference(rest, env, target)?;
                         let array = self.new_array(0)?;
                         self.protect(&Value::Object(array))?;
                         while !done {
@@ -180,7 +235,7 @@ impl Engine<'_> {
                                 Ok(())
                             })?;
                         }
-                        self.bind_pattern(rest, Value::Object(array), env, target)?;
+                        self.pattern_value(rest, Value::Object(array), env, target, reference)?;
                     }
                     Ok(())
                 })();

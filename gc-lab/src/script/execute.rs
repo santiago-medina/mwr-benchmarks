@@ -653,6 +653,12 @@ impl Engine<'_> {
                 }
                 Ok(value)
             }
+            Expr::Destructure(pattern, rhs) => {
+                let value = self.eval(rhs, env)?;
+                self.protect(&value)?;
+                self.assign_pattern(pattern, value.clone(), env)?;
+                Ok(value)
+            }
             Expr::Assign(a, b) => {
                 let reference = self.eval_reference(a, env)?;
                 let value = self.eval(b, env)?;
@@ -687,6 +693,11 @@ impl Engine<'_> {
         };
         let k = display.as_str();
         let d = match p {
+            Literal::CoverDefault(..) => {
+                return Err(ScriptError::Unsupported(
+                    "unconverted initialized shorthand",
+                ))
+            }
             Literal::Computed(expression, property) => {
                 let value = self.eval(expression, env)?;
                 self.protect(&value)?;
