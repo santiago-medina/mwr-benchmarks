@@ -32,6 +32,10 @@ const ERRORS: &[&str] = &[
 const METHODS: &[(&str, &[&str])] = &[
     ("JSON", &["parse", "stringify"]),
     (
+        "Number",
+        &["isNaN", "isFinite", "isInteger", "isSafeInteger"],
+    ),
+    (
         "Object",
         &[
             "create",
@@ -170,6 +174,15 @@ impl Engine<'_> {
             name.rsplit('.').next().unwrap()
         };
         let arity = match name {
+            "Math.random" => 0,
+            "Math.atan2" | "Math.hypot" | "Math.imul" | "Math.max" | "Math.min" | "Math.pow" => 2,
+            "Array.from"
+            | "Array.prototype.slice"
+            | "Array.prototype.splice"
+            | "Array.prototype.copyWithin"
+            | "Array.prototype.lastIndexOf"
+            | "Array.prototype.includes" => 2,
+            "Array.of" | "Array.prototype.shift" | "Array.prototype.reverse" => 0,
             "JSON.parse"
             | "Reflect.construct"
             | "Function.prototype.apply"
@@ -296,6 +309,9 @@ impl Engine<'_> {
             "Set",
             "Symbol",
             "parseInt",
+            "parseFloat",
+            "isNaN",
+            "isFinite",
             "Promise",
             "queueMicrotask",
             "fetch",
@@ -386,6 +402,7 @@ impl Engine<'_> {
             }
         }
         self.bootstrap_collections(env, &mut objects, iterator)?;
+        self.bootstrap_math(env, &mut objects)?;
         let constructors: Vec<_> = self
             .intrinsics
             .as_ref()
@@ -764,6 +781,20 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name.starts_with("Math.")
+            || matches!(
+                name,
+                "parseFloat"
+                    | "isNaN"
+                    | "isFinite"
+                    | "Number.isNaN"
+                    | "Number.isFinite"
+                    | "Number.isInteger"
+                    | "Number.isSafeInteger"
+            )
+        {
+            return self.numeric_builtin(name, args);
+        }
         if name.starts_with("JSON.") {
             return self.json_builtin(name, args);
         }
