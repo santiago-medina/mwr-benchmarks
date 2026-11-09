@@ -303,6 +303,10 @@ struct Parser<'a> {
     /// Inside a class field initializer or static block (outside nested
     /// non-arrow functions), where `arguments` is an early error.
     no_arguments: bool,
+    /// Module code (§16.2): `import.meta` and top-level `await` are allowed.
+    module: bool,
+    /// Whether `new.target` is allowed (§15.1.1, §16.2.1.1): false only at module top level.
+    new_target: bool,
 }
 pub(super) fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
     tokenize_legacy(source).map(|(tokens, _)| tokens)
@@ -650,6 +654,8 @@ impl<'a> Parser<'a> {
             duplicates: false,
             labels: vec![],
             no_arguments: false,
+            module: false,
+            new_target: true,
         }
     }
     pub(super) fn legacy_check(&self) -> Result<(), SyntaxError> {
@@ -1152,6 +1158,7 @@ impl Parser<'_> {
         super_call: bool,
     ) -> Result<(Vec<Param>, Vec<Stmt>), SyntaxError> {
         let saved = (self.super_property, self.super_call, self.no_arguments);
+        let new_target = std::mem::replace(&mut self.new_target, true);
         self.super_property = super_property;
         self.super_call = super_call;
         self.no_arguments = false;
@@ -1176,6 +1183,7 @@ impl Parser<'_> {
             Ok((params, body))
         });
         (self.super_property, self.super_call, self.no_arguments) = saved;
+        self.new_target = new_target;
         result
     }
     /// A function whose own body is strict cannot be named `eval` / `arguments`.
@@ -1305,7 +1313,9 @@ impl Parser<'_> {
                     self.super_call = false;
                     let labels = std::mem::take(&mut self.labels);
                     let no_arguments = std::mem::replace(&mut self.no_arguments, true);
+                    let new_target = std::mem::replace(&mut self.new_target, true);
                     let body = self.block();
+                    self.new_target = new_target;
                     self.no_arguments = no_arguments;
                     self.labels = labels;
                     (self.super_property, self.super_call) = saved;
@@ -1439,7 +1449,9 @@ impl Parser<'_> {
                     self.super_property = true;
                     self.super_call = false;
                     let no_arguments = std::mem::replace(&mut self.no_arguments, true);
+                    let new_target = std::mem::replace(&mut self.new_target, true);
                     let value = self.expression();
+                    self.new_target = new_target;
                     self.no_arguments = no_arguments;
                     (self.super_property, self.super_call) = saved;
                     Some(value?)
@@ -2412,6 +2424,9 @@ impl Parser<'_> {
                 if !self.word("target") {
                     return Err(self.error("expected new.target"));
                 }
+                if !self.new_target {
+                    return Err(self.error("new.target outside a function"));
+                }
                 return self.postfix(Expr::NewTarget);
             }
             let mut f = self.primary()?;
@@ -2665,7 +2680,22 @@ impl Parser<'_> {
                 "false" => Ok(Expr::Bool(false)),
                 "this" => Ok(Expr::This),
                 "null" => Ok(Expr::Null),
-                _ if reserved(&n) => Err(self.error("unsupported reserved expression")),
+                // `import(`/`import.meta` (phase 3 of MODULE_RECORDS.md), `new` forms not yet
+                // parsed here, and words that are identifiers in some sloppy contexts stay
+                // unsupported; every other reserved word in primary position is an early
+                // SyntaxError (§13.2 PrimaryExpression has no production for it).
+                "import"
+                    if matches!(
+                        self.tokens.get(self.cursor).map(|t| &t.0),
+                        Some(Token::Punct('(')) | Some(Token::Punct('.'))
+                    ) =>
+                {
+                    Err(self.error("unsupported reserved expression"))
+                }
+                "new" | "let" | "yield" | "await" => {
+                    Err(self.error("unsupported reserved expression"))
+                }
+                _ if reserved(&n) => Err(self.error("unexpected reserved word")),
                 _ if self.strict && strict_future_reserved(&n) => {
                     Err(self.error("reserved word in strict mode"))
                 }
@@ -2890,7 +2920,7 @@ fn regexp_allowed(previous: Option<&Token>, closed_expression: bool) -> bool {
 fn strict_restricted(n: &str) -> bool {
     matches!(n, "eval" | "arguments")
 }
-fn strict_future_reserved(n: &str) -> bool {
+pub(super) fn strict_future_reserved(n: &str) -> bool {
     matches!(
         n,
         "implements" | "interface" | "package" | "private" | "protected" | "public" | "static"
@@ -3446,7 +3476,7 @@ fn validate_loop(
 
 #[path = "module_parser.rs"]
 mod module_syntax;
-pub use module_syntax::{parse_module, Export, Import, Module};
+pub use module_syntax::{parse_module, Export, ExportImport, Import, ImportName, Module};
 
 pub(super) fn var_names(body: &[Stmt], out: &mut Vec<String>) {
     for s in direct_statements(body) {

@@ -115,6 +115,8 @@ pub(super) struct Data {
     pub iter_slot: Option<super::iterator_helpers::IterSlot>,
     pub weak: Option<super::weak::WeakSlot>,
     pub dispose: Option<super::disposal::DisposeSlot>,
+    /// Module namespace exotic object (§10.4.6): the module record index.
+    pub namespace: Option<usize>,
     #[cfg(feature = "temporal")]
     pub temporal: Option<std::rc::Rc<super::temporal::Slot>>,
 }
@@ -124,6 +126,7 @@ impl Data {
             prototype,
             properties: vec![],
             extensible: true,
+            namespace: None,
             error_class: None,
             boxed: None,
             source: None,
@@ -339,6 +342,9 @@ impl Engine<'_> {
         if self.is_proxy(id) {
             return self.proxy_own(id, &key);
         }
+        if let Some((m, name)) = self.namespace_key(id, &key) {
+            return self.namespace_own(m, &name);
+        }
         if let Some(typed) = &self.data(id)?.typed {
             if let Some(index) = super::typed_arrays::numeric_index(&key) {
                 let value = self.typed_get(typed, index)?;
@@ -381,6 +387,9 @@ impl Engine<'_> {
             if self.is_proxy(id) {
                 return self.proxy_has(id, &key);
             }
+            if let Some((m, name)) = self.namespace_key(id, &key) {
+                return Ok(self.namespace_has(m, &name));
+            }
             if let Some(typed) = &self.data(id)?.typed {
                 if let Some(index) = super::typed_arrays::numeric_index(&key) {
                     return self.typed_valid(typed, index);
@@ -412,6 +421,9 @@ impl Engine<'_> {
             if self.is_proxy(id) {
                 return self.proxy_get(id, &key, receiver);
             }
+            if let Some((m, name)) = self.namespace_key(id, &key) {
+                return self.namespace_get(m, &name);
+            }
             if let Some(typed) = &self.data(id)?.typed {
                 if let Some(index) = super::typed_arrays::numeric_index(&key) {
                     return self.typed_get(typed, index);
@@ -440,6 +452,9 @@ impl Engine<'_> {
         }
         if self.is_proxy(id) {
             return self.proxy_define(id, &key, d);
+        }
+        if let Some((m, name)) = self.namespace_key(id, &key) {
+            return self.namespace_define(m, &name, d);
         }
         if let Some(typed) = self.data(id)?.typed.clone() {
             if let Some(index) = super::typed_arrays::numeric_index(&key) {
@@ -520,6 +535,9 @@ impl Engine<'_> {
             if self.is_proxy(id) {
                 return self.proxy_set(id, &key, value, receiver);
             }
+            if self.data(id)?.namespace.is_some() {
+                return Ok(false); // §10.4.6.9
+            }
             if let Some(typed) = self.data(id)?.typed.clone() {
                 if let Some(index) = super::typed_arrays::numeric_index(&key) {
                     if receiver == Value::Object(id) {
@@ -591,6 +609,9 @@ impl Engine<'_> {
         let key = key.into();
         if self.is_proxy(id) {
             return self.proxy_delete(id, &key);
+        }
+        if let Some((m, name)) = self.namespace_key(id, &key) {
+            return Ok(!self.namespace_has(m, &name));
         }
         if let Some(typed) = &self.data(id)?.typed {
             if let Some(index) = super::typed_arrays::numeric_index(&key) {
@@ -707,6 +728,9 @@ impl Engine<'_> {
     pub(super) fn own_keys(&mut self, id: Id) -> Result<Vec<Key>> {
         if self.is_proxy(id) {
             return self.proxy_own_keys(id);
+        }
+        if let Some(m) = self.data(id)?.namespace {
+            return self.namespace_own_keys(id, m);
         }
         if let Some(typed) = &self.data(id)?.typed {
             let length = self.typed_length(typed)?.unwrap_or(0);

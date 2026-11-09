@@ -44,15 +44,17 @@ def main():
         meta=meta.group(1); flags=items(field(meta,'flags')); includes=items(field(meta,'includes')); negative=field(meta,'negative')
         result=dict(path=path.relative_to(root).as_posix(),source_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
         reason=None
-        if 'module' in flags or ('async' in flags and args.profile not in ('promises','async','temporal','full')): reason='unsupported execution flags: '+','.join(flags)
+        if ('module' in flags and args.profile!='full') or ('async' in flags and args.profile not in ('promises','async','temporal','full')): reason='unsupported execution flags: '+','.join(flags)
         elif includes and args.profile not in ('temporal','full'): reason='unsupported harness includes: '+','.join(includes)
-        elif negative and not re.search(r'phase:\s*(runtime|parse)',negative): reason='negative resolution test (modules)'
+        elif negative and not re.search(r'phase:\s*(runtime|parse|resolution)',negative): reason='negative test with unknown phase'
+        elif negative and re.search(r'phase:\s*resolution',negative) and 'module' not in flags: reason='negative resolution test outside a module'
         elif negative and 'phase: parse' in negative and args.profile not in ('temporal','full'): reason='negative parse test outside full profile'
         elif negative and set(items(field(meta,'features')))&UNIMPLEMENTED_SYNTAX: reason='negative parse test for unimplemented syntax: '+','.join(sorted(set(items(field(meta,'features')))&UNIMPLEMENTED_SYNTAX))
         if reason: return dict(result,status='unsupported',reason=reason,assertions=0)
         expected=re.search(r'type:\s*(\w+)',negative) if negative else None
         parse_negative=bool(negative) and re.search(r'phase:\s*parse',negative) is not None
-        command=[str(binary),str(path)] + ([expected.group(1)] if expected else []) + (['--negative-parse'] if parse_negative else []) + (['--strict-only'] if parse_negative and 'onlyStrict' in flags else []) + (['--async'] if 'async' in flags else []) + (['--can-block'] if 'CanBlockIsTrue' in flags else []) + (['--sloppy'] if 'noStrict' in flags or 'raw' in flags else []) + (['--include='+str(root.parent/'harness'/i) for i in includes] if args.profile in ('temporal','full') and 'raw' not in flags else [])
+        resolution_negative=bool(negative) and re.search(r'phase:\s*resolution',negative) is not None
+        command=[str(binary),str(path)] + ([expected.group(1)] if expected else []) + (['--negative-parse'] if parse_negative else []) + (['--negative-resolution'] if resolution_negative else []) + (['--module'] if 'module' in flags else []) + (['--strict-only'] if parse_negative and 'onlyStrict' in flags else []) + (['--async'] if 'async' in flags else []) + (['--can-block'] if 'CanBlockIsTrue' in flags else []) + (['--sloppy'] if 'noStrict' in flags or 'raw' in flags else []) + (['--include='+str(root.parent/'harness'/i) for i in includes] if args.profile in ('temporal','full') and 'raw' not in flags else [])
         try:
             r=subprocess.run(command,capture_output=True,text=True,timeout=10)
             data=json.loads(r.stdout)
@@ -70,7 +72,7 @@ def main():
     implementation=hashlib.sha256()
     for path in sorted((HERE.parent/'src').rglob('*.rs')):
         implementation.update(path.relative_to(HERE.parent).as_posix().encode()+b'\0'+path.read_bytes())
-    summary=dict(revision=REVISION,archive_sha256='01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb',implementation_sha256=implementation.hexdigest(),runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),new_failures=new_failures,variant='scripts: strict prefix, or sloppy for noStrict/raw; original test body',profile=args.profile,scopes=scopes,total=len(results),counts=counts,assertions=sum(r['assertions'] for r in results),regressions=regressions,unsupported_reasons=dict(collections.Counter(r['reason'] for r in results if r['status']=='unsupported')),failures=[r for r in results if r['status']=='failed'])
+    summary=dict(revision=REVISION,archive_sha256='01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb',implementation_sha256=implementation.hexdigest(),runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),new_failures=new_failures,variant='scripts: strict prefix, or sloppy for noStrict/raw; modules (full profile): includes as scripts, then the module record; original test body',profile=args.profile,scopes=scopes,total=len(results),counts=counts,assertions=sum(r['assertions'] for r in results),regressions=regressions,unsupported_reasons=dict(collections.Counter(r['reason'] for r in results if r['status']=='unsupported')),failures=[r for r in results if r['status']=='failed'])
     args.output.mkdir(parents=True,exist_ok=True)
     (args.output/'cases.json').write_text(json.dumps(results,indent=2)+'\n')
     (args.output/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')

@@ -1,10 +1,52 @@
 //! One Test262 script case per process (strict unless `--sloppy`); no source rewriting or helper stubs.
 //! `--include=FILE` prepends an official harness include (as the reference runner does).
 //! `--gc-stress` collects at every allocation (rooting debug); the default is the threshold policy.
+//! `--module` runs the case as a module record (includes run first as a classic script) and
+//! answers the engine's module requests from files resolved against the referrer's path.
+//! `--negative-resolution` passes only when loading/linking throws the expected error type.
 use gc_lab::{
-    script::{parser, Engine, GcPolicy, ScriptError},
+    script::{
+        parser, Engine, GcPolicy, ModuleLoad, ModuleRequest, ModuleStatus, Referrer, ScriptError,
+    },
     Model,
 };
+use std::path::{Component, Path, PathBuf};
+
+/// Lexical `dirname(referrer) + specifier`, normalised (test262 fixtures are relative paths).
+fn resolve(base: &Path, specifier: &str) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in base.parent().unwrap_or(base).join(specifier).components() {
+        match c {
+            Component::ParentDir => {
+                out.pop();
+            }
+            Component::CurDir => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// The test host's HostLoadImportedModule answer for one request.
+fn load(case: &Path, request: &ModuleRequest) -> ModuleLoad {
+    let base = match &request.referrer {
+        Referrer::Module { url, .. } => PathBuf::from(url),
+        Referrer::Script { .. } | Referrer::Realm => case.to_path_buf(),
+    };
+    let path = resolve(&base, &request.specifier);
+    match std::fs::read_to_string(&path) {
+        Ok(source) => ModuleLoad::Source {
+            url: path.to_string_lossy().into_owned(),
+            module_type: "javascript".into(),
+            source,
+            host_defined: 0,
+        },
+        Err(err) => ModuleLoad::Error {
+            kind: "TypeError".into(),
+            message: format!("Cannot load module '{}': {err}", request.specifier),
+        },
+    }
+}
 fn quote(s: &str) -> String {
     let mut out = String::from("\"");
     for c in s.chars() {
@@ -41,8 +83,10 @@ fn main() {
     }
     let negative_parse = remaining.iter().any(|s| s == "--negative-parse");
     let strict_only = remaining.iter().any(|s| s == "--strict-only");
+    let module = remaining.iter().any(|s| s == "--module");
+    let negative_resolution = remaining.iter().any(|s| s == "--negative-resolution");
     let negative = remaining.into_iter().find(|s| !s.starts_with("--"));
-    let source = std::fs::read_to_string(path).expect("source");
+    let source = std::fs::read_to_string(&path).expect("source");
     if negative_parse {
         // Parse-phase negative case: never evaluated. Passes only when every applicable mode
         // (strict, sloppy, or both for unflagged cases) rejects it with a genuine early error;
@@ -55,7 +99,20 @@ fn main() {
             &[true, false]
         };
         let mut outcome = ("passed", String::new());
-        for &strict in modes {
+        if module {
+            // Module code is always strict; the includes are separate scripts, not prepended.
+            outcome = match parser::parse_module(&source) {
+                Err(s) if s.message.contains("unsupported") || s.message.ends_with("limit") => {
+                    ("unsupported", format!("syntax (module): {}", s.message))
+                }
+                Err(s) => ("passed", format!("early error: {}", s.message)),
+                Ok(_) => (
+                    "failed",
+                    "parsed as a module; expected early SyntaxError".into(),
+                ),
+            };
+        }
+        for &strict in if module { &[][..] } else { modes } {
             let prefix = if strict { "\"use strict\";\n" } else { "" };
             let mode = if strict { "strict" } else { "sloppy" };
             match parser::parse(&format!("{prefix}{includes}{source}")) {
@@ -101,7 +158,21 @@ fn main() {
     e.set_step_limit(50_000_000);
     let prefix = if sloppy { "" } else { "\"use strict\";\n" };
     let full = format!("{prefix}{ASSERT_GLOBALS}{includes}{source}");
-    let mut result = e.execute(&full);
+    let case = std::fs::canonicalize(&path).expect("case path");
+    let root = case.to_string_lossy().into_owned();
+    let mut load_error = false;
+    // A dependency's ParseModule error surfaces while loading (FinishLoadingImportedModule).
+    let mut dependency_syntax = false;
+    let mut result = if module {
+        // INTERPRETING.md: includes are evaluated as global scripts before the module.
+        e.execute(&format!("{ASSERT_GLOBALS}{includes}"))
+            .and_then(|_| e.execute_module(&root, &source, 0))
+    } else {
+        e.execute(&full)
+    };
+    if module && result.is_err() {
+        load_error = true;
+    }
     if let (Err(ScriptError::Syntax(s)), Ok(_)) =
         (&result, std::env::var("JS_CHECK_SYNTAX_CONTEXT"))
     {
@@ -118,7 +189,21 @@ fn main() {
     // Host event loop: FinalizationRegistry cleanup tasks, then timers and Atomics waiter
     // jobs (setTimeout, waitAsync), each followed by a microtask checkpoint.
     while result.is_ok() {
-        if e.pending_finalization_cleanups() != 0 {
+        let requests = e.take_module_requests();
+        if !requests.is_empty() {
+            for request in requests {
+                if let Err(err) = e.finish_module_request(request.id, load(&case, &request)) {
+                    // A static graph's load/link failure surfaces here; import() rejects instead.
+                    load_error = true;
+                    dependency_syntax = matches!(err, ScriptError::Syntax(_));
+                    result = Err(err);
+                    break;
+                }
+            }
+            if result.is_ok() {
+                result = e.microtask_checkpoint(10_000).map(|_| ());
+            }
+        } else if e.pending_finalization_cleanups() != 0 {
             result = e
                 .run_finalization_cleanup()
                 .and_then(|_| e.microtask_checkpoint(10_000).map(|_| ()));
@@ -132,6 +217,21 @@ fn main() {
                 .and_then(|_| e.microtask_checkpoint(10_000).map(|_| ()));
         } else {
             break;
+        }
+    }
+    // Evaluation errors of the root graph are recorded on the module record.
+    let mut module_error: Option<(String, String)> = None;
+    if module && result.is_ok() {
+        match e.module_status(&root) {
+            Ok(ModuleStatus::Errored(message)) => {
+                let name = message.split(':').next().unwrap_or("Error").to_string();
+                module_error = Some((name, message));
+            }
+            Ok(ModuleStatus::Evaluating) => {
+                result = Err(ScriptError::Host("module evaluation did not settle".into()))
+            }
+            Ok(ModuleStatus::Evaluated) => {}
+            Err(err) => result = Err(err),
         }
     }
     let (done, error) = e.async_test_state();
@@ -164,10 +264,31 @@ fn main() {
         ("failed", error)
     } else {
         match (result, negative) {
+            (Ok(()), expected) if module_error.is_some() => {
+                let (name, message) = module_error.unwrap();
+                if expected.as_deref() == Some(name.as_str()) && !negative_resolution {
+                    ("passed", String::new())
+                } else {
+                    (
+                        "failed",
+                        format!("module evaluation: {message}; expected {expected:?}"),
+                    )
+                }
+            }
+            (Err(ScriptError::Syntax(s)), Some(expected))
+                if negative_resolution
+                    && dependency_syntax
+                    && expected == "SyntaxError"
+                    && !s.message.contains("unsupported")
+                    && !s.message.ends_with("limit") =>
+            {
+                ("passed", String::new())
+            }
             (Err(ScriptError::Syntax(s)), _) => ("unsupported", format!("syntax: {}", s.message)),
             (Err(ScriptError::Unsupported(s)), _) => ("unsupported", s.into()),
             (Err(ScriptError::Thrown(ex)), Some(expected))
-                if ex.name.as_deref() == Some(expected.as_str()) =>
+                if ex.name.as_deref() == Some(expected.as_str())
+                    && negative_resolution == load_error =>
             {
                 ("passed", String::new())
             }

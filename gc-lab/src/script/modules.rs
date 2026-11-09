@@ -1,12 +1,21 @@
-//! Module linking keeps aliases in ordinary traced lexical environments.
+//! Cyclic Module Records (ECMA-262 §16.2.1.6) and Source Text Module Records
+//! (§16.2.1.7) over traced lexical environments. Imports stay aliases
+//! `(target env, name)`; MODULE_RECORDS.md describes the design and the pull
+//! host API (`take_module_requests` / `finish_module_request`).
 use super::{
-    parser::{self, Module},
+    objects::{Descriptor, Key, Kind, Property},
+    parser::{self, ExportImport, ImportName, Module, SyntaxError},
     promises::{Capability, Internal, State},
     vm::{Engine, Object, ScriptError, Value},
 };
 use crate::dual::Id;
 use std::collections::{HashMap, HashSet};
 type Result<T> = std::result::Result<T, ScriptError>;
+
+/// Test guards, not web limits: revisit before the Servo path relies on them.
+const MODULE_LIMIT: usize = 128;
+const SOURCE_LIMIT: usize = 1048576;
+
 #[derive(Clone, Debug)]
 pub struct ModuleSource {
     pub url: String,
@@ -19,156 +28,217 @@ pub enum ModuleStatus {
     Evaluated,
     Errored(String),
 }
-#[derive(Clone, Copy, PartialEq)]
-enum Phase {
-    Waiting,
-    Running,
+/// The referrer of a HostLoadImportedModule request (§16.2.1.10).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Referrer {
+    Script { host_defined: u64 },
+    Module { url: String, host_defined: u64 },
+    Realm,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ModuleRequest {
+    pub id: u64,
+    pub referrer: Referrer,
+    pub specifier: String,
+    pub attributes: Vec<(String, String)>,
+}
+/// The host's answer to a request (FinishLoadingImportedModule's `result`).
+#[derive(Clone, Debug)]
+pub enum ModuleLoad {
+    /// Source text to parse; the engine raises its own SyntaxError.
+    Source {
+        url: String,
+        module_type: String,
+        source: String,
+        host_defined: u64,
+    },
+    /// A host failure; the engine throws a new `kind` error (HTML: TypeError).
+    Error { kind: String, message: String },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Status {
+    New,
+    Unlinked,
+    Linking,
+    Linked,
+    Evaluating,
+    EvaluatingAsync,
+    Evaluated,
+}
+/// [[AsyncEvaluationOrder]]: unset, an integer, or done.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Order {
+    Unset,
+    Pending(u64),
     Done,
 }
 struct Record {
     url: String,
+    host_defined: u64,
     syntax: Module,
-    deps: Vec<usize>,
+    /// [[LoadedModules]]: specifier → record.
+    loaded: HashMap<String, usize>,
+    status: Status,
+    /// [[EvaluationError]]; the value is also kept alive by a hidden env binding.
+    error: Option<Value>,
+    dfs_index: usize,
+    dfs_ancestor: usize,
+    cycle_root: usize,
+    has_tla: bool,
+    order: Order,
+    async_parents: Vec<usize>,
+    pending_async: usize,
+    /// [[TopLevelCapability]], rooted through hidden bindings of `env`.
+    top: Option<Capability>,
     env: Option<Id>,
-    cap: Option<Capability>,
-    phase: Phase,
-    group: usize,
-    rank: usize,
+    /// The namespace object and its sorted [[Exports]], once created.
+    namespace: Option<(Id, Vec<String>)>,
+}
+/// GraphLoadingState (§16.2.1.6.1); the promise is replaced by `graph_loaded`.
+struct Graph {
+    root: usize,
+    visited: HashSet<usize>,
+    pending: usize,
+    loading: bool,
+}
+struct Pending {
+    referrer: usize,
+    specifier: String,
+    graphs: Vec<usize>,
+}
+/// A failed load, kept as data so several waiting graphs can each throw it.
+#[derive(Clone)]
+enum Failure {
+    Syntax(SyntaxError),
+    Error(String, String),
+}
+enum Resolution {
+    Null,
+    Ambiguous,
+    /// ResolvedBinding { [[Module]], [[BindingName]] }; `None` is ~namespace~.
+    Binding(usize, Option<String>),
 }
 #[derive(Default)]
 pub(super) struct Registry {
     records: Vec<Record>,
-    names: HashMap<String, usize>,
-    order: Vec<usize>,
-    groups: Vec<Vec<usize>>,
-    errors: HashMap<usize, Value>,
-    limit: usize,
-    entry: usize,
-    pumping: bool,
+    /// The host's module map key: (url, module type).
+    keys: HashMap<(String, String), usize>,
+    graphs: Vec<Graph>,
+    pending: HashMap<u64, Pending>,
+    inflight: HashMap<(usize, String), u64>,
+    outbox: Vec<ModuleRequest>,
+    next_request: u64,
+    next_order: u64,
+    bytes: usize,
+    script_host_defined: u64,
 }
 impl Registry {
-    fn visit(
-        &mut self,
-        url: &str,
-        sources: &HashMap<&str, &ModuleSource>,
-        depth: usize,
-    ) -> Result<usize> {
-        if let Some(i) = self.names.get(url) {
-            return Ok(*i);
-        }
-        if depth >= 128 || self.records.len() >= 128 {
-            return Err(ScriptError::Runtime("module graph limit"));
-        }
-        let source = sources
-            .get(url)
-            .ok_or_else(|| ScriptError::Host(format!("missing module source: {url}")))?;
-        let syntax = parser::parse_module(&source.source).map_err(ScriptError::Syntax)?;
-        let requests = syntax
-            .dependencies()
-            .into_iter()
-            .map(str::to_string)
-            .collect::<Vec<_>>();
-        let i = self.records.len();
-        self.names.insert(url.into(), i);
-        // The placeholder is replaced before instantiation; it never enters the VM graph.
-        self.records.push(Record {
-            url: url.into(),
-            syntax,
-            deps: vec![],
-            env: None,
-            cap: None,
-            phase: Phase::Waiting,
-            group: 0,
-            rank: 0,
-        });
-        for request in requests {
-            let target = source
-                .resolutions
-                .iter()
-                .find(|(s, _)| s == &request)
-                .map(|(_, u)| u.as_str())
-                .ok_or_else(|| {
-                    ScriptError::Host(format!("unresolved module specifier: {request}"))
-                })?;
-            let dep = self.visit(target, sources, depth + 1)?;
-            self.records[i].deps.push(dep);
-        }
-        self.records[i].rank = self.order.len();
-        self.order.push(i);
-        Ok(i)
+    fn index(&self, url: &str) -> Result<usize> {
+        self.keys
+            .get(&(url.to_string(), "javascript".to_string()))
+            .copied()
+            .ok_or(ScriptError::Runtime("unknown module"))
     }
-    fn components(&mut self) {
-        fn assign(
-            i: usize,
-            g: usize,
-            reverse: &[Vec<usize>],
-            seen: &mut HashSet<usize>,
-            groups: &mut Vec<Vec<usize>>,
-        ) {
-            if !seen.insert(i) {
-                return;
-            }
-            groups[g].push(i);
-            for &j in &reverse[i] {
-                assign(j, g, reverse, seen, groups);
-            }
-        }
-        let mut reverse = vec![vec![]; self.records.len()];
-        for (i, r) in self.records.iter().enumerate() {
-            for &j in &r.deps {
-                reverse[j].push(i);
-            }
-        }
-        let mut seen = HashSet::new();
-        for &i in self.order.iter().rev() {
-            if !seen.contains(&i) {
-                let g = self.groups.len();
-                self.groups.push(vec![]);
-                assign(i, g, &reverse, &mut seen, &mut self.groups);
-            }
-        }
-        for (g, members) in self.groups.iter().enumerate() {
-            for &i in members {
-                self.records[i].group = g;
-            }
-        }
-        self.limit = self.order.len();
+    fn dependency(&self, m: usize, specifier: &str) -> Result<usize> {
+        self.records[m]
+            .loaded
+            .get(specifier)
+            .copied()
+            .ok_or(ScriptError::Runtime("module request not loaded"))
     }
-    fn resolve(
-        &self,
-        i: usize,
-        name: &str,
-        seen: &mut HashSet<(usize, String)>,
-    ) -> Option<(usize, String)> {
-        if !seen.insert((i, name.into())) {
-            return None;
+    /// ResolveExport (§16.2.1.7.3); `set` is the shared resolveSet.
+    fn resolve_export(&self, m: usize, name: &str, set: &mut Vec<(usize, String)>) -> Resolution {
+        if set.iter().any(|(r, n)| *r == m && n == name) {
+            return Resolution::Null; // circular import request
         }
-        let r = &self.records[i];
-        let export = r.syntax.exports.iter().find(|e| e.exported == name)?;
-        if let Some(from) = &export.from {
-            let pos = r.syntax.dependencies().iter().position(|s| *s == from)?;
-            return self.resolve(r.deps[pos], &export.local, seen);
-        }
-        for import in &r.syntax.imports {
-            if let Some((imported, _)) = import
-                .bindings
-                .iter()
-                .find(|(_, local)| local == &export.local)
-            {
-                let pos = r
-                    .syntax
-                    .dependencies()
-                    .iter()
-                    .position(|s| *s == import.specifier)?;
-                return self.resolve(r.deps[pos], imported, seen);
+        set.push((m, name.to_string()));
+        let syntax = &self.records[m].syntax;
+        for e in &syntax.local_exports {
+            if e.export_name.as_deref() == Some(name) {
+                return Resolution::Binding(m, e.local.clone());
             }
         }
-        Some((i, export.local.clone()))
+        for e in &syntax.indirect_exports {
+            if e.export_name.as_deref() == Some(name) {
+                let Ok(dep) = self.dependency(m, e.request.as_deref().unwrap_or_default()) else {
+                    return Resolution::Null;
+                };
+                return match &e.import_name {
+                    Some(ExportImport::All) => Resolution::Binding(dep, None),
+                    Some(ExportImport::Name(n)) => self.resolve_export(dep, n, set),
+                    _ => Resolution::Null,
+                };
+            }
+        }
+        if name == "default" {
+            return Resolution::Null;
+        }
+        let mut star: Option<(usize, Option<String>)> = None;
+        for e in &syntax.star_exports {
+            let Ok(dep) = self.dependency(m, e.request.as_deref().unwrap_or_default()) else {
+                continue;
+            };
+            match self.resolve_export(dep, name, set) {
+                Resolution::Ambiguous => return Resolution::Ambiguous,
+                Resolution::Null => {}
+                Resolution::Binding(r, b) => match &star {
+                    None => star = Some((r, b)),
+                    Some((sr, sb)) => {
+                        if *sr != r || *sb != b {
+                            return Resolution::Ambiguous;
+                        }
+                    }
+                },
+            }
+        }
+        match star {
+            Some((r, b)) => Resolution::Binding(r, b),
+            None => Resolution::Null,
+        }
+    }
+    /// GetExportedNames (§16.2.1.7.2).
+    pub(super) fn exported_names(&self, m: usize, set: &mut HashSet<usize>) -> Vec<String> {
+        if !set.insert(m) {
+            return vec![];
+        }
+        let syntax = &self.records[m].syntax;
+        let mut names: Vec<String> = syntax
+            .local_exports
+            .iter()
+            .chain(&syntax.indirect_exports)
+            .filter_map(|e| e.export_name.clone())
+            .collect();
+        for e in &syntax.star_exports {
+            let Ok(dep) = self.dependency(m, e.request.as_deref().unwrap_or_default()) else {
+                continue;
+            };
+            for n in self.exported_names(dep, set) {
+                if n != "default" && !names.contains(&n) {
+                    names.push(n);
+                }
+            }
+        }
+        names
+    }
+}
+impl Failure {
+    fn script_error(&self, e: &mut Engine<'_>) -> ScriptError {
+        match self {
+            Failure::Syntax(s) => ScriptError::Syntax(s.clone()),
+            Failure::Error(kind, message) => match e.throw_error::<()>(kind, message) {
+                Err(err) => err,
+                Ok(()) => ScriptError::Runtime("module load failure"),
+            },
+        }
     }
 }
 impl Engine<'_> {
+    /// Compatibility host: answers every request from `sources` (whole graph up front).
     pub fn execute_modules(&mut self, entry: &str, sources: &[ModuleSource]) -> Result<()> {
-        if sources.len() > 128 || sources.iter().map(|s| s.source.len()).sum::<usize>() > 1048576 {
+        if sources.len() > MODULE_LIMIT
+            || sources.iter().map(|s| s.source.len()).sum::<usize>() > SOURCE_LIMIT
+        {
             return Err(ScriptError::Runtime("module source limit"));
         }
         let mut input = HashMap::new();
@@ -177,15 +247,47 @@ impl Engine<'_> {
                 return Err(ScriptError::Runtime("duplicate module URL"));
             }
         }
-        let mut graph = Registry::default();
-        graph.entry = graph.visit(entry, &input, 0)?;
-        graph.components();
+        let first = input
+            .get(entry)
+            .ok_or_else(|| ScriptError::Host(format!("missing module source: {entry}")))?;
         self.execute("")?;
-        self.modules = graph;
-        let result = self.frame(|e| {
-            e.link_modules()?;
-            e.pump_modules()
-        });
+        let result = (|| {
+            self.execute_module(entry, &first.source, 0)?;
+            loop {
+                let requests = self.take_module_requests();
+                if requests.is_empty() {
+                    break;
+                }
+                for r in requests {
+                    let Referrer::Module { url, .. } = &r.referrer else {
+                        return Err(ScriptError::Host("unexpected module referrer".into()));
+                    };
+                    let target = input
+                        .get(url.as_str())
+                        .and_then(|s| s.resolutions.iter().find(|(s, _)| *s == r.specifier))
+                        .map(|(_, u)| u.as_str())
+                        .ok_or_else(|| {
+                            ScriptError::Host(format!(
+                                "unresolved module specifier: {}",
+                                r.specifier
+                            ))
+                        })?;
+                    let source = input.get(target).ok_or_else(|| {
+                        ScriptError::Host(format!("missing module source: {target}"))
+                    })?;
+                    self.finish_module_request(
+                        r.id,
+                        ModuleLoad::Source {
+                            url: target.into(),
+                            module_type: "javascript".into(),
+                            source: source.source.clone(),
+                            host_defined: 0,
+                        },
+                    )?;
+                }
+            }
+            Ok(())
+        })();
         if result.is_err() {
             self.release_globals();
         } else {
@@ -193,179 +295,627 @@ impl Engine<'_> {
         }
         result
     }
-    fn link_modules(&mut self) -> Result<()> {
-        let global = self.runtime.resolve(self.global.unwrap())?;
-        for i in 0..self.modules.records.len() {
-            let body = self.modules.records[i].syntax.body.clone();
-            let env = self.new_environment(Some(global), &body, true)?;
-            self.runtime.link(global, env)?;
-            self.modules.records[i].env = Some(env);
-            self.initialize(env, "this", Value::Undefined)?;
-            let cap = self.capability(Value::Object(
-                self.intrinsics.as_ref().unwrap().functions["Promise"],
-            ))?;
-            for (n, v) in cap.values().into_iter().enumerate() {
-                self.initialize(env, &format!("\0moduleCap{n}"), v)?;
-            }
-            self.modules.records[i].cap = Some(cap);
-            self.hoist_functions(&body, env)?;
+    /// Load, link and evaluate a module graph rooted at `url` (HTML "run a module
+    /// script"). Load, parse and link errors of this graph are returned; evaluation
+    /// errors are reported through `module_status`.
+    pub fn execute_module(&mut self, url: &str, source: &str, host_defined: u64) -> Result<()> {
+        if self.global.is_none() {
+            self.execute("")?;
         }
-        for i in 0..self.modules.records.len() {
-            let imports = self.modules.records[i].syntax.imports.clone();
-            let exports = self.modules.records[i].syntax.exports.clone();
-            for export in exports {
-                let Some((target, name)) =
-                    self.modules
-                        .resolve(i, &export.exported, &mut HashSet::new())
-                else {
-                    return self.throw_error("SyntaxError", "unresolved cyclic export");
-                };
-                if !matches!(self.objects.get(&self.modules.records[target].env.unwrap()),Some(Object::Environment{bindings,..})if bindings.contains_key(&name))
-                {
-                    return self.throw_error("SyntaxError", "export has no local binding");
+        let root = self.module_record(url, "javascript", source, host_defined)?;
+        let g = self.modules.graphs.len();
+        self.modules.graphs.push(Graph {
+            root,
+            visited: HashSet::new(),
+            pending: 1,
+            loading: true,
+        });
+        self.frame(|e| e.inner_module_loading(g, root))
+    }
+    pub fn set_script_host_defined(&mut self, host_defined: u64) {
+        self.modules.script_host_defined = host_defined;
+    }
+    pub fn take_module_requests(&mut self) -> Vec<ModuleRequest> {
+        std::mem::take(&mut self.modules.outbox)
+    }
+    /// Requests the host has not answered yet (taken or not).
+    pub fn pending_module_requests(&self) -> usize {
+        self.modules.pending.len()
+    }
+    /// FinishLoadingImportedModule (§16.2.1.10). An unknown or already settled id
+    /// is a host error, never a panic.
+    pub fn finish_module_request(&mut self, id: u64, load: ModuleLoad) -> Result<()> {
+        let Some(p) = self.modules.pending.remove(&id) else {
+            return Err(ScriptError::Host(format!(
+                "unknown or settled module request {id}"
+            )));
+        };
+        self.modules
+            .inflight
+            .remove(&(p.referrer, p.specifier.clone()));
+        self.modules.outbox.retain(|r| r.id != id);
+        let result = match load {
+            ModuleLoad::Source {
+                url,
+                module_type,
+                source,
+                host_defined,
+            } => match self.module_record(&url, &module_type, &source, host_defined) {
+                Ok(i) => Ok(i),
+                Err(ScriptError::Syntax(s)) => Err(Failure::Syntax(s)),
+                Err(ScriptError::Unsupported(m)) => {
+                    Err(Failure::Error("SyntaxError".into(), m.into()))
+                }
+                Err(other) => return Err(other),
+            },
+            ModuleLoad::Error { kind, message } => Err(Failure::Error(kind, message)),
+        };
+        if let Ok(dep) = result {
+            let loaded = &mut self.modules.records[p.referrer].loaded;
+            match loaded.get(&p.specifier) {
+                Some(&prev) if prev != dep => {
+                    return Err(ScriptError::Host(
+                        "host loaded two modules for one request".into(),
+                    ))
+                }
+                _ => {
+                    loaded.insert(p.specifier.clone(), dep);
                 }
             }
-            for import in imports {
-                let pos = self.modules.records[i]
-                    .syntax
-                    .dependencies()
-                    .iter()
-                    .position(|s| *s == import.specifier)
-                    .unwrap();
-                let dep = self.modules.records[i].deps[pos];
-                for (imported, local) in import.bindings {
-                    let Some((target, name)) =
-                        self.modules.resolve(dep, &imported, &mut HashSet::new())
-                    else {
-                        return self.throw_error("SyntaxError", "imported export does not exist");
-                    };
-                    let env = self.modules.records[i].env.unwrap();
-                    let target = self.modules.records[target].env.unwrap();
+        }
+        let mut first = None;
+        for g in p.graphs {
+            if let Err(err) = self.frame(|e| e.continue_module_loading(g, result.clone())) {
+                first.get_or_insert(err);
+            }
+        }
+        first.map_or(Ok(()), Err)
+    }
+    /// ParseModule plus the host's module map: one record per (url, type).
+    fn module_record(
+        &mut self,
+        url: &str,
+        module_type: &str,
+        source: &str,
+        host_defined: u64,
+    ) -> Result<usize> {
+        let key = (url.to_string(), module_type.to_string());
+        if let Some(&i) = self.modules.keys.get(&key) {
+            return Ok(i);
+        }
+        if module_type != "javascript" {
+            return Err(ScriptError::Unsupported("unsupported module type"));
+        }
+        if self.modules.records.len() >= MODULE_LIMIT {
+            return Err(ScriptError::Runtime("module graph limit"));
+        }
+        self.modules.bytes += source.len();
+        if self.modules.bytes > SOURCE_LIMIT {
+            return Err(ScriptError::Runtime("module source limit"));
+        }
+        let syntax = parser::parse_module(source).map_err(ScriptError::Syntax)?;
+        let has_tla = syntax.body.iter().any(super::asynchronous::stmt_await);
+        let i = self.modules.records.len();
+        self.modules.keys.insert(key, i);
+        self.modules.records.push(Record {
+            url: url.into(),
+            host_defined,
+            syntax,
+            loaded: HashMap::new(),
+            status: Status::New,
+            error: None,
+            dfs_index: 0,
+            dfs_ancestor: 0,
+            cycle_root: i,
+            has_tla,
+            order: Order::Unset,
+            async_parents: vec![],
+            pending_async: 0,
+            top: None,
+            env: None,
+            namespace: None,
+        });
+        Ok(i)
+    }
+    /// InnerModuleLoading (§16.2.1.6.1.1).
+    fn inner_module_loading(&mut self, g: usize, m: usize) -> Result<()> {
+        if self.modules.records[m].status == Status::New && self.modules.graphs[g].visited.insert(m)
+        {
+            let requests = self.modules.records[m].syntax.requests.clone();
+            self.modules.graphs[g].pending += requests.len();
+            for specifier in requests {
+                if let Some(&dep) = self.modules.records[m].loaded.get(&specifier) {
+                    self.inner_module_loading(g, dep)?;
+                } else {
+                    self.host_load_imported_module(m, specifier, g);
+                }
+                if !self.modules.graphs[g].loading {
+                    return Ok(());
+                }
+            }
+        }
+        let graph = &mut self.modules.graphs[g];
+        graph.pending -= 1;
+        if graph.pending == 0 {
+            graph.loading = false;
+            let visited: Vec<usize> = graph.visited.iter().copied().collect();
+            for v in visited {
+                if self.modules.records[v].status == Status::New {
+                    self.modules.records[v].status = Status::Unlinked;
+                }
+            }
+            self.graph_loaded(g)?;
+        }
+        Ok(())
+    }
+    /// HostLoadImportedModule (§16.2.1.10): queue a request for the host. A second
+    /// graph waiting on the same (referrer, specifier) joins the request in flight.
+    fn host_load_imported_module(&mut self, m: usize, specifier: String, g: usize) {
+        let r = &mut self.modules;
+        if let Some(id) = r.inflight.get(&(m, specifier.clone())) {
+            r.pending.get_mut(id).unwrap().graphs.push(g);
+            return;
+        }
+        let id = r.next_request;
+        r.next_request += 1;
+        r.inflight.insert((m, specifier.clone()), id);
+        r.outbox.push(ModuleRequest {
+            id,
+            referrer: Referrer::Module {
+                url: r.records[m].url.clone(),
+                host_defined: r.records[m].host_defined,
+            },
+            specifier: specifier.clone(),
+            attributes: vec![],
+        });
+        r.pending.insert(
+            id,
+            Pending {
+                referrer: m,
+                specifier,
+                graphs: vec![g],
+            },
+        );
+    }
+    /// ContinueModuleLoading (§16.2.1.6.1.2).
+    fn continue_module_loading(
+        &mut self,
+        g: usize,
+        result: std::result::Result<usize, Failure>,
+    ) -> Result<()> {
+        if !self.modules.graphs[g].loading {
+            return Ok(());
+        }
+        match result {
+            Ok(m) => self.inner_module_loading(g, m),
+            Err(failure) => {
+                self.modules.graphs[g].loading = false;
+                Err(failure.script_error(self))
+            }
+        }
+    }
+    /// The loading promise of a top-level graph fulfilled: Link, then Evaluate.
+    fn graph_loaded(&mut self, g: usize) -> Result<()> {
+        let root = self.modules.graphs[g].root;
+        self.link(root)?;
+        let promise = self.evaluate(root)?;
+        if let Value::Object(p) = promise {
+            // Evaluation errors of a top-level graph are read through module_status.
+            let mut data = self.data(p)?.clone();
+            if let Some(record) = data.promise.as_mut() {
+                record.handled = true;
+            }
+            self.replace_data(p, data)?;
+            self.unhandled.remove(&p);
+        }
+        Ok(())
+    }
+    /// Link (§16.2.1.6.2).
+    fn link(&mut self, m: usize) -> Result<()> {
+        let mut stack = vec![];
+        let result = self.inner_module_linking(m, &mut stack, 0);
+        if result.is_err() {
+            for s in stack {
+                self.modules.records[s].status = Status::Unlinked;
+                self.modules.records[s].env = None;
+            }
+        }
+        result.map(|_| ())
+    }
+    /// InnerModuleLinking (§16.2.1.6.2.1).
+    fn inner_module_linking(
+        &mut self,
+        m: usize,
+        stack: &mut Vec<usize>,
+        mut index: usize,
+    ) -> Result<usize> {
+        match self.modules.records[m].status {
+            Status::Linking
+            | Status::Linked
+            | Status::Evaluating
+            | Status::EvaluatingAsync
+            | Status::Evaluated => return Ok(index),
+            Status::New => return Err(ScriptError::Runtime("module not loaded")),
+            Status::Unlinked => {}
+        }
+        let r = &mut self.modules.records[m];
+        r.status = Status::Linking;
+        r.dfs_index = index;
+        r.dfs_ancestor = index;
+        index += 1;
+        stack.push(m);
+        // The environment exists before the dependencies link, so a cycle member's
+        // import alias can name it; InitializeEnvironment fills it in afterwards.
+        self.create_module_environment(m)?;
+        for specifier in self.modules.records[m].syntax.requests.clone() {
+            let dep = self.modules.dependency(m, &specifier)?;
+            index = self.inner_module_linking(dep, stack, index)?;
+            if self.modules.records[dep].status == Status::Linking {
+                let a = self.modules.records[dep].dfs_ancestor;
+                let r = &mut self.modules.records[m];
+                r.dfs_ancestor = r.dfs_ancestor.min(a);
+            }
+        }
+        self.initialize_environment(m)?;
+        if self.modules.records[m].dfs_ancestor == self.modules.records[m].dfs_index {
+            while let Some(x) = stack.pop() {
+                self.modules.records[x].status = Status::Linked;
+                if x == m {
+                    break;
+                }
+            }
+        }
+        Ok(index)
+    }
+    fn create_module_environment(&mut self, m: usize) -> Result<()> {
+        let global = self.runtime.resolve(self.global.unwrap())?;
+        let body = self.modules.records[m].syntax.body.clone();
+        let env = self.new_environment(Some(global), &body, true)?;
+        self.runtime.link(global, env)?;
+        self.modules.records[m].env = Some(env);
+        self.initialize(env, "this", Value::Undefined)?;
+        self.hoist_functions(&body, env)
+    }
+    /// InitializeEnvironment (§16.2.1.7.4), import bindings part; the lexical and
+    /// function declarations were instantiated by `create_module_environment`.
+    fn initialize_environment(&mut self, m: usize) -> Result<()> {
+        let syntax = &self.modules.records[m].syntax;
+        let indirect: Vec<_> = syntax
+            .indirect_exports
+            .iter()
+            .map(|e| (e.request.clone().unwrap_or_default(), e.export_name.clone()))
+            .collect();
+        let imports = syntax.imports.clone();
+        for (request, name) in indirect {
+            let name = name.unwrap_or_default();
+            match self.modules.resolve_export(m, &name, &mut vec![]) {
+                Resolution::Binding(..) => {}
+                Resolution::Null => return self.missing_export(&request, &name),
+                Resolution::Ambiguous => return self.ambiguous_export(&request, &name),
+            }
+        }
+        let env = self.modules.records[m].env.unwrap();
+        for import in imports {
+            let dep = self.modules.dependency(m, &import.request)?;
+            let (target, binding) = match &import.import_name {
+                ImportName::Namespace => (dep, None),
+                ImportName::Name(n) => match self.modules.resolve_export(dep, n, &mut vec![]) {
+                    Resolution::Binding(t, b) => (t, b),
+                    Resolution::Null => return self.missing_export(&import.request, n),
+                    Resolution::Ambiguous => return self.ambiguous_export(&import.request, n),
+                },
+            };
+            match binding {
+                None => {
+                    let namespace = self.module_namespace(target)?;
+                    self.initialize(env, &import.local, namespace)?;
+                }
+                Some(name) => {
+                    let target = self.modules.records[target]
+                        .env
+                        .ok_or(ScriptError::Runtime("module environment missing"))?;
                     self.runtime.link(env, target)?;
                     if let Some(Object::Environment { aliases, .. }) = self.objects.get_mut(&env) {
-                        aliases.insert(local, (target, name));
+                        aliases.insert(import.local.clone(), (target, name));
                     }
                 }
             }
         }
         Ok(())
     }
-    fn fail_module_group(&mut self, group: usize, error: Value) -> Result<()> {
-        if self.modules.errors.contains_key(&group) {
-            return Ok(());
+    fn missing_export<T>(&mut self, request: &str, name: &str) -> Result<T> {
+        self.throw_error(
+            "SyntaxError",
+            &format!("The requested module '{request}' does not provide an export named '{name}'"),
+        )
+    }
+    fn ambiguous_export<T>(&mut self, request: &str, name: &str) -> Result<T> {
+        self.throw_error(
+            "SyntaxError",
+            &format!(
+                "The requested module '{request}' contains conflicting star exports for name '{name}'"
+            ),
+        )
+    }
+    /// GetModuleNamespace (§16.2.1.12) and ModuleNamespaceCreate (§10.4.6.12).
+    fn module_namespace(&mut self, m: usize) -> Result<Value> {
+        if let Some((id, _)) = &self.modules.records[m].namespace {
+            return Ok(Value::Object(*id));
         }
-        let env = self.modules.records[self.modules.groups[group][0]]
+        let env = self.modules.records[m]
             .env
-            .unwrap();
-        self.initialize(env, "\0moduleError", error.clone())?;
-        self.modules.errors.insert(group, error);
-        Ok(())
+            .ok_or(ScriptError::Runtime("module environment missing"))?;
+        let mut names: Vec<String> = self
+            .modules
+            .exported_names(m, &mut HashSet::new())
+            .into_iter()
+            .filter(|n| {
+                matches!(
+                    self.modules.resolve_export(m, n, &mut vec![]),
+                    Resolution::Binding(..)
+                )
+            })
+            .collect();
+        // [[Exports]] is ordered by code unit order (§10.4.6.12 step 6).
+        names.sort_by_cached_key(|n| n.encode_utf16().collect::<Vec<u16>>());
+        self.frame(|e| {
+            let id = e.new_object(None)?;
+            e.protect(&Value::Object(id))?;
+            // §28.3.1 @@toStringTag: "Module", non-writable, non-enumerable, non-configurable.
+            e.define(
+                id,
+                Key::Symbol(1),
+                Descriptor {
+                    value: Some(Value::String("Module".into())),
+                    ..Default::default()
+                },
+            )?;
+            let mut data = e.data(id)?.clone();
+            data.extensible = false;
+            data.namespace = Some(m);
+            e.replace_data(id, data)?;
+            e.runtime.link(id, env)?;
+            e.initialize(env, "\0namespace", Value::Object(id))?;
+            e.modules.records[m].namespace = Some((id, names));
+            Ok(Value::Object(id))
+        })
     }
-    fn pump_modules(&mut self) -> Result<()> {
-        if self.modules.pumping {
-            return Ok(());
+    pub(super) fn namespace_key(&self, id: Id, key: &Key) -> Option<(usize, String)> {
+        match key {
+            Key::String(s) => Some((self.data(id).ok()?.namespace?, s.clone())),
+            Key::Symbol(_) => None,
         }
-        self.modules.pumping = true;
-        let result = (|| {
-            loop {
-                let mut propagated = false;
-                for i in 0..self.modules.records.len() {
-                    let group = self.modules.records[i].group;
-                    if self.modules.errors.contains_key(&group) {
-                        continue;
-                    }
-                    for dep in self.modules.records[i].deps.clone() {
-                        let dg = self.modules.records[dep].group;
-                        if let Some(error) = self.modules.errors.get(&dg).cloned() {
-                            self.fail_module_group(group, error)?;
-                            propagated = true;
-                            break;
-                        }
-                    }
-                }
-                if propagated {
-                    continue;
-                }
-                let ready = self.modules.order.iter().copied().find(|&i| {
-                    let r = &self.modules.records[i];
-                    r.rank < self.modules.limit
-                        && r.phase == Phase::Waiting
-                        && !self.modules.errors.contains_key(&r.group)
-                        && r.deps.iter().all(|&j| {
-                            let d = &self.modules.records[j];
-                            if d.group == r.group {
-                                d.rank >= r.rank || d.phase == Phase::Done
-                            } else {
-                                self.modules.groups[d.group]
-                                    .iter()
-                                    .all(|&m| self.modules.records[m].phase == Phase::Done)
-                            }
-                        })
-                });
-                let Some(i) = ready else {
-                    break;
+    }
+    pub(super) fn namespace_has(&self, m: usize, name: &str) -> bool {
+        self.modules
+            .records
+            .get(m)
+            .and_then(|r| r.namespace.as_ref())
+            .is_some_and(|(_, names)| names.iter().any(|n| n == name))
+    }
+    /// Module namespace [[Get]] (§10.4.6.8) for a string key.
+    pub(super) fn namespace_get(&mut self, m: usize, name: &str) -> Result<Value> {
+        if !self.namespace_has(m, name) {
+            return Ok(Value::Undefined);
+        }
+        match self.modules.resolve_export(m, name, &mut vec![]) {
+            Resolution::Binding(t, None) => self.module_namespace(t),
+            Resolution::Binding(t, Some(binding)) => {
+                let Some(env) = self.modules.records[t].env else {
+                    return self.throw_error("ReferenceError", &format!("{name} is not defined"));
                 };
-                self.modules.records[i].phase = Phase::Running;
-                let r = &self.modules.records[i];
-                let env = r.env.unwrap();
-                let cap = r.cap.clone().unwrap();
-                let body = r.syntax.body.clone();
-                let program = super::asynchronous::compile_module(&body)?;
-                let promise = self.start_program(env, program, cap)?;
-                let Value::Object(p) = promise else {
-                    unreachable!()
-                };
-                let state = self.data(p)?.promise.as_ref().unwrap().state.clone();
-                let has_await = body.iter().any(super::asynchronous::stmt_await);
-                if has_await {
-                    let yes = self.internal_function(
-                        Internal::ModuleSettled {
-                            index: i,
-                            reject: false,
-                        },
-                        1,
-                    )?;
-                    let no = self.internal_function(
-                        Internal::ModuleSettled {
-                            index: i,
-                            reject: true,
-                        },
-                        1,
-                    )?;
-                    self.attach_reaction(p, Some(yes), Some(no), None)?;
-                    continue;
-                }
-                match state {
-                    State::Fulfilled(_) => self.modules.records[i].phase = Phase::Done,
-                    State::Rejected(error) => {
-                        self.unhandled.remove(&p);
-                        self.modules.limit =
-                            self.modules.limit.min(self.modules.records[i].rank + 1);
-                        self.fail_module_group(self.modules.records[i].group, error)?;
-                    }
-                    State::Pending => {
-                        let yes = self.internal_function(
-                            Internal::ModuleSettled {
-                                index: i,
-                                reject: false,
-                            },
-                            1,
-                        )?;
-                        let no = self.internal_function(
-                            Internal::ModuleSettled {
-                                index: i,
-                                reject: true,
-                            },
-                            1,
-                        )?;
-                        self.attach_reaction(p, Some(yes), Some(no), None)?;
-                    }
+                self.lookup(env, &binding)
+            }
+            _ => Err(ScriptError::Runtime("namespace export no longer resolves")),
+        }
+    }
+    /// Module namespace [[GetOwnProperty]] (§10.4.6.5) for a string key.
+    pub(super) fn namespace_own(&mut self, m: usize, name: &str) -> Result<Option<Property>> {
+        if !self.namespace_has(m, name) {
+            return Ok(None);
+        }
+        let value = self.namespace_get(m, name)?;
+        Ok(Some(Property::data(value, true, true, false)))
+    }
+    /// Module namespace [[DefineOwnProperty]] (§10.4.6.6) for a string key.
+    pub(super) fn namespace_define(&mut self, m: usize, name: &str, d: Descriptor) -> Result<bool> {
+        let Some(current) = self.namespace_own(m, name)? else {
+            return Ok(false);
+        };
+        if d.configurable == Some(true)
+            || d.enumerable == Some(false)
+            || d.get.is_some()
+            || d.set.is_some()
+            || d.writable == Some(false)
+        {
+            return Ok(false);
+        }
+        Ok(match (d.value, current.kind) {
+            (Some(v), Kind::Data { value, .. }) => v.same_value(&value),
+            _ => true,
+        })
+    }
+    /// Module namespace [[OwnPropertyKeys]] (§10.4.6.11).
+    pub(super) fn namespace_own_keys(&mut self, id: Id, m: usize) -> Result<Vec<Key>> {
+        let mut keys: Vec<Key> = self
+            .modules
+            .records
+            .get(m)
+            .and_then(|r| r.namespace.as_ref())
+            .map(|(_, names)| names.iter().map(|n| Key::String(n.clone())).collect())
+            .unwrap_or_default();
+        keys.extend(
+            self.data(id)?
+                .properties
+                .iter()
+                .filter(|(key, _)| matches!(key, Key::Symbol(_)) && !self.is_private(key))
+                .map(|(key, _)| key.clone()),
+        );
+        Ok(keys)
+    }
+    /// Evaluate (§16.2.1.6.3): returns the [[TopLevelCapability]] promise.
+    fn evaluate(&mut self, m: usize) -> Result<Value> {
+        let mut module = m;
+        if matches!(
+            self.modules.records[m].status,
+            Status::EvaluatingAsync | Status::Evaluated
+        ) {
+            module = self.modules.records[m].cycle_root;
+        }
+        if let Some(cap) = &self.modules.records[module].top {
+            return Ok(cap.promise.clone());
+        }
+        let cap = self.new_capability()?;
+        let env = self.modules.records[module].env.unwrap();
+        for (n, v) in cap.values().into_iter().enumerate() {
+            self.initialize(env, &format!("\0moduleTop{n}"), v)?;
+        }
+        self.modules.records[module].top = Some(cap.clone());
+        let mut stack = vec![];
+        match self.inner_module_evaluation(module, &mut stack, 0) {
+            Ok(_) => {
+                if self.modules.records[module].order == Order::Unset {
+                    self.invoke(cap.resolve.clone(), vec![Value::Undefined])?;
                 }
             }
-            Ok(())
-        })();
-        self.modules.pumping = false;
-        result
+            Err(ScriptError::Thrown(ex)) => {
+                for s in stack {
+                    self.modules.records[s].status = Status::Evaluated;
+                    self.set_evaluation_error(s, ex.value.clone())?;
+                }
+                self.invoke(cap.reject.clone(), vec![ex.value])?;
+            }
+            Err(other) => return Err(other),
+        }
+        Ok(cap.promise)
+    }
+    fn new_capability(&mut self) -> Result<Capability> {
+        let promise = Value::Object(self.intrinsics.as_ref().unwrap().functions["Promise"]);
+        self.capability(promise)
+    }
+    fn set_evaluation_error(&mut self, m: usize, error: Value) -> Result<()> {
+        if let Some(env) = self.modules.records[m].env {
+            self.initialize(env, "\0moduleError", error.clone())?;
+        }
+        self.modules.records[m].error = Some(error);
+        Ok(())
+    }
+    /// InnerModuleEvaluation (§16.2.1.6.3.1).
+    fn inner_module_evaluation(
+        &mut self,
+        m: usize,
+        stack: &mut Vec<usize>,
+        mut index: usize,
+    ) -> Result<usize> {
+        match self.modules.records[m].status {
+            Status::EvaluatingAsync | Status::Evaluated => {
+                return match self.modules.records[m].error.clone() {
+                    None => Ok(index),
+                    Some(v) => Err(self.thrown(v)),
+                }
+            }
+            Status::Evaluating => return Ok(index),
+            Status::Linked => {}
+            _ => return Err(ScriptError::Runtime("module not linked")),
+        }
+        let r = &mut self.modules.records[m];
+        r.status = Status::Evaluating;
+        r.dfs_index = index;
+        r.dfs_ancestor = index;
+        r.pending_async = 0;
+        index += 1;
+        stack.push(m);
+        for specifier in self.modules.records[m].syntax.requests.clone() {
+            let mut dep = self.modules.dependency(m, &specifier)?;
+            index = self.inner_module_evaluation(dep, stack, index)?;
+            if self.modules.records[dep].status == Status::Evaluating {
+                let a = self.modules.records[dep].dfs_ancestor;
+                let r = &mut self.modules.records[m];
+                r.dfs_ancestor = r.dfs_ancestor.min(a);
+            } else {
+                dep = self.modules.records[dep].cycle_root;
+                if let Some(v) = self.modules.records[dep].error.clone() {
+                    return Err(self.thrown(v));
+                }
+            }
+            if matches!(self.modules.records[dep].order, Order::Pending(_)) {
+                self.modules.records[m].pending_async += 1;
+                self.modules.records[dep].async_parents.push(m);
+            }
+        }
+        let r = &self.modules.records[m];
+        if r.pending_async > 0 || r.has_tla {
+            let order = self.modules.next_order;
+            self.modules.next_order += 1;
+            self.modules.records[m].order = Order::Pending(order);
+            if self.modules.records[m].pending_async == 0 {
+                self.execute_async_module(m)?;
+            }
+        } else {
+            self.execute_module_sync(m)?;
+        }
+        if self.modules.records[m].dfs_ancestor == self.modules.records[m].dfs_index {
+            while let Some(x) = stack.pop() {
+                let r = &mut self.modules.records[x];
+                r.status = if matches!(r.order, Order::Pending(_)) {
+                    Status::EvaluatingAsync
+                } else {
+                    Status::Evaluated
+                };
+                r.cycle_root = m;
+                if x == m {
+                    break;
+                }
+            }
+        }
+        Ok(index)
+    }
+    /// ExecuteModule: runs the body as a resumable program; returns its promise.
+    fn run_module_body(&mut self, m: usize) -> Result<(Id, State)> {
+        let env = self.modules.records[m].env.unwrap();
+        let body = self.modules.records[m].syntax.body.clone();
+        let cap = self.new_capability()?;
+        for (n, v) in cap.values().into_iter().enumerate() {
+            self.initialize(env, &format!("\0moduleCap{n}"), v)?;
+        }
+        let program = super::asynchronous::compile_module(&body)?;
+        let Value::Object(p) = self.start_program(env, program, cap)? else {
+            unreachable!()
+        };
+        let state = self.data(p)?.promise.as_ref().unwrap().state.clone();
+        Ok((p, state))
+    }
+    fn execute_module_sync(&mut self, m: usize) -> Result<()> {
+        let (p, state) = self.run_module_body(m)?;
+        match state {
+            State::Fulfilled(_) => Ok(()),
+            State::Rejected(error) => {
+                self.unhandled.remove(&p);
+                Err(self.thrown(error))
+            }
+            State::Pending => Err(ScriptError::Runtime("module without await suspended")),
+        }
+    }
+    /// ExecuteAsyncModule (§16.2.1.6.3.2).
+    fn execute_async_module(&mut self, m: usize) -> Result<()> {
+        let (p, _) = self.run_module_body(m)?;
+        let yes = self.internal_function(
+            Internal::ModuleSettled {
+                index: m,
+                reject: false,
+            },
+            1,
+        )?;
+        let no = self.internal_function(
+            Internal::ModuleSettled {
+                index: m,
+                reject: true,
+            },
+            1,
+        )?;
+        self.attach_reaction(p, Some(yes), Some(no), None)?;
+        self.unhandled.remove(&p);
+        Ok(())
     }
     pub(super) fn module_settled(
         &mut self,
@@ -376,24 +926,96 @@ impl Engine<'_> {
         if index >= self.modules.records.len() {
             return Err(ScriptError::Runtime("invalid module continuation"));
         }
-        self.modules.records[index].phase = Phase::Done;
         if reject {
-            self.fail_module_group(self.modules.records[index].group, value)?;
+            self.async_module_rejected(index, value)?;
+        } else {
+            self.async_module_fulfilled(index)?;
         }
-        self.pump_modules()?;
         Ok(Value::Undefined)
+    }
+    /// GatherAvailableAncestors (§16.2.1.6.3.3).
+    fn gather_available_ancestors(&mut self, m: usize, exec: &mut Vec<usize>) {
+        for p in self.modules.records[m].async_parents.clone() {
+            let root = self.modules.records[p].cycle_root;
+            if !exec.contains(&p) && self.modules.records[root].error.is_none() {
+                let r = &mut self.modules.records[p];
+                r.pending_async -= 1;
+                if r.pending_async == 0 {
+                    exec.push(p);
+                    if !r.has_tla {
+                        self.gather_available_ancestors(p, exec);
+                    }
+                }
+            }
+        }
+    }
+    /// AsyncModuleExecutionFulfilled (§16.2.1.6.3.4).
+    fn async_module_fulfilled(&mut self, m: usize) -> Result<()> {
+        if self.modules.records[m].status == Status::Evaluated {
+            return Ok(());
+        }
+        self.modules.records[m].order = Order::Done;
+        self.modules.records[m].status = Status::Evaluated;
+        if let Some(cap) = self.modules.records[m].top.clone() {
+            self.invoke(cap.resolve, vec![Value::Undefined])?;
+        }
+        let mut exec = vec![];
+        self.gather_available_ancestors(m, &mut exec);
+        exec.sort_by_key(|&x| match self.modules.records[x].order {
+            Order::Pending(n) => n,
+            _ => u64::MAX,
+        });
+        for x in exec {
+            if self.modules.records[x].status == Status::Evaluated {
+                continue;
+            }
+            if self.modules.records[x].has_tla {
+                self.execute_async_module(x)?;
+                continue;
+            }
+            match self.execute_module_sync(x) {
+                Ok(()) => {
+                    self.modules.records[x].order = Order::Done;
+                    self.modules.records[x].status = Status::Evaluated;
+                    if let Some(cap) = self.modules.records[x].top.clone() {
+                        self.invoke(cap.resolve, vec![Value::Undefined])?;
+                    }
+                }
+                Err(ScriptError::Thrown(ex)) => self.async_module_rejected(x, ex.value)?,
+                Err(other) => return Err(other),
+            }
+        }
+        Ok(())
+    }
+    /// AsyncModuleExecutionRejected (§16.2.1.6.3.5).
+    fn async_module_rejected(&mut self, m: usize, error: Value) -> Result<()> {
+        if self.modules.records[m].status == Status::Evaluated {
+            return Ok(());
+        }
+        self.set_evaluation_error(m, error.clone())?;
+        self.modules.records[m].status = Status::Evaluated;
+        self.modules.records[m].order = Order::Done;
+        for p in self.modules.records[m].async_parents.clone() {
+            self.async_module_rejected(p, error.clone())?;
+        }
+        if let Some(cap) = self.modules.records[m].top.clone() {
+            self.invoke(cap.reject, vec![error])?;
+        }
+        Ok(())
     }
     pub fn loaded_modules(&self) -> Vec<String> {
         self.modules.records.iter().map(|r| r.url.clone()).collect()
     }
     pub fn module_status(&mut self, url: &str) -> Result<ModuleStatus> {
-        let i = *self
-            .modules
-            .names
-            .get(url)
-            .ok_or(ScriptError::Runtime("unknown module"))?;
-        let group = self.modules.records[i].group;
-        if let Some(error) = self.modules.errors.get(&group).cloned() {
+        let i = self.modules.index(url)?;
+        let r = &self.modules.records[i];
+        let error = r.error.clone().or_else(|| match r.status {
+            Status::Evaluated | Status::EvaluatingAsync => {
+                self.modules.records[r.cycle_root].error.clone()
+            }
+            _ => None,
+        });
+        if let Some(error) = error {
             return Ok(ModuleStatus::Errored(match self.thrown(error) {
                 ScriptError::Thrown(ex) => format!(
                     "{}: {}",
@@ -403,24 +1025,17 @@ impl Engine<'_> {
                 other => format!("{other:?}"),
             }));
         }
-        Ok(
-            if self.modules.groups[group]
-                .iter()
-                .all(|&i| self.modules.records[i].phase == Phase::Done)
-            {
-                ModuleStatus::Evaluated
-            } else {
-                ModuleStatus::Evaluating
-            },
-        )
+        Ok(if r.status == Status::Evaluated {
+            ModuleStatus::Evaluated
+        } else {
+            ModuleStatus::Evaluating
+        })
     }
     pub fn module_binding_string(&mut self, url: &str, name: &str) -> Result<String> {
-        let i = *self
-            .modules
-            .names
-            .get(url)
-            .ok_or(ScriptError::Runtime("unknown module"))?;
-        let env = self.modules.records[i].env.unwrap();
+        let i = self.modules.index(url)?;
+        let env = self.modules.records[i]
+            .env
+            .ok_or(ScriptError::Runtime("module not linked"))?;
         self.frame(|e| {
             let value = e.lookup(env, name)?;
             e.to_string(value)

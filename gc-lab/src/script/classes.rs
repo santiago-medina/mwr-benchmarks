@@ -53,6 +53,8 @@ impl Engine<'_> {
     }
     /// Evaluate `x`, naming an anonymous function or class after `name`.
     pub(super) fn eval_named(&mut self, x: &Expr, env: Id, name: &str) -> Result<Value> {
+        // `export default` binds "*default*" but names the value "default" (§16.2.3.7).
+        let name = if name == "\0default" { "default" } else { name };
         if let Expr::Class(class) = x {
             if class.name.is_none() {
                 return self.eval_class(class, env, Some(name));

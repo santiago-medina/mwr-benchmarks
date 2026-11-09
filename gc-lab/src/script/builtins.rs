@@ -1645,7 +1645,9 @@ impl Engine<'_> {
                 }
             }
             "isExtensible" => Ok(Value::Bool(self.is_extensible(id)?)),
-            "preventExtensions" | "seal" | "freeze" if self.is_proxy(id) => {
+            "preventExtensions" | "seal" | "freeze"
+                if self.is_proxy(id) || self.data(id)?.namespace.is_some() =>
+            {
                 // SetIntegrityLevel (§7.3.15) through the proxy's internal methods.
                 if !self.prevent_extensions(id)? {
                     return if reflect {
@@ -1680,7 +1682,7 @@ impl Engine<'_> {
                     Value::Object(id)
                 })
             }
-            "isSealed" | "isFrozen" if self.is_proxy(id) => {
+            "isSealed" | "isFrozen" if self.is_proxy(id) || self.data(id)?.namespace.is_some() => {
                 // TestIntegrityLevel (§7.3.16).
                 if self.is_extensible(id)? {
                     return Ok(Value::Bool(false));

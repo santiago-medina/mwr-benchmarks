@@ -24,7 +24,7 @@ mod network;
 pub use network::FetchResponse;
 
 mod modules;
-pub use modules::{ModuleSource, ModuleStatus};
+pub use modules::{ModuleLoad, ModuleRequest, ModuleSource, ModuleStatus, Referrer};
 
 mod collections;
 mod disposal;

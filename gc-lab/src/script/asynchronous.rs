@@ -116,6 +116,14 @@ fn expr_await(e: &Expr) -> bool {
         Expr::Call(a, b) | Expr::New(a, b) => expr_await(a) || b.iter().any(expr_await),
         Expr::Array(e) => e.iter().flatten().any(expr_await),
         Expr::Object(props) => props.iter().any(|(_, p)| property_await(p)),
+        // ClassTail: the heritage and computed keys are evaluated in the enclosing context
+        // (§15.7.15); field initializers and methods are functions of their own.
+        Expr::Class(c) => {
+            c.heritage.as_ref().is_some_and(expr_await)
+                || c.members.iter().any(
+                    |m| matches!(&m.key, super::parser::ClassKey::Computed(k) if expr_await(k)),
+                )
+        }
         _ => false,
     }
 }

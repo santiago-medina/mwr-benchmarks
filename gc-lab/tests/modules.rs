@@ -1,5 +1,7 @@
 use gc_lab::{
-    script::{parser::parse_module, Engine, ModuleSource, ModuleStatus},
+    script::{
+        parser::parse_module, Engine, ModuleLoad, ModuleSource, ModuleStatus, Referrer, ScriptError,
+    },
     Model,
 };
 fn source(url: &str, body: &str, deps: &[(&str, &str)]) -> ModuleSource {
@@ -152,4 +154,147 @@ fn syntactic_top_level_await_remains_asynchronous_when_not_reached() {
 #[test]
 fn rejection_before_await_does_not_skip_independent_siblings() {
     run(vec![source("main","import './a';import './b';assert(false);",&[("./a","a"),("./b","b")]),source("trace","export const log=[];",&[]),source("a","import {log} from './trace';Promise.resolve().then(function(){assert.sameValue(log.join(','),'b');});throw new Error('boom');await 1;",&[("./trace","trace")]),source("b","import {log} from './trace';log.push('b');",&[("./trace","trace")])],ModuleStatus::Errored("Error: boom".into()));
+}
+
+fn javascript(url: &str, source: &str) -> ModuleLoad {
+    ModuleLoad::Source {
+        url: url.into(),
+        module_type: "javascript".into(),
+        source: source.into(),
+        host_defined: 0,
+    }
+}
+#[test]
+fn pull_host_rejects_duplicate_and_unknown_finishes() {
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.execute_module("main", "import {x} from './dep';globalThis.seen=x;", 7)
+        .unwrap();
+    let requests = e.take_module_requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(e.pending_module_requests(), 1);
+    assert_eq!(
+        requests[0].referrer,
+        Referrer::Module {
+            url: "main".into(),
+            host_defined: 7
+        }
+    );
+    assert_eq!(requests[0].specifier, "./dep");
+    let id = requests[0].id;
+    e.finish_module_request(id, javascript("dep", "export const x=1;"))
+        .unwrap();
+    assert_eq!(e.module_status("main").unwrap(), ModuleStatus::Evaluated);
+    assert_eq!(e.pending_module_requests(), 0);
+    for late in [id, id + 100] {
+        assert!(matches!(
+            e.finish_module_request(late, javascript("dep", "export const x=2;")),
+            Err(ScriptError::Host(_))
+        ));
+    }
+    e.release_globals();
+    assert_eq!(e.live_objects(), 0);
+}
+#[test]
+fn pull_host_teardown_invalidates_pending_requests() {
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.execute_module("main", "import './never';", 0).unwrap();
+    let id = e.take_module_requests()[0].id;
+    // A request that is never answered stays visible to the host.
+    e.collect();
+    assert_eq!(e.pending_module_requests(), 1);
+    e.release_globals();
+    assert_eq!(e.pending_module_requests(), 0);
+    assert!(matches!(
+        e.finish_module_request(id, javascript("never", "")),
+        Err(ScriptError::Host(_))
+    ));
+    assert_eq!((e.live_objects(), e.live_roots()), (0, 0));
+}
+#[test]
+fn pull_host_errors_and_shared_requests() {
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.execute_module("main", "import './a';import './b';", 0)
+        .unwrap();
+    let r = e.take_module_requests();
+    assert_eq!(r.len(), 2);
+    e.finish_module_request(r[0].id, javascript("a", "export {};"))
+        .unwrap();
+    let err = e.finish_module_request(
+        r[1].id,
+        ModuleLoad::Error {
+            kind: "TypeError".into(),
+            message: "fetch failed".into(),
+        },
+    );
+    assert!(matches!(err, Err(ScriptError::Thrown(ex)) if ex.name.as_deref()==Some("TypeError")));
+    // A module key reached by two specifiers is one record.
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.execute_module(
+        "main",
+        "import {n} from './x';import {n as m} from 'x';if(n!==1||m!==1)throw 0;",
+        0,
+    )
+    .unwrap();
+    for r in e.take_module_requests() {
+        e.finish_module_request(r.id, javascript("x", "export let n=0;n++;"))
+            .unwrap();
+    }
+    assert_eq!(e.module_status("main").unwrap(), ModuleStatus::Evaluated);
+    assert_eq!(e.loaded_modules().len(), 2);
+    // A load whose source has a syntax error fails the graph with that error.
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.execute_module("main", "import './bad';", 0).unwrap();
+    let id = e.take_module_requests()[0].id;
+    assert!(matches!(
+        e.finish_module_request(id, javascript("bad", "let let;")),
+        Err(ScriptError::Syntax(_))
+    ));
+}
+
+#[test]
+fn namespace_objects_follow_the_exotic_object_rules() {
+    // §10.4.6: sorted keys, live values, TDZ ReferenceError, frozen shape, "Module" tag.
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.execute_module(
+        "main",
+        "import * as ns from './x';
+         import * as again from './x';
+         if (ns !== again) throw 'identity';
+         if (Object.getPrototypeOf(ns) !== null) throw 'proto';
+         if (Object.isExtensible(ns)) throw 'extensible';
+         if (Object.prototype.toString.call(ns) !== '[object Module]') throw 'tag';
+         if (Object.keys(ns).join() !== 'b,bump,c') throw 'keys ' + Object.keys(ns).join();
+         if (ns.b !== 1) throw 'b';
+         let d = Object.getOwnPropertyDescriptor(ns, 'b');
+         if (!d.writable || !d.enumerable || d.configurable) throw 'desc';
+         if (Reflect.set(ns, 'b', 2)) throw 'set';
+         if (Reflect.deleteProperty(ns, 'b')) throw 'delete b';
+         if (!Reflect.deleteProperty(ns, 'nope')) throw 'delete nope';
+         if (!('c' in ns) || 'nope' in ns) throw 'has';
+         if (Reflect.defineProperty(ns, 'b', {value: 9})) throw 'define other value';
+         if (!Reflect.defineProperty(ns, 'b', {value: 1})) throw 'define same value';
+         ns.bump(); if (ns.b !== 2) throw 'live';
+         export let late = 1;",
+        0,
+    )
+    .unwrap();
+    for r in e.take_module_requests() {
+        e.finish_module_request(
+            r.id,
+            javascript(
+                "x",
+                "import * as m from './main';
+                 let tdz = false;
+                 try { m.late; } catch (err) { tdz = err instanceof ReferenceError; }
+                 if (!tdz) throw 'tdz';
+                 export let b = 1; export function c() { b++; } export {c as bump};",
+            ),
+        )
+        .unwrap();
+    }
+    for r in e.take_module_requests() {
+        e.finish_module_request(r.id, javascript("main", "")).ok();
+    }
+    assert_eq!(e.module_status("main").unwrap(), ModuleStatus::Evaluated);
+    assert_eq!(e.module_status("x").unwrap(), ModuleStatus::Evaluated);
 }
