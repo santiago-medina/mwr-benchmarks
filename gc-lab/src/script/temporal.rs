@@ -10,11 +10,16 @@ use super::vm::{Engine, ScriptError, Value};
 use crate::dual::Id;
 use std::collections::HashMap;
 use std::rc::Rc;
+use temporal_rs::fields::CalendarFields;
 use temporal_rs::options::{
-    RelativeTo, RoundingIncrement, RoundingMode, RoundingOptions, ToStringRoundingOptions, Unit,
+    DifferenceSettings, DisplayCalendar, Overflow, RelativeTo, RoundingIncrement, RoundingMode,
+    RoundingOptions, ToStringRoundingOptions, Unit,
 };
 use temporal_rs::parsers::Precision;
-use temporal_rs::{Duration, TemporalError, TemporalResult};
+use temporal_rs::partial::PartialDate;
+use temporal_rs::{
+    Calendar, Duration, MonthCode, PlainDate, TemporalError, TemporalResult, TinyAsciiStr,
+};
 
 type Result<T> = std::result::Result<T, ScriptError>;
 
@@ -24,6 +29,17 @@ const TO_STRING_TAG: u64 = 1;
 #[derive(Debug)]
 pub(super) enum Slot {
     Duration(Duration),
+    PlainDate(PlainDate),
+}
+
+impl Slot {
+    /// The calendar of a slot that carries one ([[Calendar]]).
+    fn calendar(&self) -> Option<&Calendar> {
+        match self {
+            Slot::Duration(_) => None,
+            Slot::PlainDate(d) => Some(d.calendar()),
+        }
+    }
 }
 
 /// Duration fields in the order of the constructor's parameters.
@@ -41,7 +57,7 @@ const DURATION_FIELDS: [&str; 10] = [
 ];
 
 /// Constructors that exist (`Temporal.<Type>`), with their `length`.
-const CONSTRUCTORS: [(&str, usize); 1] = [("Duration", 0)];
+const CONSTRUCTORS: [(&str, usize); 2] = [("Duration", 0), ("PlainDate", 3)];
 
 pub(super) fn is_constructor(name: &str) -> bool {
     name.strip_prefix("Temporal.")
@@ -160,6 +176,7 @@ impl Engine<'_> {
                 let values: [f64; 10] = std::array::from_fn(|i| duration_field(&d, i));
                 Slot::Duration(fields_to_duration(&values).unwrap_or(d))
             }
+            other => other,
         };
         let mut data = self.data(id)?.clone();
         data.temporal = Some(Rc::new(slot));
@@ -281,6 +298,9 @@ impl Engine<'_> {
         let value = self.get_member(Value::Object(id), "relativeTo")?;
         if matches!(value, Value::Undefined) {
             return Ok(None);
+        }
+        if let Some(Slot::PlainDate(d)) = self.temporal_slot(&value).as_deref() {
+            return Ok(Some(RelativeTo::PlainDate(d.clone())));
         }
         Err(ScriptError::Unsupported("Temporal relativeTo"))
     }
@@ -484,6 +504,335 @@ impl Engine<'_> {
         }
     }
 
+    // ---- Shared conversions (§13 abstract operations) ----
+
+    /// ToIntegerWithTruncation: NaN and ±∞ are RangeErrors.
+    fn integer_with_truncation(&mut self, value: Value) -> Result<f64> {
+        let n = self.to_number(value)?;
+        if !n.is_finite() {
+            return self.throw_error("RangeError", "value must be finite");
+        }
+        Ok(n.trunc() + 0.0)
+    }
+
+    /// ToPositiveIntegerWithTruncation.
+    fn positive_integer(&mut self, value: Value) -> Result<f64> {
+        let n = self.integer_with_truncation(value)?;
+        if n <= 0.0 {
+            return self.throw_error("RangeError", "value must be a positive integer");
+        }
+        Ok(n)
+    }
+
+    /// GetTemporalOverflowOption.
+    fn overflow_option(&mut self, options: Option<Id>) -> Result<Overflow> {
+        match self.string_option(options, "overflow")? {
+            None => Ok(Overflow::Constrain),
+            Some(s) => match s.as_str() {
+                "constrain" => Ok(Overflow::Constrain),
+                "reject" => Ok(Overflow::Reject),
+                _ => self.throw_error(
+                    "RangeError",
+                    &format!("{s} is not a valid value for overflow"),
+                ),
+            },
+        }
+    }
+
+    /// GetTemporalShowCalendarNameOption.
+    fn show_calendar_option(&mut self, options: Option<Id>) -> Result<DisplayCalendar> {
+        match self.string_option(options, "calendarName")? {
+            None => Ok(DisplayCalendar::Auto),
+            Some(s) => match s.as_str() {
+                "auto" => Ok(DisplayCalendar::Auto),
+                "always" => Ok(DisplayCalendar::Always),
+                "never" => Ok(DisplayCalendar::Never),
+                "critical" => Ok(DisplayCalendar::Critical),
+                _ => self.throw_error(
+                    "RangeError",
+                    &format!("{s} is not a valid value for calendarName"),
+                ),
+            },
+        }
+    }
+
+    /// ToTemporalCalendarIdentifier: a Temporal object's [[Calendar]], or a string
+    /// parsed by ParseTemporalCalendarString and canonicalized.
+    fn calendar_identifier(&mut self, value: Value) -> Result<Calendar> {
+        if let Some(c) = self
+            .temporal_slot(&value)
+            .as_deref()
+            .and_then(Slot::calendar)
+        {
+            return Ok(c.clone());
+        }
+        match value {
+            Value::String(s) => self.tcall(|| s.parse::<Calendar>()),
+            _ => self.throw_error("TypeError", "calendar must be a string"),
+        }
+    }
+
+    /// GetTemporalCalendarIdentifierWithISODefault.
+    fn calendar_with_iso_default(&mut self, item: &Value) -> Result<Calendar> {
+        if let Some(c) = self.temporal_slot(item).as_deref().and_then(Slot::calendar) {
+            return Ok(c.clone());
+        }
+        let calendar = self.get_member(item.clone(), "calendar")?;
+        if matches!(calendar, Value::Undefined) {
+            return Ok(Calendar::ISO);
+        }
+        self.calendar_identifier(calendar)
+    }
+
+    /// PrepareCalendarFields(calendar, fields, «year, month, month-code, day», «», required)
+    /// for the date fields: properties are read in alphabetical order and each value
+    /// is converted as soon as it is read. With `partial`, at least one must be present.
+    fn calendar_fields(
+        &mut self,
+        calendar: &Calendar,
+        item: &Value,
+        partial: bool,
+    ) -> Result<CalendarFields> {
+        let mut names = vec!["day", "month", "monthCode", "year"];
+        if has_eras(calendar) {
+            names.extend(["era", "eraYear"]);
+        }
+        names.sort_unstable();
+        let mut fields = CalendarFields::new();
+        let mut any = false;
+        for name in names {
+            let value = self.get_member(item.clone(), name)?;
+            if matches!(value, Value::Undefined) {
+                continue;
+            }
+            any = true;
+            match name {
+                "day" => fields.day = Some(self.positive_integer(value)?.min(255.0) as u8),
+                "month" => fields.month = Some(self.positive_integer(value)?.min(255.0) as u8),
+                "year" => fields.year = Some(clamp_i32(self.integer_with_truncation(value)?)),
+                "eraYear" => {
+                    fields.era_year = Some(clamp_i32(self.integer_with_truncation(value)?))
+                }
+                "era" => {
+                    let s = self.to_string(value)?;
+                    match TinyAsciiStr::<19>::try_from_str(&s) {
+                        Ok(era) => fields.era = Some(era),
+                        Err(_) => return self.throw_error("RangeError", "invalid era"),
+                    }
+                }
+                _ => {
+                    // ToMonthCode: ToPrimitive, a String, then ParseMonthCode.
+                    let p = self.to_primitive(value, true)?;
+                    let Value::String(s) = p else {
+                        return self.throw_error("TypeError", "monthCode must be a string");
+                    };
+                    fields.month_code =
+                        Some(self.tcall(|| MonthCode::try_from_utf8(s.as_bytes()))?);
+                }
+            }
+        }
+        if partial && !any {
+            return self.throw_error("TypeError", "object has no date fields");
+        }
+        Ok(fields)
+    }
+
+    /// ToTemporalDate(item [, options]). `options: None` means the caller passes no
+    /// options argument at all, so nothing is read.
+    fn to_temporal_date(&mut self, item: Value, options: Option<Value>) -> Result<PlainDate> {
+        let read_options = |engine: &mut Self| -> Result<Overflow> {
+            match options.clone() {
+                None => Ok(Overflow::Constrain),
+                Some(o) => {
+                    let o = engine.options_object(o)?;
+                    engine.overflow_option(o)
+                }
+            }
+        };
+        if let Value::Object(_) = item {
+            if let Some(Slot::PlainDate(d)) = self.temporal_slot(&item).as_deref() {
+                let d = d.clone();
+                read_options(self)?;
+                return Ok(d);
+            }
+            let calendar = self.calendar_with_iso_default(&item)?;
+            let fields = self.calendar_fields(&calendar, &item, false)?;
+            let overflow = read_options(self)?;
+            let mut partial = PartialDate::new();
+            partial.calendar_fields = fields;
+            partial.calendar = calendar;
+            return self.tcall(|| PlainDate::from_partial(partial, Some(overflow)));
+        }
+        let Value::String(s) = item else {
+            return self.throw_error("TypeError", "cannot convert value to a Temporal.PlainDate");
+        };
+        let date = self.tcall(|| PlainDate::from_utf8(s.as_bytes()))?;
+        read_options(self)?;
+        Ok(date)
+    }
+
+    /// GetDifferenceSettings(operation, options, ~date~, «», ~day~, ~day~): the four
+    /// options in alphabetical order, then the unit-group checks; the remaining
+    /// checks (largest ≥ smallest, increment bounds) are the crate's.
+    fn date_difference_settings(&mut self, options: Option<Id>) -> Result<DifferenceSettings> {
+        let largest_unit = self.unit_option(options, "largestUnit")?;
+        let increment = self.increment_option(options)?;
+        let rounding_mode = self.rounding_mode_option(options)?;
+        let smallest_unit = self.unit_option(options, "smallestUnit")?;
+        let bad_largest = largest_unit.is_some_and(|u| u != Unit::Auto && !u.is_date_unit());
+        let bad_smallest = smallest_unit.is_some_and(|u| !u.is_date_unit());
+        if bad_largest || bad_smallest {
+            return self.throw_error(
+                "RangeError",
+                "time units are not allowed for a date difference",
+            );
+        }
+        let mut settings = DifferenceSettings::default();
+        settings.largest_unit = largest_unit;
+        settings.smallest_unit = smallest_unit;
+        settings.rounding_mode = rounding_mode;
+        settings.increment = increment;
+        Ok(settings)
+    }
+
+    fn this_plain_date(&mut self, receiver: &Value) -> Result<PlainDate> {
+        match self.temporal_slot(receiver).as_deref() {
+            Some(Slot::PlainDate(d)) => Ok(d.clone()),
+            _ => self.throw_error("TypeError", "receiver is not a Temporal.PlainDate"),
+        }
+    }
+
+    /// RejectTemporalLikeObject.
+    fn reject_temporal_like(&mut self, value: &Value) -> Result<()> {
+        if self
+            .temporal_slot(value)
+            .is_some_and(|s| !matches!(*s, Slot::Duration(_)))
+        {
+            return self.throw_error("TypeError", "a Temporal object is not a valid argument");
+        }
+        for property in ["calendar", "timeZone"] {
+            let v = self.get_member(value.clone(), property)?;
+            if !matches!(v, Value::Undefined) {
+                return self.throw_error(
+                    "TypeError",
+                    &format!("{property} is not allowed in a with() argument"),
+                );
+            }
+        }
+        Ok(())
+    }
+
+    // ---- PlainDate (§3) ----
+
+    fn plain_date_builtin(
+        &mut self,
+        method: &str,
+        receiver: Value,
+        args: Vec<Value>,
+    ) -> Result<Value> {
+        let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Undefined);
+        let make = |engine: &mut Self, d: PlainDate| {
+            engine.temporal_object("PlainDate", None, Slot::PlainDate(d))
+        };
+        match method {
+            "from" => {
+                let d = self.to_temporal_date(arg(0), Some(arg(1)))?;
+                return make(self, d);
+            }
+            "compare" => {
+                let one = self.to_temporal_date(arg(0), None)?;
+                let two = self.to_temporal_date(arg(1), None)?;
+                return Ok(ordering_value(one.compare_iso(&two)));
+            }
+            _ => {}
+        }
+        let method = method.strip_prefix("prototype.").unwrap_or(method);
+        let d = self.this_plain_date(&receiver)?;
+        let opt_str = |s: Option<String>| s.map(Value::String).unwrap_or(Value::Undefined);
+        let opt_num = |n: Option<f64>| n.map(Value::number).unwrap_or(Value::Undefined);
+        match method {
+            "calendarId" => Ok(Value::String(d.calendar().identifier().into())),
+            "era" => Ok(opt_str(d.era().map(|e| e.as_str().to_string()))),
+            "eraYear" => Ok(opt_num(d.era_year().map(f64::from))),
+            "year" => Ok(Value::number(d.year() as f64)),
+            "month" => Ok(Value::number(d.month() as f64)),
+            "monthCode" => Ok(Value::String(d.month_code().as_str().to_string())),
+            "day" => Ok(Value::number(d.day() as f64)),
+            "dayOfWeek" => Ok(Value::number(d.day_of_week() as f64)),
+            "dayOfYear" => Ok(Value::number(d.day_of_year() as f64)),
+            "weekOfYear" => Ok(opt_num(d.week_of_year().map(f64::from))),
+            "yearOfWeek" => Ok(opt_num(d.year_of_week().map(f64::from))),
+            "daysInWeek" => Ok(Value::number(d.days_in_week() as f64)),
+            "daysInMonth" => Ok(Value::number(d.days_in_month() as f64)),
+            "daysInYear" => Ok(Value::number(d.days_in_year() as f64)),
+            "monthsInYear" => Ok(Value::number(d.months_in_year() as f64)),
+            "inLeapYear" => Ok(Value::Bool(d.in_leap_year())),
+            "add" | "subtract" => {
+                let duration = self.to_duration(arg(0))?;
+                let options = self.options_object(arg(1))?;
+                let overflow = self.overflow_option(options)?;
+                let next = if method == "add" {
+                    self.tcall(|| d.add(&duration, Some(overflow)))?
+                } else {
+                    self.tcall(|| d.subtract(&duration, Some(overflow)))?
+                };
+                make(self, next)
+            }
+            "with" => {
+                let like = arg(0);
+                if !matches!(like, Value::Object(_)) {
+                    return self.throw_error("TypeError", "with() argument must be an object");
+                }
+                self.reject_temporal_like(&like)?;
+                let calendar = d.calendar().clone();
+                let fields = self.calendar_fields(&calendar, &like, true)?;
+                let options = self.options_object(arg(1))?;
+                let overflow = self.overflow_option(options)?;
+                let next = self.tcall(|| d.with(fields, Some(overflow)))?;
+                make(self, next)
+            }
+            "withCalendar" => {
+                let calendar = self.calendar_identifier(arg(0))?;
+                make(self, d.with_calendar(calendar))
+            }
+            "until" | "since" => {
+                let other = self.to_temporal_date(arg(0), None)?;
+                if d.calendar().identifier() != other.calendar().identifier() {
+                    return self.throw_error("RangeError", "calendars must match");
+                }
+                let options = self.options_object(arg(1))?;
+                let settings = self.date_difference_settings(options)?;
+                let result = if method == "until" {
+                    self.tcall(|| d.until(&other, settings))?
+                } else {
+                    self.tcall(|| d.since(&other, settings))?
+                };
+                self.temporal_object("Duration", None, Slot::Duration(result))
+            }
+            "equals" => {
+                let other = self.to_temporal_date(arg(0), None)?;
+                Ok(Value::Bool(
+                    d.compare_iso(&other) == std::cmp::Ordering::Equal
+                        && d.calendar().identifier() == other.calendar().identifier(),
+                ))
+            }
+            "toString" | "toJSON" | "toLocaleString" => {
+                let show = if method == "toString" {
+                    let options = self.options_object(arg(0))?;
+                    self.show_calendar_option(options)?
+                } else {
+                    DisplayCalendar::Auto
+                };
+                Ok(Value::String(d.to_ixdtf_string(show)))
+            }
+            "valueOf" => self.throw_error(
+                "TypeError",
+                "Temporal.PlainDate cannot be converted to a primitive",
+            ),
+            _ => Err(ScriptError::Unsupported("Temporal.PlainDate method")),
+        }
+    }
+
     // ---- Dispatch ----
 
     pub(super) fn construct_temporal(
@@ -505,6 +854,23 @@ impl Engine<'_> {
                 let d = self.tcall(|| fields_to_duration(&values))?;
                 self.temporal_object("Duration", Some(new_target), Slot::Duration(d))
             }
+            "Temporal.PlainDate" => {
+                // §3.1.1 Temporal.PlainDate ( isoYear, isoMonth, isoDay [ , calendar ] )
+                let y = self.integer_with_truncation(arg(0))?;
+                let m = self.integer_with_truncation(arg(1))?;
+                let d = self.integer_with_truncation(arg(2))?;
+                let calendar = match arg(3) {
+                    Value::Undefined => Calendar::ISO,
+                    Value::String(s) => self.tcall(|| Calendar::try_from_utf8(s.as_bytes()))?,
+                    _ => return self.throw_error("TypeError", "calendar must be a string"),
+                };
+                if !(1.0..=12.0).contains(&m) || !(1.0..=31.0).contains(&d) {
+                    return self.throw_error("RangeError", "invalid ISO date");
+                }
+                let date =
+                    self.tcall(|| PlainDate::try_new(clamp_i32(y), m as u8, d as u8, calendar))?;
+                self.temporal_object("PlainDate", Some(new_target), Slot::PlainDate(date))
+            }
             _ => Err(ScriptError::Unsupported("Temporal constructor")),
         }
     }
@@ -521,6 +887,9 @@ impl Engine<'_> {
         let rest = name.strip_prefix("Temporal.").unwrap_or(name);
         if let Some(method) = rest.strip_prefix("Duration.") {
             return self.duration_builtin(method, receiver, args);
+        }
+        if let Some(method) = rest.strip_prefix("PlainDate.") {
+            return self.plain_date_builtin(method, receiver, args);
         }
         Err(ScriptError::Unsupported("Temporal builtin"))
     }
@@ -677,6 +1046,58 @@ fn members(kind: &str) -> Members {
                 ("valueOf", 0),
             ],
         ),
+        "PlainDate" => (
+            &[("from", 1), ("compare", 2)],
+            &[
+                "calendarId",
+                "era",
+                "eraYear",
+                "year",
+                "month",
+                "monthCode",
+                "day",
+                "dayOfWeek",
+                "dayOfYear",
+                "weekOfYear",
+                "yearOfWeek",
+                "daysInWeek",
+                "daysInMonth",
+                "daysInYear",
+                "monthsInYear",
+                "inLeapYear",
+            ],
+            &[
+                ("toPlainYearMonth", 0),
+                ("toPlainMonthDay", 0),
+                ("add", 1),
+                ("subtract", 1),
+                ("with", 1),
+                ("withCalendar", 1),
+                ("until", 1),
+                ("since", 1),
+                ("equals", 1),
+                ("toPlainDateTime", 0),
+                ("toZonedDateTime", 1),
+                ("toString", 0),
+                ("toLocaleString", 0),
+                ("toJSON", 0),
+                ("valueOf", 0),
+            ],
+        ),
         _ => (&[], &[], &[]),
     }
+}
+
+/// Saturating conversion: out-of-range years fail the crate's ISODateWithinLimits.
+fn clamp_i32(v: f64) -> i32 {
+    v.clamp(i32::MIN as f64, i32::MAX as f64) as i32
+}
+
+/// Calendars with `era`/`eraYear` fields (CalendarExtraFields, intl402 §15.x).
+fn has_eras(calendar: &Calendar) -> bool {
+    !matches!(calendar.identifier(), "iso8601" | "chinese" | "dangi")
+}
+
+fn ordering_value(o: std::cmp::Ordering) -> Value {
+    Value::number(o as i8 as f64)
 }
