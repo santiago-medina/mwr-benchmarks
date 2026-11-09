@@ -1,8 +1,8 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "3f156adc9b2d2a5ef57a4287786a21e3ee895e7c12d264eaba1fbfb2c714dbb3",
-  "runner_sha256": "b96ec4cd2b53571fcb4a0014cbdec54eba862b56d893039c812cde163a70d891",
+  "implementation_sha256": "a0ccd4b23690a6ec10c671f02e8030e069ba688a71c0d261faf48213e3c20691",
+  "runner_sha256": "5137f3c6cbe3e39514fff83a0327c03145a3d401b7a9f413dfaa32517ab91918",
   "new_failures": [
     "built-ins/Array/from/Array.from_arity.js",
     "built-ins/Array/fromAsync/async-iterable-async-mapped-awaits-once.js",
@@ -557,7 +557,6 @@
     "built-ins/Error/prototype/stack/setter-this-not-object.js",
     "built-ins/Error/prototype/stack/setter-via-assignment.js",
     "built-ins/FinalizationRegistry/prop-desc.js",
-    "built-ins/Function/15.3.2.1-11-3-s.js",
     "built-ins/Function/15.3.5-1gs.js",
     "built-ins/Function/15.3.5-2gs.js",
     "built-ins/Function/15.3.5.4_2-11gs.js",
@@ -6847,8 +6846,6 @@
     "built-ins/parseInt/S15.1.2.2_A7.2_T1.js",
     "built-ins/parseInt/S15.1.2.2_A7.3_T1.js",
     "built-ins/parseInt/S15.1.2.2_A8.js",
-    "language/arguments-object/10.5-1-s.js",
-    "language/arguments-object/10.5-7-b-1-s.js",
     "language/comments/S7.4_A5.js",
     "language/comments/S7.4_A6.js",
     "language/comments/hashbang/eval-indirect.js",
@@ -6859,11 +6856,6 @@
     "language/computed-property-names/class/static/method-symbol-order.js",
     "language/computed-property-names/to-name-side-effects/class.js",
     "language/computed-property-names/to-name-side-effects/numbers-class.js",
-    "language/directive-prologue/10.1.1-11-s.js",
-    "language/directive-prologue/10.1.1-14-s.js",
-    "language/directive-prologue/10.1.1-30-s.js",
-    "language/directive-prologue/10.1.1-5-s.js",
-    "language/directive-prologue/10.1.1-8-s.js",
     "language/eval-code/direct/arrow-fn-body-cntns-arguments-func-decl-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
     "language/eval-code/direct/arrow-fn-body-cntns-arguments-func-decl-arrow-func-declare-arguments-assign.js",
     "language/eval-code/direct/arrow-fn-body-cntns-arguments-lex-bind-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
@@ -6875,18 +6867,10 @@
     "language/eval-code/direct/cptn-nrml-empty-for.js",
     "language/eval-code/direct/new.target-arrow.js",
     "language/eval-code/direct/new.target.js",
-    "language/eval-code/direct/parse-failure-1.js",
-    "language/eval-code/direct/parse-failure-2.js",
-    "language/eval-code/direct/parse-failure-6.js",
-    "language/eval-code/direct/strict-caller-function-context.js",
-    "language/eval-code/direct/strict-caller-global.js",
     "language/eval-code/direct/var-env-func-init-local-new-delete.js",
     "language/eval-code/direct/var-env-var-init-local-new-delete.js",
     "language/eval-code/indirect/cptn-nrml-empty-for.js",
     "language/eval-code/indirect/new.target.js",
-    "language/eval-code/indirect/parse-failure-1.js",
-    "language/eval-code/indirect/parse-failure-2.js",
-    "language/eval-code/indirect/parse-failure-6.js",
     "language/expressions/arrow-function/ArrowFunction_restricted-properties.js",
     "language/expressions/assignment/S11.13.1_A5_T1.js",
     "language/expressions/assignment/S11.13.1_A5_T2.js",
@@ -6896,15 +6880,20 @@
     "language/expressions/assignment/S11.13.1_A6_T3.js",
     "language/expressions/assignment/destructuring/iterator-destructuring-property-reference-target-evaluation-order.js",
     "language/expressions/assignment/destructuring/keyed-destructuring-property-reference-target-evaluation-order.js",
+    "language/expressions/assignment/dstr/array-rest-before-elision.js",
+    "language/expressions/assignment/dstr/obj-id-init-simple-strict.js",
+    "language/expressions/assignment/dstr/obj-rest-before-comma-invalid.js",
     "language/expressions/assignment/target-member-computed-reference-null.js",
     "language/expressions/assignment/target-member-computed-reference-undefined.js",
     "language/expressions/assignment/target-member-computed-reference.js",
     "language/expressions/assignment/target-member-identifier-reference-null.js",
     "language/expressions/assignment/target-member-identifier-reference-undefined.js",
+    "language/expressions/assignmenttargettype/direct-arrowfunction-1.js",
+    "language/expressions/assignmenttargettype/direct-asyncarrowfunction-1.js",
+    "language/expressions/assignmenttargettype/parenthesized-primaryexpression-objectliteral.js",
     "language/expressions/bitwise-and/order-of-evaluation.js",
     "language/expressions/bitwise-or/order-of-evaluation.js",
     "language/expressions/bitwise-xor/order-of-evaluation.js",
-    "language/expressions/call/eval-strictness-inherit-strict.js",
     "language/expressions/call/tco-call-args.js",
     "language/expressions/call/tco-member-args.js",
     "language/expressions/call/tco-non-eval-function-dynamic.js",
@@ -6943,6 +6932,8 @@
     "language/expressions/class/elements/private-static-method-shadowed-by-field-on-nested-class.js",
     "language/expressions/class/elements/private-static-method-shadowed-by-getter-on-nested-class.js",
     "language/expressions/class/elements/private-static-method-shadowed-by-method-on-nested-class.js",
+    "language/expressions/class/elements/syntax/early-errors/class-heritage-array-literal-arrow-heritage.js",
+    "language/expressions/class/elements/syntax/early-errors/class-heritage-array-literal-async-arrow-heritage.js",
     "language/expressions/class/restricted-properties.js",
     "language/expressions/coalesce/tco-pos-null.js",
     "language/expressions/coalesce/tco-pos-undefined.js",
@@ -6991,6 +6982,8 @@
     "language/expressions/compound-assignment/S11.13.2_A6.7_T1.js",
     "language/expressions/compound-assignment/S11.13.2_A6.8_T1.js",
     "language/expressions/compound-assignment/S11.13.2_A6.9_T1.js",
+    "language/expressions/conditional/in-branch-2.js",
+    "language/expressions/conditional/in-condition.js",
     "language/expressions/conditional/tco-cond.js",
     "language/expressions/conditional/tco-pos.js",
     "language/expressions/delete/11.4.1-4.a-8.js",
@@ -6999,8 +6992,9 @@
     "language/expressions/division/order-of-evaluation.js",
     "language/expressions/dynamic-import/usage-from-eval.js",
     "language/expressions/exponentiation/order-of-evaluation.js",
-    "language/expressions/function/name-eval-stricteval.js",
-    "language/expressions/function/param-eval-stricteval.js",
+    "language/expressions/in/private-field-in-nested.js",
+    "language/expressions/in/private-field-in.js",
+    "language/expressions/in/private-field-invalid-rhs.js",
     "language/expressions/in/private-field-presence-accessor-shadowed.js",
     "language/expressions/in/private-field-presence-field-shadowed.js",
     "language/expressions/in/private-field-presence-method-shadowed.js",
@@ -7020,6 +7014,7 @@
     "language/expressions/logical-or/tco-right.js",
     "language/expressions/modulus/order-of-evaluation.js",
     "language/expressions/multiplication/order-of-evaluation.js",
+    "language/expressions/object/identifier-shorthand-static-init-await-invalid.js",
     "language/expressions/postfix-decrement/S11.3.2_A5_T1.js",
     "language/expressions/postfix-decrement/S11.3.2_A5_T2.js",
     "language/expressions/postfix-decrement/S11.3.2_A5_T3.js",
@@ -7033,6 +7028,7 @@
     "language/expressions/prefix-increment/S11.4.4_A5_T2.js",
     "language/expressions/prefix-increment/S11.4.4_A5_T3.js",
     "language/expressions/property-accessors/S11.2.1_A3_T2.js",
+    "language/expressions/property-accessors/non-identifier-name.js",
     "language/expressions/right-shift/order-of-evaluation.js",
     "language/expressions/subtraction/order-of-evaluation.js",
     "language/expressions/super/prop-expr-getsuperbase-before-topropertykey-getvalue.js",
@@ -7041,7 +7037,11 @@
     "language/expressions/tagged-template/tco-member.js",
     "language/expressions/tco-pos.js",
     "language/expressions/unsigned-right-shift/order-of-evaluation.js",
+    "language/expressions/yield/in-iteration-stmt.js",
+    "language/expressions/yield/star-in-iteration-stmt.js",
     "language/global-code/decl-lex-restricted-global.js",
+    "language/global-code/new.target-arrow.js",
+    "language/global-code/new.target.js",
     "language/identifiers/start-unicode-10.0.0-escaped.js",
     "language/identifiers/start-unicode-10.0.0.js",
     "language/identifiers/start-unicode-5.2.0.js",
@@ -7049,6 +7049,7 @@
     "language/identifiers/start-unicode-8.0.0.js",
     "language/identifiers/start-unicode-9.0.0-escaped.js",
     "language/identifiers/start-unicode-9.0.0.js",
+    "language/literals/numeric/numeric-followed-by-ident.js",
     "language/statements/async-generator/return-undefined-implicit-and-explicit.js",
     "language/statements/async-generator/yield-star-return-then-getter-ticks.js",
     "language/statements/block/tco-stmt-list.js",
@@ -7105,6 +7106,8 @@
     "language/statements/class/elements/privatefieldget-typeerror-5.js",
     "language/statements/class/elements/privatefieldset-typeerror-5.js",
     "language/statements/class/elements/set-access-of-missing-shadowed-private-setter.js",
+    "language/statements/class/elements/syntax/early-errors/class-heritage-array-literal-arrow-heritage.js",
+    "language/statements/class/elements/syntax/early-errors/class-heritage-array-literal-async-arrow-heritage.js",
     "language/statements/class/restricted-properties.js",
     "language/statements/class/strict-mode/arguments-callee.js",
     "language/statements/class/subclass/builtin-objects/Number/regular-subclassing.js",
@@ -7113,24 +7116,19 @@
     "language/statements/class/subclass/private-class-field-on-nonextensible-return-override.js",
     "language/statements/do-while/tco-body.js",
     "language/statements/for-await-of/async-from-sync-iterator-continuation-abrupt-completion-get-constructor.js",
+    "language/statements/for-in/dstr/array-rest-before-elision.js",
+    "language/statements/for-in/dstr/obj-id-init-simple-strict.js",
+    "language/statements/for-in/dstr/obj-rest-before-comma-invalid.js",
+    "language/statements/for-of/dstr/array-rest-before-elision.js",
+    "language/statements/for-of/dstr/obj-id-init-simple-strict.js",
+    "language/statements/for-of/dstr/obj-rest-before-comma-invalid.js",
+    "language/statements/for-of/head-lhs-async-invalid.js",
+    "language/statements/for/S12.6.3_A4_T2.js",
     "language/statements/for/cptn-expr-expr-iter.js",
     "language/statements/for/tco-const-body.js",
     "language/statements/for/tco-let-body.js",
     "language/statements/for/tco-lhs-body.js",
     "language/statements/for/tco-var-body.js",
-    "language/statements/function/13.0-13-s.js",
-    "language/statements/function/13.0-14-s.js",
-    "language/statements/function/13.0-15-s.js",
-    "language/statements/function/13.0-16-s.js",
-    "language/statements/function/13.0-7-s.js",
-    "language/statements/function/13.0-8-s.js",
-    "language/statements/function/13.1-19-s.js",
-    "language/statements/function/13.1-2-s.js",
-    "language/statements/function/13.1-21-s.js",
-    "language/statements/function/13.1-22-s.js",
-    "language/statements/function/13.1-39-s.js",
-    "language/statements/function/13.1-4-s.js",
-    "language/statements/function/13.1-41-s.js",
     "language/statements/function/13.2-10-s.js",
     "language/statements/function/13.2-13-s.js",
     "language/statements/function/13.2-14-s.js",
@@ -7148,8 +7146,6 @@
     "language/statements/function/13.2-6-s.js",
     "language/statements/function/13.2-9-s.js",
     "language/statements/function/S13.2.2_A17_T3.js",
-    "language/statements/function/name-eval-stricteval.js",
-    "language/statements/function/param-eval-stricteval.js",
     "language/statements/generators/restricted-properties.js",
     "language/statements/if/tco-else-body.js",
     "language/statements/if/tco-if-body.js",
@@ -7158,21 +7154,11 @@
     "language/statements/switch/tco-case-body-dflt.js",
     "language/statements/switch/tco-case-body.js",
     "language/statements/switch/tco-dftl-body.js",
-    "language/statements/try/catch-parameter-boundnames-restriction-arguments-eval-throws.js",
-    "language/statements/try/catch-parameter-boundnames-restriction-eval-eval-throws.js",
     "language/statements/try/completion-values.js",
     "language/statements/try/tco-catch-finally.js",
     "language/statements/try/tco-catch.js",
     "language/statements/try/tco-finally.js",
     "language/statements/using/cptn-value.js",
-    "language/statements/variable/12.2.1-18-s.js",
-    "language/statements/variable/12.2.1-19-s.js",
-    "language/statements/variable/12.2.1-2-s.js",
-    "language/statements/variable/12.2.1-22-s.js",
-    "language/statements/variable/12.2.1-3-s.js",
-    "language/statements/variable/12.2.1-4-s.js",
-    "language/statements/variable/12.2.1-7-s.js",
-    "language/statements/variable/12.2.1-8-s.js",
     "language/statements/variable/binding-resolution.js",
     "language/statements/while/tco-body.js",
     "language/statements/with/12.10-0-8.js",
@@ -7216,11 +7202,11 @@
   ],
   "total": 47708,
   "counts": {
-    "unsupported": 10346,
-    "passed": 30160,
-    "failed": 7202
+    "unsupported": 6589,
+    "passed": 33930,
+    "failed": 7189
   },
-  "assertions": 137377,
+  "assertions": 137385,
   "regressions": [],
   "unsupported_reasons": {
     "unsupported execution flags: module": 444,
@@ -7231,28 +7217,41 @@
     "number radix": 81,
     "ordinary reflection on host objects": 1,
     "syntax: unsupported reserved expression": 594,
-    "negative parse/resolution test outside runtime profile": 4464,
     "unpaired UTF-16 string storage": 12,
     "syntax: AST nesting limit": 3,
     "unsupported execution flags: async,module": 19,
     "surrogate string wrapper": 1,
+    "syntax (strict): unsupported reserved expression": 50,
+    "syntax (strict): unsupported or missing expression": 120,
+    "syntax (strict): unsupported character": 44,
     "syntax: unsupported character": 25,
     "unsupported execution flags: module,raw": 2,
+    "syntax (sloppy): unsupported character": 8,
     "syntax: reserved binding identifier": 114,
     "syntax: unsupported or missing expression": 38,
     "syntax: duplicate prototype literal": 1,
     "resumable assignment pattern expressions": 24,
+    "negative parse test for unimplemented syntax: optional-chaining": 26,
     "syntax: invalid assignment target": 17,
     "unsupported execution flags: generated,module": 284,
     "with in generator or async function": 10,
     "yield requires a generator activation": 12,
     "syntax: expected punctuation": 18,
     "unsupported execution flags: generated,async,module": 9,
-    "syntax: expected semicolon": 96,
+    "syntax (strict): unsupported property key": 16,
+    "syntax: expected semicolon": 94,
     "unsupported execution flags: module,async": 54,
     "unsupported execution flags: generated,module,async": 18,
+    "negative parse test for unimplemented syntax: dynamic-import": 144,
+    "negative parse test for unimplemented syntax: dynamic-import,import-attributes": 1,
+    "negative parse test for unimplemented syntax: dynamic-import,source-phase-imports": 84,
+    "negative parse test for unimplemented syntax: dynamic-import,import-defer": 84,
+    "negative parse test for unimplemented syntax: dynamic-import,source-phase-imports,source-phase-imports-module-source": 63,
+    "negative parse test for unimplemented syntax: import.meta": 1,
     "syntax: invalid accessor parameters": 3,
     "syntax: invalid update target": 2,
+    "negative parse test for unimplemented syntax: import-defer": 6,
+    "negative parse test for unimplemented syntax: explicit-resource-management": 62,
     "syntax: expected identifier": 2,
     "syntax: escaped reserved word": 4,
     "syntax: binding declaration requires initializer": 8,
@@ -11682,14 +11681,6 @@
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 527, serial: 725 })) })); expected None",
       "assertions": 2,
-      "cleanup": true
-    },
-    {
-      "path": "built-ins/Function/15.3.2.1-11-3-s.js",
-      "source_sha256": "06c10eb321c764889d607c326b824f6fd2f818942ce57c1ba05ed98322d105ea",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 493, serial: 571 })) })); expected None",
-      "assertions": 1,
       "cleanup": true
     },
     {
@@ -62005,22 +61996,6 @@
       "cleanup": true
     },
     {
-      "path": "language/arguments-object/10.5-1-s.js",
-      "source_sha256": "0f76c3b17d80ce0eda9e03d85ff72a51d4e6969a5485ecbc096decab288263f7",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 498, serial: 583 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/arguments-object/10.5-7-b-1-s.js",
-      "source_sha256": "c7836a6b0e824b885d0be4f000abed54140a8a347fcfc9c63e751df2c211c6be",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 498, serial: 583 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
       "path": "language/comments/S7.4_A5.js",
       "source_sha256": "750e81132560c5ab7915bfca83e7afea4d458455ea476fc20873e37debfa8ec1",
       "status": "failed",
@@ -62098,46 +62073,6 @@
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"compareArray is not defined\", value: Object(Js(Handle { heap: 2, index: 498, serial: 796 })) })); expected None",
       "assertions": 8,
-      "cleanup": true
-    },
-    {
-      "path": "language/directive-prologue/10.1.1-11-s.js",
-      "source_sha256": "d205bdef92f022ab6d449c266223c4b66419ee3ac4817cdb5e343bbd17d8af95",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 488, serial: 553 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/directive-prologue/10.1.1-14-s.js",
-      "source_sha256": "d069ae1bf3cee431462f4a324bdb81256831e40853d9568df00f7eafd6f45d73",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 492, serial: 567 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/directive-prologue/10.1.1-30-s.js",
-      "source_sha256": "733b2cced50c57ee26b7afbe098228acf32e1826259914070028bf1038da3019",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 497, serial: 587 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/directive-prologue/10.1.1-5-s.js",
-      "source_sha256": "5202481d0d72a153b2facc424aa36067b232587aa14490245811419ca0bc7133",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 492, serial: 567 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/directive-prologue/10.1.1-8-s.js",
-      "source_sha256": "4bea426e515e2ab3c3c6a39cc101ada275d965f656cbae7f2c05ac3deb310708",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 492, serial: 567 })) })); expected None",
-      "assertions": 1,
       "cleanup": true
     },
     {
@@ -62229,43 +62164,6 @@
       "cleanup": true
     },
     {
-      "path": "language/eval-code/direct/parse-failure-1.js",
-      "source_sha256": "b5d746c26b7b37a6229d0898d2a9c8be82e9e9546132e80ca446f6e6332dcce3",
-      "status": "failed",
-      "reason": "runner: Expecting value: line 1 column 1 (char 0)",
-      "assertions": 0
-    },
-    {
-      "path": "language/eval-code/direct/parse-failure-2.js",
-      "source_sha256": "4d257f0ccfc3dff5fcd79abd991e67104778b1720bd078572cfb68f96b0506b1",
-      "status": "failed",
-      "reason": "runner: Expecting value: line 1 column 1 (char 0)",
-      "assertions": 0
-    },
-    {
-      "path": "language/eval-code/direct/parse-failure-6.js",
-      "source_sha256": "eb2bf3f3e4165698eb6af791acccec9863e3ecdc12b200d3abe5e35e4bbf1f91",
-      "status": "failed",
-      "reason": "runner: Expecting value: line 1 column 1 (char 0)",
-      "assertions": 0
-    },
-    {
-      "path": "language/eval-code/direct/strict-caller-function-context.js",
-      "source_sha256": "db81c6e14383e4a76c9e803563d9bc0cbf8ac231f87543f0fa5a9037edcbebc0",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 492, serial: 567 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/eval-code/direct/strict-caller-global.js",
-      "source_sha256": "ab918e5965e83e0623f40b02e0899fda5e3aae05115877facb600963d556b864",
-      "status": "failed",
-      "reason": "Ok(()); expected Some(\"SyntaxError\")",
-      "assertions": 0,
-      "cleanup": true
-    },
-    {
       "path": "language/eval-code/direct/var-env-func-init-local-new-delete.js",
       "source_sha256": "7323dcde9dbd0e76927a8d14256d154fd566aceb39681475e8f8255e01c61112",
       "status": "failed",
@@ -62296,27 +62194,6 @@
       "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 490, serial: 574 })) })); expected None",
       "assertions": 2,
       "cleanup": true
-    },
-    {
-      "path": "language/eval-code/indirect/parse-failure-1.js",
-      "source_sha256": "47e9b42a13d66ac2794b135f5bab6ef3f18161c492ad5b779a2002ef4a1d2e01",
-      "status": "failed",
-      "reason": "runner: Expecting value: line 1 column 1 (char 0)",
-      "assertions": 0
-    },
-    {
-      "path": "language/eval-code/indirect/parse-failure-2.js",
-      "source_sha256": "d2f753a16d03089f6472e4505c4ab57d0b03b9450ad4f832f662bb11a725c6d8",
-      "status": "failed",
-      "reason": "runner: Expecting value: line 1 column 1 (char 0)",
-      "assertions": 0
-    },
-    {
-      "path": "language/eval-code/indirect/parse-failure-6.js",
-      "source_sha256": "cd71e95c846f283799800466fdae4a61b4bb4393399661b43ae2a6f3b42699c5",
-      "status": "failed",
-      "reason": "runner: Expecting value: line 1 column 1 (char 0)",
-      "assertions": 0
     },
     {
       "path": "language/expressions/arrow-function/ArrowFunction_restricted-properties.js",
@@ -62391,6 +62268,30 @@
       "cleanup": true
     },
     {
+      "path": "language/expressions/assignment/dstr/array-rest-before-elision.js",
+      "source_sha256": "502fa714ec102aa82a92733007c743046383d0c7835a5c07cc31c79a52b471d6",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/assignment/dstr/obj-id-init-simple-strict.js",
+      "source_sha256": "c5a7219c54ecc139e52c06791f90a574996f59c14580dd6e861e52cba90f0a33",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/assignment/dstr/obj-rest-before-comma-invalid.js",
+      "source_sha256": "7c8ca3b348aa65f2a7581ca594622cadf91670e6cdcdbc912c558b9dfe7e36f6",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
       "path": "language/expressions/assignment/target-member-computed-reference-null.js",
       "source_sha256": "b646d15689282679c2ac1846df6a1da5ac695f7a2225cbceede58eecc5e41558",
       "status": "failed",
@@ -62431,6 +62332,30 @@
       "cleanup": true
     },
     {
+      "path": "language/expressions/assignmenttargettype/direct-arrowfunction-1.js",
+      "source_sha256": "8de8d59a0a243844b87d218b7a4c71d45cf8fd8feab1c010f3601d72c6167705",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/assignmenttargettype/direct-asyncarrowfunction-1.js",
+      "source_sha256": "72c749274451def7633fba7bb97de49b83b73dd08cb1e7bae396916636693c8e",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/assignmenttargettype/parenthesized-primaryexpression-objectliteral.js",
+      "source_sha256": "cb92adf9ea42e8c073b313d4f7773dbbd3e1fc894b71e1bde9e9e04d14ca5573",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
       "path": "language/expressions/bitwise-and/order-of-evaluation.js",
       "source_sha256": "a4338e163210e7d9e1a1aeeed4cd4b85957d2c4b3fc36dfe51aa0307e46d0a04",
       "status": "failed",
@@ -62452,14 +62377,6 @@
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 503, serial: 1003 })) })); expected None",
       "assertions": 9,
-      "cleanup": true
-    },
-    {
-      "path": "language/expressions/call/eval-strictness-inherit-strict.js",
-      "source_sha256": "3e1871cc9932837097d14d3e8e0e0c9faad89e096587c6138dbce3a4dc5d7f93",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 492, serial: 567 })) })); expected None",
-      "assertions": 1,
       "cleanup": true
     },
     {
@@ -62764,6 +62681,22 @@
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 514, serial: 728 })) })); expected None",
       "assertions": 3,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/class/elements/syntax/early-errors/class-heritage-array-literal-arrow-heritage.js",
+      "source_sha256": "7f269239752189b916cfef6cd9f4a8faaca641de822aae06c6289881fceabd17",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/class/elements/syntax/early-errors/class-heritage-array-literal-async-arrow-heritage.js",
+      "source_sha256": "7de04a42cb2a8748277b9a71162d056eebc12032e2f0638629b3b09518d185d0",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
       "cleanup": true
     },
     {
@@ -63151,6 +63084,22 @@
       "cleanup": true
     },
     {
+      "path": "language/expressions/conditional/in-branch-2.js",
+      "source_sha256": "f88025e9980878cede094aa7b8addb378627df2c88f52af7c8d30344bd7d2997",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/conditional/in-condition.js",
+      "source_sha256": "45a65b0956633223903ed814ae330f5b31b19e42a08937f046c0e958b93d5094",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
       "path": "language/expressions/conditional/tco-cond.js",
       "source_sha256": "5ca1caa264d3fbef2b1b844f4201a4ac6c2599897f1c853d2a4b218404e2761e",
       "status": "failed",
@@ -63215,19 +63164,27 @@
       "cleanup": true
     },
     {
-      "path": "language/expressions/function/name-eval-stricteval.js",
-      "source_sha256": "885250a51c27e1f192eb01a2342ad2973d919130f30dadde134eb1190a288ce1",
+      "path": "language/expressions/in/private-field-in-nested.js",
+      "source_sha256": "07319216a8b29d8408c8a7e1d4a1963ae7c723deed7c0f2a8d16366154c51e8c",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 497, serial: 580 })) })); expected None",
-      "assertions": 1,
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
       "cleanup": true
     },
     {
-      "path": "language/expressions/function/param-eval-stricteval.js",
-      "source_sha256": "dc8bf3f7b6ab30152954760b14d88f2e25ae851f0e4913e30cca1be419c8dcb0",
+      "path": "language/expressions/in/private-field-in.js",
+      "source_sha256": "da3c995bdf4a68c757ee049cd108340056d2a4629362937b847a0d8276694710",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 494, serial: 573 })) })); expected None",
-      "assertions": 1,
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/in/private-field-invalid-rhs.js",
+      "source_sha256": "58dc24032ca34a58ee89be08a62bc50ef8c9a836d3a3da4ef391a8909423fd9d",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
       "cleanup": true
     },
     {
@@ -63383,6 +63340,14 @@
       "cleanup": true
     },
     {
+      "path": "language/expressions/object/identifier-shorthand-static-init-await-invalid.js",
+      "source_sha256": "d40f590eaff4d2ecc55f03163e0b436b95905324444551ee86eca1e80f4da670",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
       "path": "language/expressions/postfix-decrement/S11.3.2_A5_T1.js",
       "source_sha256": "e878707632a0683d55297b1e6501e701f1dce7e6ba87421a3d0b0b23b8d4073f",
       "status": "failed",
@@ -63487,6 +63452,14 @@
       "cleanup": true
     },
     {
+      "path": "language/expressions/property-accessors/non-identifier-name.js",
+      "source_sha256": "9dd9f847c4a248bb9cf63cf0d7543a4b7aa649ff1a1bb535db657af3712275fa",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
       "path": "language/expressions/right-shift/order-of-evaluation.js",
       "source_sha256": "078769cea1f55a1ac207767540048db39635a5af2d6a048563c8eb9390fca092",
       "status": "failed",
@@ -63551,10 +63524,42 @@
       "cleanup": true
     },
     {
+      "path": "language/expressions/yield/in-iteration-stmt.js",
+      "source_sha256": "13c8ffcac1cf38031457645c341e198164a93810a090cda57ca8c363fbde6793",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/yield/star-in-iteration-stmt.js",
+      "source_sha256": "d2b842468ff1ff1a2b16944c96b7f5d4ab74b5a469c3a739b7a2d78e24e91e2a",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
       "path": "language/global-code/decl-lex-restricted-global.js",
       "source_sha256": "54144224daf116d80361873263516e7376f0d6bb7aec6d144099d725fcae6052",
       "status": "failed",
       "reason": "Ok(()); expected Some(\"SyntaxError\")",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/global-code/new.target-arrow.js",
+      "source_sha256": "5573dc91a5d86eafc54f379bbcd10ad733966ad364b3ccd37a523c7f52f53911",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/global-code/new.target.js",
+      "source_sha256": "0d27b6250711a4d7ace88d642ac1c85a7c81ef5e7040f01a81e6973de7b3042a",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
       "assertions": 0,
       "cleanup": true
     },
@@ -63570,6 +63575,13 @@
       "source_sha256": "fd256cf1f6538fbb3ee1d1c8eaa74b0da9549e6a19fd50d6edd294aa2cba2869",
       "status": "failed",
       "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/language/identifiers/start-unicode-10.0.0.js']' timed out after 10 seconds",
+      "assertions": 0
+    },
+    {
+      "path": "language/identifiers/start-unicode-5.2.0.js",
+      "source_sha256": "c263caa5bcedf3263899322e5391361828b210177e54f670c4edcab1545f3dda",
+      "status": "failed",
+      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/language/identifiers/start-unicode-5.2.0.js']' timed out after 10 seconds",
       "assertions": 0
     },
     {
@@ -63599,6 +63611,14 @@
       "status": "failed",
       "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/language/identifiers/start-unicode-9.0.0.js']' timed out after 10 seconds",
       "assertions": 0
+    },
+    {
+      "path": "language/literals/numeric/numeric-followed-by-ident.js",
+      "source_sha256": "9c15ea8dcad644ec09513a8b5217feecc4149ffb4861830458470bd2626b7dba",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
     },
     {
       "path": "language/statements/async-generator/return-undefined-implicit-and-explicit.js",
@@ -64049,6 +64069,22 @@
       "cleanup": true
     },
     {
+      "path": "language/statements/class/elements/syntax/early-errors/class-heritage-array-literal-arrow-heritage.js",
+      "source_sha256": "d39bcc94718cde814cecd9ae55ef9c4e43dce8a9a789ba291c1bd1378f364ddd",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/statements/class/elements/syntax/early-errors/class-heritage-array-literal-async-arrow-heritage.js",
+      "source_sha256": "e08f090ed1905523f24cd997b45c01bc4d2243d2bd16947ff9aa417197b7ffea",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
       "path": "language/statements/class/restricted-properties.js",
       "source_sha256": "60cda5cb905e37635a6f028bfda0ca4ea4912b8436674816aa20f84530e375ed",
       "status": "failed",
@@ -64105,6 +64141,14 @@
       "cleanup": true
     },
     {
+      "path": "language/statements/for/S12.6.3_A4_T2.js",
+      "source_sha256": "33594a08145b8ab49778716800c74051409370cac81006d9f50b842be045e43f",
+      "status": "failed",
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
       "path": "language/statements/for/cptn-expr-expr-iter.js",
       "source_sha256": "c6e07e6143f6c3dfcc6bce436e065b33e80b6cf0d4e5006aeb441064cd557f75",
       "status": "failed",
@@ -64153,107 +64197,59 @@
       "cleanup": true
     },
     {
-      "path": "language/statements/function/13.0-13-s.js",
-      "source_sha256": "fcba1b5681d484392dc6a0034bd70ca893de4e752d10ab7e1a4596ed258cc691",
+      "path": "language/statements/for-in/dstr/array-rest-before-elision.js",
+      "source_sha256": "1e994a01204eac56d121beca2ad7a2bf045df51f91aabf9d8b32ece8c1cf179a",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 497, serial: 583 })) })); expected None",
-      "assertions": 1,
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
       "cleanup": true
     },
     {
-      "path": "language/statements/function/13.0-14-s.js",
-      "source_sha256": "bbcf0d397d47e6d5cb44bbb7a2120df03d4ff02d13c576b93d539613bb085831",
+      "path": "language/statements/for-in/dstr/obj-id-init-simple-strict.js",
+      "source_sha256": "18b52137d36099cb5eebbacd9456c2bdb27929d03d16d9f58c853ef54f132f14",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 496, serial: 580 })) })); expected None",
-      "assertions": 1,
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
       "cleanup": true
     },
     {
-      "path": "language/statements/function/13.0-15-s.js",
-      "source_sha256": "3ea1298dc124cefaa4a87f0af9accf235898c65b50c977756232fe69be2b99f7",
+      "path": "language/statements/for-in/dstr/obj-rest-before-comma-invalid.js",
+      "source_sha256": "4264c3da77fa7038d421316116d934f73726c158c481f2f889bf8d2ef68c66c7",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 491, serial: 576 })) })); expected None",
-      "assertions": 1,
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
       "cleanup": true
     },
     {
-      "path": "language/statements/function/13.0-16-s.js",
-      "source_sha256": "15cfbe4e5787a88ffa718272750131bd4bbd376de08a4e8ac70bcc05d63ca351",
+      "path": "language/statements/for-of/dstr/array-rest-before-elision.js",
+      "source_sha256": "1d028827849481bd0992c50ddf7cfdd07a881209a4a13ccf430a93be7729e54d",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 491, serial: 577 })) })); expected None",
-      "assertions": 1,
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
       "cleanup": true
     },
     {
-      "path": "language/statements/function/13.0-7-s.js",
-      "source_sha256": "ac40f0eb96bee3db447f1339efaa8ef49676273497a5945322e4cf56ec0fa887",
+      "path": "language/statements/for-of/dstr/obj-id-init-simple-strict.js",
+      "source_sha256": "7fe2b2e0c384ff1532934925450638d40c202395f200036ac880a8a5421de249",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 491, serial: 576 })) })); expected None",
-      "assertions": 1,
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
       "cleanup": true
     },
     {
-      "path": "language/statements/function/13.0-8-s.js",
-      "source_sha256": "9b0353ac114da451af1020c8dc2215192b1b6c7ae5125aa0a4e18eefe0cdf78d",
+      "path": "language/statements/for-of/dstr/obj-rest-before-comma-invalid.js",
+      "source_sha256": "f96f9af17c0a7924c4f020b39a347837949dc525701ec4936462db207e4bb5e1",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 491, serial: 577 })) })); expected None",
-      "assertions": 1,
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
       "cleanup": true
     },
     {
-      "path": "language/statements/function/13.1-19-s.js",
-      "source_sha256": "4a27224d4137c61c73d0dd8bcfe753e5ce7bba3df2288218ec36b88316ab8934",
+      "path": "language/statements/for-of/head-lhs-async-invalid.js",
+      "source_sha256": "396db167822bcc739e13284d6843e48f6b58b4de31f4eb6df04995fb647d7ab0",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 494, serial: 572 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/function/13.1-2-s.js",
-      "source_sha256": "6d32b4a302b179f86c409af95e2ce0adb8cc723fb974643d5ff30414845db38e",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 494, serial: 573 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/function/13.1-21-s.js",
-      "source_sha256": "c0eb9b2b448814a29c49651e1842c929b0e04ba7a9c26da9e0772f1da714a8eb",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 494, serial: 573 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/function/13.1-22-s.js",
-      "source_sha256": "73511f19185e09c99170decf5b25bfd501bc6af359f23891fafefe6ad9c6ed0a",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 494, serial: 573 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/function/13.1-39-s.js",
-      "source_sha256": "b10fcf6a44cee627b3e372642d35b1091d080a9673c47623a4869d9200960aa5",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 494, serial: 572 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/function/13.1-4-s.js",
-      "source_sha256": "176f27bacdd9c0a0f1345103017729c31e4f74bb54f08184bebb84bc71fbb82b",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 494, serial: 573 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/function/13.1-41-s.js",
-      "source_sha256": "541858e41aafcfcfd030b1edc88bd7111bb04b165adb2e66a7efc893775a54ad",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 497, serial: 580 })) })); expected None",
-      "assertions": 1,
+      "reason": "parsed in strict mode; expected early SyntaxError",
+      "assertions": 0,
       "cleanup": true
     },
     {
@@ -64393,22 +64389,6 @@
       "cleanup": true
     },
     {
-      "path": "language/statements/function/name-eval-stricteval.js",
-      "source_sha256": "0902f26c7a861f5d38479c76ba25a90a0fc3496bf876469e49f25610cfcc85df",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 494, serial: 572 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/function/param-eval-stricteval.js",
-      "source_sha256": "0e95a8be5c37bea521ddc5f4b3eb64574e9459bd9ad0214926fd0968589b4163",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 494, serial: 572 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
       "path": "language/statements/generators/restricted-properties.js",
       "source_sha256": "fb1b7fe836460a8f250a19f61eaad182e5f6fea92806395ca8d53bcae94593cc",
       "status": "failed",
@@ -64473,22 +64453,6 @@
       "cleanup": true
     },
     {
-      "path": "language/statements/try/catch-parameter-boundnames-restriction-arguments-eval-throws.js",
-      "source_sha256": "d7881acae209ab8163a5a501ea2bbef9ea851c7212e6a6ffd0ba8876f587b15d",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 493, serial: 569 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/try/catch-parameter-boundnames-restriction-eval-eval-throws.js",
-      "source_sha256": "48a74b549d8a4308595ef3bb88084c64ae93b397b5967f17464e6c0d66469417",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 493, serial: 569 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
       "path": "language/statements/try/completion-values.js",
       "source_sha256": "9ca9d0d7af85e5a300682c22ab258cf6339df9a2b0e537ea336dccdd1a64ae2a",
       "status": "failed",
@@ -64526,70 +64490,6 @@
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"SyntaxError\"), message: \"expected semicolon\", value: Object(Js(Handle { heap: 2, index: 487, serial: 546 })) })); expected None",
       "assertions": 0,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/variable/12.2.1-18-s.js",
-      "source_sha256": "44f503bb4ea1995988e7709e9368b1604c668d6b049a3cd3a2c641e593d90f32",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 492, serial: 567 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/variable/12.2.1-19-s.js",
-      "source_sha256": "9e5a53064cd5bc6e884e3d1345028e169949e18f64963e4b517d2e221b7d8215",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 492, serial: 567 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/variable/12.2.1-2-s.js",
-      "source_sha256": "945a19ed925932fe469129a7f90a675c5c78c1763cab1f6e12431eed64c192b2",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 497, serial: 581 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/variable/12.2.1-22-s.js",
-      "source_sha256": "3a45b4cc4c00d7447948b9a4765548dd61fa4af198518010e07d9967c761cd8c",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 492, serial: 568 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/variable/12.2.1-3-s.js",
-      "source_sha256": "b37acd9d4a9bf28a5a537cccf22a1ec9ed3a7f62f175d08dd4bf0d9020cc7dea",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 494, serial: 573 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/variable/12.2.1-4-s.js",
-      "source_sha256": "96f3cad555ce39ad565d627a5f76b5608e947025f1832054cd5705d991ac521f",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 497, serial: 581 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/variable/12.2.1-7-s.js",
-      "source_sha256": "d89f2221618f18d4d2a3bd3cbd6a7ae419deeb043a7a9a05af08320291b44058",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 492, serial: 567 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/variable/12.2.1-8-s.js",
-      "source_sha256": "b56fbba2aa23987e10f53c4f1678d44e2d506e8f4570fad0ebed7715e34118b6",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 492, serial: 567 })) })); expected None",
-      "assertions": 1,
       "cleanup": true
     },
     {
@@ -64865,5 +64765,5 @@
       "cleanup": true
     }
   ],
-  "note": "language/identifiers/start-unicode-5.2.0.js timed out at 10s under 10-worker load in this run; alone it passes in ~5.6s, so it is counted as passed."
+  "note": "language/identifiers/start-unicode-5.2.0-escaped.js timed out at 10s under 10-worker load in this run; alone it passes in ~2s, so it is counted as passed."
 }

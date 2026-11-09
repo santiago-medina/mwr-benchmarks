@@ -14,6 +14,8 @@ PROMISE_SCOPES=['built-ins/Promise/*.js','built-ins/Promise/resolve','built-ins/
 FULL_SCOPES = ['built-ins', 'language']  # whole-suite yardstick for replacing SpiderMonkey
 ASYNC_SCOPES = ['language/expressions/async-function', 'language/expressions/async-arrow-function', 'language/expressions/await', 'language/statements/async-function']
 
+# Negative parse cases for syntax the parser does not implement could only pass by accident.
+UNIMPLEMENTED_SYNTAX = {'dynamic-import','import-defer','source-phase-imports','source-phase-imports-module-source','import-attributes','import.meta','explicit-resource-management','optional-chaining','decorators'}
 def field(meta, name):
     match = re.search(r'^' + name + r':\s*([^\n]*)(?:\n((?:[ \t]+[^\n]*\n)*))?', meta, re.M)
     return (match.group(1) + '\n' + (match.group(2) or '')).strip() if match else ''
@@ -43,10 +45,13 @@ def main():
         reason=None
         if 'module' in flags or ('async' in flags and args.profile not in ('promises','async','full')): reason='unsupported execution flags: '+','.join(flags)
         elif includes and args.profile!='full': reason='unsupported harness includes: '+','.join(includes)
-        elif negative and not re.search(r'phase:\s*runtime',negative): reason='negative parse/resolution test outside runtime profile'
+        elif negative and not re.search(r'phase:\s*(runtime|parse)',negative): reason='negative resolution test (modules)'
+        elif negative and 'phase: parse' in negative and args.profile!='full': reason='negative parse test outside full profile'
+        elif negative and set(items(field(meta,'features')))&UNIMPLEMENTED_SYNTAX: reason='negative parse test for unimplemented syntax: '+','.join(sorted(set(items(field(meta,'features')))&UNIMPLEMENTED_SYNTAX))
         if reason: return dict(result,status='unsupported',reason=reason,assertions=0)
         expected=re.search(r'type:\s*(\w+)',negative) if negative else None
-        command=[str(binary),str(path)] + ([expected.group(1)] if expected else []) + (['--async'] if 'async' in flags else []) + (['--sloppy'] if 'noStrict' in flags or 'raw' in flags else []) + (['--include='+str(root.parent/'harness'/i) for i in includes] if args.profile=='full' and 'raw' not in flags else [])
+        parse_negative=bool(negative) and re.search(r'phase:\s*parse',negative) is not None
+        command=[str(binary),str(path)] + ([expected.group(1)] if expected else []) + (['--negative-parse'] if parse_negative else []) + (['--strict-only'] if parse_negative and 'onlyStrict' in flags else []) + (['--async'] if 'async' in flags else []) + (['--sloppy'] if 'noStrict' in flags or 'raw' in flags else []) + (['--include='+str(root.parent/'harness'/i) for i in includes] if args.profile=='full' and 'raw' not in flags else [])
         try:
             r=subprocess.run(command,capture_output=True,text=True,timeout=10)
             data=json.loads(r.stdout)

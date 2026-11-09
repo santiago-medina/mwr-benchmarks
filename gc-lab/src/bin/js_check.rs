@@ -1,7 +1,7 @@
 //! One Test262 script case per process (strict unless `--sloppy`); no source rewriting or helper stubs.
 //! `--include=FILE` prepends an official harness include (as the reference runner does).
 use gc_lab::{
-    script::{Engine, ScriptError},
+    script::{parser, Engine, ScriptError},
     Model,
 };
 fn quote(s: &str) -> String {
@@ -36,10 +36,54 @@ fn main() {
         includes.push_str(&std::fs::read_to_string(file).expect("include"));
         includes.push('\n');
     }
-    let negative = remaining
-        .into_iter()
-        .find(|s| s != "--async" && s != "--sloppy" && !s.starts_with("--include="));
+    let negative_parse = remaining.iter().any(|s| s == "--negative-parse");
+    let strict_only = remaining.iter().any(|s| s == "--strict-only");
+    let negative = remaining.into_iter().find(|s| !s.starts_with("--"));
     let source = std::fs::read_to_string(path).expect("source");
+    if negative_parse {
+        // Parse-phase negative case: never evaluated. Passes only when every applicable mode
+        // (strict, sloppy, or both for unflagged cases) rejects it with a genuine early error;
+        // rejections for unsupported syntax or implementation limits stay unsupported.
+        let modes: &[bool] = if sloppy {
+            &[false]
+        } else if strict_only {
+            &[true]
+        } else {
+            &[true, false]
+        };
+        let mut outcome = ("passed", String::new());
+        for &strict in modes {
+            let prefix = if strict { "\"use strict\";\n" } else { "" };
+            let mode = if strict { "strict" } else { "sloppy" };
+            match parser::parse(&format!("{prefix}{includes}{source}")) {
+                Err(s) if s.message.contains("unsupported") || s.message.ends_with("limit") => {
+                    outcome = ("unsupported", format!("syntax ({mode}): {}", s.message));
+                    break;
+                }
+                Err(s) => outcome.1 = format!("early error: {}", s.message),
+                Ok(_) => {
+                    outcome = (
+                        "failed",
+                        format!("parsed in {mode} mode; expected early SyntaxError"),
+                    );
+                    break;
+                }
+            }
+        }
+        if outcome.0 == "passed" && negative.as_deref() != Some("SyntaxError") {
+            outcome = ("unsupported", format!("negative parse type {negative:?}"));
+        }
+        println!(
+            "{{\"status\":{},\"reason\":{},\"assertions\":0,\"cleanup\":true}}",
+            quote(outcome.0),
+            quote(&outcome.1)
+        );
+        std::process::exit(match outcome.0 {
+            "passed" => 0,
+            "unsupported" => 2,
+            _ => 1,
+        });
+    }
     let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
     e.enable_test_harness();
     let prefix = if sloppy { "" } else { "\"use strict\";\n" };
