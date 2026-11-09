@@ -466,6 +466,25 @@ impl Engine<'_> {
                     ..Default::default()
                 },
             )?;
+            if *name == "Uint8Array" {
+                // Uint8Array base64/hex methods (ECMA-262 §23.3.2-3; see base64.rs).
+                for (target, method) in [
+                    (ctor, "fromBase64"),
+                    (ctor, "fromHex"),
+                    (prototype, "toBase64"),
+                    (prototype, "toHex"),
+                    (prototype, "setFromBase64"),
+                    (prototype, "setFromHex"),
+                ] {
+                    let full = if target == ctor {
+                        format!("Uint8Array.{method}")
+                    } else {
+                        format!("Uint8Array.prototype.{method}")
+                    };
+                    let f = self.intrinsic_function(env, &full, Some(function))?;
+                    self.hidden(target, method, Value::Object(f))?;
+                }
+            }
             for object in [ctor, prototype] {
                 self.define(
                     object,

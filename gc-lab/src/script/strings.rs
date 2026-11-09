@@ -35,6 +35,11 @@ pub(super) const METHODS: &[&str] = &[
     "substring",
     "toLowerCase",
     "toUpperCase",
+    "toLocaleLowerCase",
+    "toLocaleUpperCase",
+    "localeCompare",
+    "isWellFormed",
+    "toWellFormed",
     "trim",
     "trimEnd",
     "trimStart",
@@ -335,8 +340,25 @@ impl Engine<'_> {
                 };
                 string(&result)
             }
-            "toLowerCase" => Ok(Value::String(text.to_lowercase())),
-            "toUpperCase" => Ok(Value::String(text.to_uppercase())),
+            // §22.1.3.28/.30: full Unicode default case mapping. Without ECMA-402 the
+            // locale variants (§22.1.3.26/.27) use the root locale, i.e. the same mapping.
+            "toLowerCase" | "toLocaleLowerCase" => Ok(Value::String(text.to_lowercase())),
+            "toUpperCase" | "toLocaleUpperCase" => Ok(Value::String(text.to_uppercase())),
+            // §22.1.3.12: implementation-defined order; here code-unit order, the
+            // same order as IsLessThan on strings. Canonical equivalence (step 5's
+            // requirement) needs Unicode normalization data, not available yet.
+            "localeCompare" => {
+                let that: Vec<u16> = self.to_string(arg(0))?.encode_utf16().collect();
+                Ok(Value::number(match units.cmp(&that) {
+                    std::cmp::Ordering::Less => -1.0,
+                    std::cmp::Ordering::Equal => 0.0,
+                    std::cmp::Ordering::Greater => 1.0,
+                }))
+            }
+            // §22.1.3.10/.33: string storage is well-formed UTF-16 (no lone
+            // surrogates can be stored), so these are total.
+            "isWellFormed" => Ok(Value::Bool(true)),
+            "toWellFormed" => Ok(Value::String(text)),
             "trim" => Ok(Value::String(text.trim_matches(whitespace).into())),
             "trimStart" => Ok(Value::String(text.trim_start_matches(whitespace).into())),
             "trimEnd" => Ok(Value::String(text.trim_end_matches(whitespace).into())),

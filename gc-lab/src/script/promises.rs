@@ -95,6 +95,13 @@ pub(super) enum Internal {
         generator: Id,
         reject: bool,
     },
+    FromAsyncStep {
+        job: Id,
+        reject: bool,
+    },
+    CloseSyncIterator {
+        iterator: Value,
+    },
 }
 impl Internal {
     pub fn edges(&self) -> Vec<Id> {
@@ -114,6 +121,8 @@ impl Internal {
             Self::Thunk { value, .. } => value.id().into_iter().collect(),
             Self::IterResult { .. } => vec![],
             Self::AsyncGeneratorReturn { generator, .. } => vec![*generator],
+            Self::FromAsyncStep { job, .. } => vec![*job],
+            Self::CloseSyncIterator { iterator } => iterator.id().into_iter().collect(),
         }
     }
 }
@@ -123,12 +132,14 @@ pub(super) enum Cell {
     Called(bool),
     Resolving { promise: Id, resolved: bool },
     Capability { resolve: Value, reject: Value },
+    FromAsync(super::from_async::FromAsync),
 }
 impl Cell {
     pub fn edges(&self) -> Vec<Id> {
         match self {
             Self::Aggregate(state) => state.edges(),
             Self::Called(_) => vec![],
+            Self::FromAsync(state) => state.edges(),
             Self::Resolving { promise, .. } => vec![*promise],
             Self::Capability { resolve, reject } => [resolve, reject]
                 .into_iter()
@@ -576,8 +587,12 @@ impl Engine<'_> {
             return self.throw_error("TypeError", "promise constructor is not object");
         }
         if let Value::Object(id) = value {
-            if !matches!(self.objects.get(&id), Some(Object::Node { .. }))
-                && self.data(id)?.promise.is_some()
+            // IsPromise (§27.2.1.6): only objects with a [[PromiseState]] slot;
+            // host nodes and proxies have none.
+            if !matches!(
+                self.objects.get(&id),
+                Some(Object::Node { .. } | Object::Proxy { .. })
+            ) && self.data(id)?.promise.is_some()
             {
                 let c = self.get_member(Value::Object(id), "constructor")?;
                 if c.same_value(&constructor) {
@@ -616,6 +631,10 @@ impl Engine<'_> {
                 Ok(Value::Undefined)
             }
             Internal::IterResult { done } => self.iterator_result(arg(0), done),
+            Internal::FromAsyncStep { job, reject } => self.from_async_step(job, arg(0), reject),
+            Internal::CloseSyncIterator { iterator } => {
+                self.close_sync_iterator_rejected(iterator, arg(0))
+            }
             Internal::AsyncGeneratorReturn { generator, reject } => {
                 self.async_generator_awaited_return(generator, arg(0), reject)?;
                 Ok(Value::Undefined)
@@ -739,7 +758,9 @@ impl Engine<'_> {
             | "Promise.allSettled"
             | "Promise.any"
             | "Promise.withResolvers"
-            | "Promise.try" => self.promise_combinator(name, receiver, args),
+            | "Promise.try"
+            | "Promise.allKeyed"
+            | "Promise.allSettledKeyed" => self.promise_combinator(name, receiver, args),
             "Promise.reject" => {
                 let cap = self.capability(receiver)?;
                 self.invoke(cap.reject, vec![arg(0)])?;

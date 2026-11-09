@@ -1,5 +1,6 @@
 //! Aggregate jobs retain all state through traced cells, including hostile thenables.
 use super::{
+    objects::Key,
     promises::{Capability, Cell, Internal},
     vm::{Engine, ScriptError, Value},
 };
@@ -17,6 +18,8 @@ pub(super) struct Aggregate {
     pub values: Id,
     pub remaining: u64,
     pub mode: Mode,
+    /// Keyed variants (proposal-await-dictionary): the keys in element order.
+    pub keys: Option<Vec<Key>>,
 }
 impl Aggregate {
     pub fn edges(&self) -> Vec<Id> {
@@ -51,6 +54,16 @@ impl Engine<'_> {
                 )?;
                 self.protect(&error)?;
                 self.invoke(state.capability.reject, vec![error])?;
+            } else if let Some(keys) = &state.keys {
+                // CreateKeyedPromiseCombinatorResultObject: a null-prototype
+                // object with one data property per key, in key order.
+                let result = self.new_object(None)?;
+                self.protect(&Value::Object(result))?;
+                for (i, key) in keys.iter().enumerate() {
+                    let value = self.get_member(Value::Object(state.values), i.to_string())?;
+                    self.put_data(result, key.clone(), value)?;
+                }
+                self.invoke(state.capability.resolve, vec![Value::Object(result)])?;
             } else {
                 self.invoke(state.capability.resolve, vec![Value::Object(state.values)])?;
             }
@@ -122,6 +135,23 @@ impl Engine<'_> {
             }
             return Ok(cap.promise);
         }
+        if name == "Promise.allKeyed" || name == "Promise.allSettledKeyed" {
+            let outcome = self.promise_combine_keyed(
+                name == "Promise.allSettledKeyed",
+                constructor,
+                args.first().cloned().unwrap_or(Value::Undefined),
+                cap.clone(),
+            );
+            match outcome {
+                Ok(()) => {}
+                Err(ScriptError::Thrown(e)) => {
+                    self.protect(&e.value)?;
+                    self.invoke(cap.reject, vec![e.value])?;
+                }
+                Err(e) => return Err(e),
+            }
+            return Ok(cap.promise);
+        }
         let outcome = self.promise_combine(
             name,
             constructor,
@@ -170,6 +200,7 @@ impl Engine<'_> {
                     } else {
                         Mode::Settled
                     },
+                    keys: None,
                 },
             )?;
             Some(id)
@@ -220,5 +251,94 @@ impl Engine<'_> {
             self.aggregate_done(group)?;
         }
         Ok(())
+    }
+    /// PerformPromiseAllKeyed (proposal-await-dictionary, Promise.allKeyed and
+    /// Promise.allSettledKeyed): GetPromiseResolve, then a TypeError for a
+    /// non-object input, then one element per own enumerable key in
+    /// [[OwnPropertyKeys]] order.
+    fn promise_combine_keyed(
+        &mut self,
+        settled: bool,
+        constructor: Value,
+        input: Value,
+        cap: Capability,
+    ) -> Result<()> {
+        let resolve = self.get_member(constructor.clone(), "resolve")?;
+        self.protect(&resolve)?;
+        if !self.callable(&resolve) {
+            return self.throw_error("TypeError", "Promise resolve method is not callable");
+        }
+        let Value::Object(promises) = input else {
+            return self.throw_error(
+                "TypeError",
+                "Promise keyed combinator input is not an object",
+            );
+        };
+        let values = self.new_array(0)?;
+        self.protect(&Value::Object(values))?;
+        let group = self.new_object(None)?;
+        self.protect(&Value::Object(group))?;
+        self.aggregate_save(
+            group,
+            Aggregate {
+                capability: cap.clone(),
+                values,
+                remaining: 1,
+                mode: if settled { Mode::Settled } else { Mode::All },
+                keys: Some(Vec::new()),
+            },
+        )?;
+        let all_keys = self.own_keys(promises)?;
+        let mut index = 0u64;
+        for key in all_keys {
+            let Some(desc) = self.own(promises, key.clone())? else {
+                continue;
+            };
+            if !desc.enumerable {
+                continue;
+            }
+            let value = self.get_member(Value::Object(promises), key.clone())?;
+            self.protect(&value)?;
+            let mut state = self.aggregate_state(group)?;
+            if let Some(keys) = state.keys.as_mut() {
+                keys.push(key);
+            }
+            self.put_data(values, index.to_string(), Value::Undefined)?;
+            self.aggregate_save(group, state)?;
+            let promise = self.invoke_this(resolve.clone(), constructor.clone(), vec![value])?;
+            self.protect(&promise)?;
+            // One alreadyCalled record per key, shared by both settled elements.
+            let guard = self.new_object(None)?;
+            self.protect(&Value::Object(guard))?;
+            let mut data = self.data(guard)?.clone();
+            data.cell = Some(Cell::Called(false));
+            self.replace_data(guard, data)?;
+            let mut element = |e: &mut Self, reject| {
+                e.internal_function(
+                    Internal::AggregateElement {
+                        group,
+                        guard,
+                        index,
+                        reject,
+                    },
+                    1,
+                )
+            };
+            let fulfilled = element(self, false)?;
+            self.protect(&fulfilled)?;
+            let rejected = if settled {
+                element(self, true)?
+            } else {
+                cap.reject.clone()
+            };
+            let mut state = self.aggregate_state(group)?;
+            state.remaining += 1;
+            self.aggregate_save(group, state)?;
+            let then = self.get_member(promise.clone(), "then")?;
+            self.protect(&then)?;
+            self.invoke_this(then, promise, vec![fulfilled, rejected])?;
+            index += 1;
+        }
+        self.aggregate_done(group)
     }
 }

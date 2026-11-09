@@ -38,7 +38,9 @@ mod numeric;
 mod string_search;
 mod strings;
 
+mod base64;
 mod errors;
+mod from_async;
 mod promise_combinators;
 
 mod references;

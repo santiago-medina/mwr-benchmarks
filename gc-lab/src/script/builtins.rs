@@ -94,9 +94,13 @@ const METHODS: &[(&str, &[&str])] = &[
             "valueOf",
             "toString",
             "toLocaleString",
+            "__defineGetter__",
+            "__defineSetter__",
+            "__lookupGetter__",
+            "__lookupSetter__",
         ],
     ),
-    ("Array", &["isArray", "from", "of"]),
+    ("Array", &["isArray", "from", "of", "fromAsync"]),
     (
         "Promise",
         &[
@@ -108,6 +112,8 @@ const METHODS: &[(&str, &[&str])] = &[
             "any",
             "withResolvers",
             "try",
+            "allKeyed",
+            "allSettledKeyed",
         ],
     ),
     ("Promise.prototype", &["then", "catch", "finally"]),
@@ -222,6 +228,10 @@ impl Engine<'_> {
             "[Symbol.iterator]"
         } else if name == "%AsyncIteratorPrototype%.asyncIterator" {
             "[Symbol.asyncIterator]"
+        } else if name == "Object.prototype.__proto__.get" {
+            "get __proto__"
+        } else if name == "Object.prototype.__proto__.set" {
+            "set __proto__"
         } else if matches!(name, "Array.species" | "Promise.species") {
             "get [Symbol.species]"
         } else if name == "Function.prototype" || name == "%ProxyRevoke%" {
@@ -236,13 +246,17 @@ impl Engine<'_> {
             "BigInt.asIntN" | "BigInt.asUintN" => 2,
             "BigInt.prototype.valueOf" | "%ProxyRevoke%" => 0,
             "Proxy" | "Proxy.revocable" => 2,
+            "Object.prototype.__proto__.get" => 0,
+            "Object.prototype.__defineGetter__" | "Object.prototype.__defineSetter__" => 2,
             "AggregateError"
             | "Object.hasOwn"
             | "Object.groupBy"
             | "Map.groupBy"
             | "Array.prototype.with"
             | "Array.prototype.toSpliced" => 2,
-            "Array.prototype.toReversed" => 0,
+            "Array.prototype.toReversed"
+            | "Uint8Array.prototype.toBase64"
+            | "Uint8Array.prototype.toHex" => 0,
             "Promise.withResolvers"
             | "Error.prototype.toString"
             | "%ForInIteratorPrototype%.next" => 0,
@@ -253,19 +267,23 @@ impl Engine<'_> {
             | "String.prototype.trimStart"
             | "String.prototype.trimEnd"
             | "String.prototype.toLowerCase"
-            | "String.prototype.toUpperCase" => 0,
+            | "String.prototype.toUpperCase"
+            | "String.prototype.toLocaleLowerCase"
+            | "String.prototype.toLocaleUpperCase"
+            | "String.prototype.isWellFormed"
+            | "String.prototype.toWellFormed" => 0,
             "String.prototype.slice"
             | "String.prototype.substring"
             | "String.prototype.replace"
             | "String.prototype.replaceAll"
             | "String.prototype.split" => 2,
             "Math.atan2" | "Math.hypot" | "Math.imul" | "Math.max" | "Math.min" | "Math.pow" => 2,
-            "Array.from"
-            | "Array.prototype.slice"
+            "Array.prototype.slice"
             | "Array.prototype.splice"
             | "Array.prototype.copyWithin"
             | "Array.prototype.lastIndexOf"
             | "Array.prototype.includes" => 2,
+            "Array.from" | "Array.fromAsync" => 1,
             "Array.of" | "Array.prototype.shift" | "Array.prototype.reverse" => 0,
             "JSON.parse"
             | "Reflect.construct"
@@ -585,6 +603,54 @@ impl Engine<'_> {
         self.hidden(typed_proto, "toString", Value::Object(to_string))?;
         let values = self.intrinsics.as_ref().unwrap().functions["Array.prototype.values"];
         self.hidden(array, super::objects::Key::Symbol(0), Value::Object(values))?;
+        // Annex B §B.2.2.1 Object.prototype.__proto__ accessor.
+        let proto_get =
+            self.intrinsic_function(env, "Object.prototype.__proto__.get", Some(function))?;
+        let proto_set =
+            self.intrinsic_function(env, "Object.prototype.__proto__.set", Some(function))?;
+        self.define(
+            objects["Object.prototype"],
+            "__proto__",
+            Descriptor {
+                get: Some(Value::Object(proto_get)),
+                set: Some(Value::Object(proto_set)),
+                enumerable: Some(false),
+                configurable: Some(true),
+                ..Descriptor::default()
+            },
+        )?;
+        // §23.1.3.41 Array.prototype[@@unscopables]: a null-prototype object of `true` values.
+        let unscopables = self.new_object(None)?;
+        self.runtime.link(env, unscopables)?;
+        for name in [
+            "at",
+            "copyWithin",
+            "entries",
+            "fill",
+            "find",
+            "findIndex",
+            "findLast",
+            "findLastIndex",
+            "flat",
+            "flatMap",
+            "includes",
+            "keys",
+            "toReversed",
+            "toSorted",
+            "toSpliced",
+            "values",
+        ] {
+            self.put_data(unscopables, name, Value::Bool(true))?;
+        }
+        self.define(
+            array,
+            super::objects::Key::Symbol(11),
+            Descriptor {
+                value: Some(Value::Object(unscopables)),
+                configurable: Some(true),
+                ..Descriptor::default()
+            },
+        )?;
         let species = self.intrinsic_function(env, "Array.species", Some(function))?;
         self.define(
             objects["Array"],
@@ -975,6 +1041,9 @@ impl Engine<'_> {
         if name == "GeneratorFunction" {
             return self.dynamic_function_kind(super::vm::FunctionKind::Generator, args, None);
         }
+        if name.starts_with("Uint8Array.") {
+            return self.uint8_base64_builtin(name, receiver, args);
+        }
         if super::typed_arrays::kind(name).is_some() || name.starts_with("%TypedArray%") {
             return self.typed_builtin(name, receiver, args);
         }
@@ -1291,6 +1360,81 @@ impl Engine<'_> {
                     brand.into()
                 };
                 return Ok(Value::String(format!("[object {brand}]")));
+            }
+            // Annex B §B.2.2.1.1 get Object.prototype.__proto__
+            "Object.prototype.__proto__.get" => {
+                let id = self.object_coercible(receiver)?;
+                return Ok(match self.get_prototype_of(id)? {
+                    Some(p) => Value::Object(p),
+                    None => Value::Null,
+                });
+            }
+            // Annex B §B.2.2.1.2 set Object.prototype.__proto__
+            "Object.prototype.__proto__.set" => {
+                if matches!(receiver, Value::Null | Value::Undefined) {
+                    return self.throw_error("TypeError", "null or undefined");
+                }
+                let proto = match arg(0) {
+                    Value::Object(p) => Some(p),
+                    Value::Null => None,
+                    _ => return Ok(Value::Undefined),
+                };
+                let Value::Object(id) = receiver else {
+                    return Ok(Value::Undefined);
+                };
+                if !self.set_prototype(id, proto)? {
+                    return self
+                        .throw_error("TypeError", "Object.prototype.__proto__ setter failed");
+                }
+                return Ok(Value::Undefined);
+            }
+            // Annex B §B.2.2.2-3 __defineGetter__ / __defineSetter__
+            "Object.prototype.__defineGetter__" | "Object.prototype.__defineSetter__" => {
+                let id = self.object_coercible(receiver)?;
+                self.protect(&Value::Object(id))?;
+                let f = arg(1);
+                if !self.callable(&f) {
+                    return self.throw_error("TypeError", "accessor is not callable");
+                }
+                let key = self.to_key(arg(0))?;
+                let getter = name.ends_with("Getter__");
+                let desc = Descriptor {
+                    get: getter.then(|| f.clone()),
+                    set: (!getter).then(|| f.clone()),
+                    enumerable: Some(true),
+                    configurable: Some(true),
+                    ..Descriptor::default()
+                };
+                if !self.define(id, key, desc)? {
+                    return self.throw_error("TypeError", "Cannot redefine property");
+                }
+                return Ok(Value::Undefined);
+            }
+            // Annex B §B.2.2.4-5 __lookupGetter__ / __lookupSetter__
+            "Object.prototype.__lookupGetter__" | "Object.prototype.__lookupSetter__" => {
+                let mut id = self.object_coercible(receiver)?;
+                self.protect(&Value::Object(id))?;
+                let key = self.to_key(arg(0))?;
+                let getter = name.ends_with("Getter__");
+                loop {
+                    self.tick()?;
+                    if let Some(p) = self.own(id, &key)? {
+                        return Ok(match p.kind {
+                            super::objects::Kind::Accessor { get, set } => {
+                                if getter {
+                                    get
+                                } else {
+                                    set
+                                }
+                            }
+                            _ => Value::Undefined,
+                        });
+                    }
+                    match self.get_prototype_of(id)? {
+                        Some(p) => id = p,
+                        None => return Ok(Value::Undefined),
+                    }
+                }
             }
             "Object.prototype.hasOwnProperty" | "Object.prototype.propertyIsEnumerable" => {
                 let k = self.to_key(arg(0))?;

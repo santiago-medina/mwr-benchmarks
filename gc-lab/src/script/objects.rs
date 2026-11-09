@@ -608,6 +608,11 @@ impl Engine<'_> {
         if self.data(id)?.prototype == prototype {
             return Ok(true);
         }
+        // %Object.prototype% is an immutable prototype exotic object (§10.4.7.1
+        // SetImmutablePrototype): only its current [[Prototype]] is accepted.
+        if self.intrinsics.as_ref().is_some_and(|i| i.object == id) {
+            return Ok(false);
+        }
         if !self.data(id)?.extensible {
             return Ok(false);
         }

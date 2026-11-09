@@ -216,6 +216,7 @@ impl Engine<'_> {
         match name {
             "Array.from" => return self.array_from(receiver, args, false),
             "Array.of" => return self.array_from(receiver, args, true),
+            "Array.fromAsync" => return self.array_from_async(receiver, args),
             "Array" => {
                 let single = matches!(args.as_slice(), [Value::Number(_)]);
                 let length = if single {

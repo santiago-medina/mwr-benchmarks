@@ -119,8 +119,18 @@ impl Engine<'_> {
             )?;
             let methods: &[&str] = if name == "Map" {
                 &[
-                    "get", "set", "has", "delete", "clear", "forEach", "keys", "values", "entries",
+                    "get",
+                    "set",
+                    "has",
+                    "delete",
+                    "clear",
+                    "forEach",
+                    "keys",
+                    "values",
+                    "entries",
                     "size",
+                    "getOrInsert",
+                    "getOrInsertComputed",
                 ]
             } else {
                 &[
@@ -148,7 +158,7 @@ impl Engine<'_> {
                     &format!("{name}.prototype.{method}"),
                     Some(function),
                 )?;
-                let length = if method == "set" {
+                let length = if matches!(method, "set" | "getOrInsert" | "getOrInsertComputed") {
                     2
                 } else if matches!(method, "clear" | "keys" | "values" | "entries" | "size") {
                     0
@@ -504,6 +514,46 @@ impl Engine<'_> {
                     }
                 }
                 Ok(Value::Undefined)
+            }
+            // Map.prototype.getOrInsert (upsert proposal, step by step): canonicalize the key,
+            // return the existing value, otherwise append (key, value) and return value.
+            "getOrInsert" if !set => {
+                if let Some(i) = at {
+                    return Ok(table.entries[i].as_ref().unwrap().1.clone());
+                }
+                let value = args.get(1).cloned().unwrap_or(Value::Undefined);
+                let mut data = self.data(id)?.clone();
+                data.collection.as_mut().unwrap().write(key, value.clone());
+                self.replace_data(id, data)?;
+                Ok(value)
+            }
+            // Map.prototype.getOrInsertComputed: 2. IsCallable(callbackfn) is checked before the
+            // lookup; 5. Call(callbackfn, undefined, « key »); 6. the callback may have inserted
+            // the key, so the entry is re-searched and overwritten, else 7. appended.
+            "getOrInsertComputed" if !set => {
+                let callback = args.get(1).cloned().unwrap_or(Value::Undefined);
+                if !self.callable(&callback) {
+                    return self.throw_error("TypeError", "callbackfn is not a function");
+                }
+                if let Some(i) = at {
+                    return Ok(table.entries[i].as_ref().unwrap().1.clone());
+                }
+                let key = if matches!(&key,Value::Number(n)if f64::from_bits(*n)==0.0) {
+                    Value::number(0.0)
+                } else {
+                    key
+                };
+                let value = self.frame(|e| {
+                    e.protect(&key)?;
+                    e.invoke_this(callback, Value::Undefined, vec![key.clone()])
+                })?;
+                self.frame(|e| {
+                    e.protect(&value)?;
+                    let mut data = e.data(id)?.clone();
+                    data.collection.as_mut().unwrap().write(key, value.clone());
+                    e.replace_data(id, data)
+                })?;
+                Ok(value)
             }
             _ if set => self.set_algebra(op, id, key),
             _ => Err(ScriptError::Unsupported("collection operation")),
