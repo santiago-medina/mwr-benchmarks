@@ -3,6 +3,7 @@ mod builtins;
 mod classes;
 mod execute;
 mod host;
+mod iterator_helpers;
 mod objects;
 pub mod parser;
 mod vm;

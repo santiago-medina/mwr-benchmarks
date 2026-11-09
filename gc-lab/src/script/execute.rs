@@ -1065,6 +1065,7 @@ impl Engine<'_> {
                     || matches!(
                         name.as_str(),
                         "Promise"
+                            | "Iterator"
                             | "Proxy"
                             | "ArrayBuffer"
                             | "DataView"
@@ -1122,6 +1123,9 @@ impl Engine<'_> {
                 if name == "Proxy" {
                     let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Undefined);
                     return self.proxy_create(arg(0), arg(1)).map(Value::Object);
+                }
+                if name == "Iterator" {
+                    return self.construct_iterator(f, new_target);
                 }
                 if name == "Date" {
                     return self.construct_date(new_target, args);

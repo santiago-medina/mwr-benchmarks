@@ -523,6 +523,7 @@ impl Engine<'_> {
         self.bootstrap_generators(env, &mut objects, iterator)?;
         self.bootstrap_dates(env, &mut objects)?;
         self.bootstrap_regexp(env, &mut objects, iterator)?;
+        self.bootstrap_iterator_helpers(env, &mut objects, iterator)?;
         #[cfg(feature = "temporal")]
         self.bootstrap_temporal(env, &mut objects)?;
         let constructors: Vec<_> = self
@@ -935,6 +936,9 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if super::iterator_helpers::handles(name) {
+            return self.iterator_builtin(name, receiver, args);
+        }
         if name == "Proxy" || name.starts_with("Proxy.") {
             return self.proxy_builtin(name, args);
         }

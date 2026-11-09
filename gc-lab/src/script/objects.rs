@@ -112,6 +112,7 @@ pub(super) struct Data {
     pub collection_cursor: Option<super::collections::Cursor>,
     pub string_cursor: Option<super::strings::Cursor>,
     pub iterator: Option<super::arrays::IteratorState>,
+    pub iter_slot: Option<super::iterator_helpers::IterSlot>,
     #[cfg(feature = "temporal")]
     pub temporal: Option<std::rc::Rc<super::temporal::Slot>>,
 }
@@ -135,6 +136,7 @@ impl Data {
             parameter_map: None,
             array: false,
             iterator: None,
+            iter_slot: None,
             collection: None,
             collection_cursor: None,
             string_cursor: None,
@@ -168,6 +170,7 @@ impl Data {
             )
             .chain(self.iterator.as_ref().and_then(|i| i.target))
             .chain(self.regexp_cursor.as_ref().map(|c| c.regexp))
+            .chain(self.iter_slot.as_ref().into_iter().flat_map(|s| s.edges()))
             .chain(self.request.as_ref().into_iter().flat_map(|r| r.edges()))
             .chain(self.activation.as_ref().into_iter().flat_map(|a| a.edges()))
             .chain(self.generator.as_ref().into_iter().flat_map(|g| g.edges()))
