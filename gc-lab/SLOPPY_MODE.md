@@ -35,7 +35,7 @@ Runtime
 Runner: `noStrict` and `raw` cases run with `--sloppy` (no prefix). Cases with
 no flag stay strict-only (test262 asks for both modes: a later variant).
 
-## Phase B — `eval` (next gap)
+## Phase B — `eval` (done)
 Direct eval (`eval(...)` resolving to %eval%) parses the string with the caller's
 strictness and evaluates in the caller's environment; sloppy direct eval declares
 `var`/functions in the caller's var environment; strict eval gets its own var
@@ -58,3 +58,23 @@ running default cases in both modes.
   eval (~440 unsupported), `yield` as an identifier (82), mapped arguments (~25
   failures), `with` reference timing (the binding is deleted or shadowed between
   resolution and PutValue), `arguments.callee`, `with` inside generators/async.
+
+## Implementation notes (phase B)
+- `script/eval.rs`: PerformEval + EvalDeclarationInstantiation. Direct eval is detected
+  in `eval_call` (callee named `eval` that is %eval%, not `new`); indirect eval is the
+  `eval` builtin, run against the global environment.
+- `parser::parse_eval(source, strict, super_property, super_call)`: the caller's
+  strictness and whether `super.x` / `super()` are allowed (the caller's environment
+  binds `%home` / `%func`).
+- Sloppy eval: vars and top-level functions go to the caller's variable environment
+  (configurable properties on the global object at the top level, with the
+  CanDeclareGlobalFunction/Var checks); a var that would hoist across a lexical
+  declaration of the same name is a SyntaxError (environments record their lexical
+  names in `lexical`). Strict eval keeps everything in its own scope.
+- Completion values: `Engine::completion` is only tracked while eval code runs and is
+  saved/cleared around function calls; expression statements set it, and loops,
+  `if`, `switch`, `with` and `try` reset it to undefined first (UpdateEmpty).
+- Known gaps: Annex B catch-parameter redeclaration by eval vars is flagged as a
+  conflict; eval-declared vars in functions are not deletable; `eval(await x)` in
+  async code runs as an indirect call; labels are still unsupported (the two
+  for-of `cptn-*-abrupt-empty` cases are known failures until they exist).

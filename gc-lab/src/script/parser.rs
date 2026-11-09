@@ -571,8 +571,20 @@ pub(super) fn tokenize_legacy(
     Ok(tokens)
 }
 pub fn parse(source: &str) -> Result<Vec<Stmt>, SyntaxError> {
+    parse_eval(source, false, false, false)
+}
+/// Script grammar with the context of a direct eval: inherited strictness and
+/// whether `super.x` / `super()` are allowed.
+pub(super) fn parse_eval(
+    source: &str,
+    strict: bool,
+    super_property: bool,
+    super_call: bool,
+) -> Result<Vec<Stmt>, SyntaxError> {
     let (tokens, legacy) = tokenize_legacy(source)?;
-    let mut p = Parser::new(tokens, legacy, source, false);
+    let mut p = Parser::new(tokens, legacy, source, strict);
+    p.super_property = super_property;
+    p.super_call = super_call;
     p.prologue(0)?;
     let mut body = p.statements(false)?;
     p.legacy_check()?;

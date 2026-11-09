@@ -115,6 +115,8 @@ pub(super) enum Object {
         strict: bool,
         /// Object environment record of a `with` statement.
         with_object: Option<Id>,
+        /// `let`/`const`/class names (a sloppy eval `var` may not redeclare them).
+        lexical: HashSet<String>,
     },
     Closure {
         kind: FunctionKind,
@@ -155,6 +157,8 @@ pub struct Engine<'host> {
     steps: usize,
     step_limit: usize,
     pub(super) call_depth: usize,
+    /// Completion value of the running eval code (None outside eval).
+    pub(super) completion: Option<(Value, Option<ExternalRoot>)>,
     pub(super) native_depth: usize,
     pub(super) adapter: Option<Box<dyn super::adapter::DomAdapter + 'host>>,
     pub(super) remote_nodes: HashMap<Id, u64>,
@@ -195,6 +199,7 @@ impl<'host> Engine<'host> {
             steps: 0,
             step_limit: 10_000,
             call_depth: 0,
+            completion: None,
             native_depth: 0,
             adapter: None,
             remote_nodes: HashMap::new(),
@@ -238,6 +243,7 @@ impl<'host> Engine<'host> {
             steps: self.steps,
             step_limit: self.step_limit,
             call_depth: self.call_depth,
+            completion: self.completion,
             native_depth: self.native_depth,
             remote_nodes: self.remote_nodes,
             adapter_error: self.adapter_error,
@@ -456,11 +462,13 @@ impl<'host> Engine<'host> {
         let mut bindings = HashMap::new();
         let mut mutable = HashSet::new();
         let mut constants = HashSet::new();
+        let mut lexical = HashSet::new();
         for stmt in parser::direct_statements(body) {
             match stmt {
                 Stmt::Bind { kind, pattern, .. } if kind != "var" => {
                     for name in pattern.names() {
                         bindings.insert(name.clone(), None);
+                        lexical.insert(name.clone());
                         if kind == "let" {
                             mutable.insert(name);
                         } else if kind == "const" {
@@ -471,6 +479,7 @@ impl<'host> Engine<'host> {
 
                 Stmt::Const(n, _) | Stmt::Let(n, _) => {
                     bindings.insert(n.clone(), None);
+                    lexical.insert(n.clone());
                     if matches!(stmt, Stmt::Let(..)) {
                         mutable.insert(n.clone());
                     } else {
@@ -535,6 +544,7 @@ impl<'host> Engine<'host> {
                 aliases: HashMap::new(),
                 strict,
                 with_object: None,
+                lexical,
             },
         );
         Ok(id)

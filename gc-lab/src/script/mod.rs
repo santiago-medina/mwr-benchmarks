@@ -49,6 +49,7 @@ mod array_copy;
 mod object_methods;
 
 mod dynamic_functions;
+mod eval;
 mod uri;
 
 mod set_methods;

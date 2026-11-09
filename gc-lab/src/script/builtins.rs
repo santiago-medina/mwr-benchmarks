@@ -388,6 +388,7 @@ impl Engine<'_> {
             "decodeURIComponent",
             "isNaN",
             "isFinite",
+            "eval",
             "Promise",
             "queueMicrotask",
             "fetch",
@@ -880,6 +881,11 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name == "eval" {
+            // Indirect eval: global environment, sloppy unless the code says otherwise.
+            let source = args.into_iter().next().unwrap_or(Value::Undefined);
+            return self.perform_eval(source, None);
+        }
         if name == "Date" || name.starts_with("Date.") {
             return self.date_builtin(name, receiver, args);
         }

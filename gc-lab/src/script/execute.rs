@@ -289,6 +289,22 @@ impl Engine<'_> {
         env: Id,
         can_return: bool,
     ) -> Result<Option<Value>> {
+        if self.completion.is_some()
+            && matches!(
+                s,
+                Stmt::If(..)
+                    | Stmt::While { .. }
+                    | Stmt::For { .. }
+                    | Stmt::ForOf { .. }
+                    | Stmt::ForIn { .. }
+                    | Stmt::Switch(..)
+                    | Stmt::With(..)
+                    | Stmt::Try { .. }
+            )
+        {
+            // These statements complete with UpdateEmpty(result, undefined).
+            self.set_completion(Value::Undefined)?;
+        }
         match s {
             Stmt::Sloppy => {}
             Stmt::With(object, body) => {
@@ -382,7 +398,8 @@ impl Engine<'_> {
             } => return self.for_of(kind, binding, iterable, body, env, can_return, true),
             Stmt::Function(..) | Stmt::AsyncFunction(..) | Stmt::GeneratorFunction(..) => {}
             Stmt::Expr(x) => {
-                self.eval(x, env)?;
+                let value = self.eval(x, env)?;
+                self.set_completion(value)?;
             }
             Stmt::Return(x) => {
                 if !can_return {
@@ -400,7 +417,8 @@ impl Engine<'_> {
                 let b = self.eval(b, env)?;
                 self.protect(&b)?;
                 let strict = self.env_strict(env);
-                self.assign_member(a, k.into(), b, strict)?;
+                self.assign_member(a, k.into(), b.clone(), strict)?;
+                self.set_completion(b)?;
             }
             Stmt::Block(b) => return self.scoped(b, env, can_return),
             Stmt::If(c, a, b) => {
@@ -452,8 +470,17 @@ impl Engine<'_> {
                     _ => {}
                 }
                 if let Some(b) = finally {
+                    // A normally completing finally block keeps the try/catch value.
+                    let kept = self.completion_value();
+                    if let Some(v) = &kept {
+                        self.protect(v)?;
+                    }
                     match self.scoped(b, env, can_return) {
-                        Ok(None) => {}
+                        Ok(None) => {
+                            if let Some(v) = kept {
+                                self.set_completion(v)?;
+                            }
+                        }
                         other => return other,
                     }
                 }
@@ -861,6 +888,10 @@ impl Engine<'_> {
             }
             values
         };
+        if !new && matches!(f, Expr::Name(n) if n == "eval") && self.is_intrinsic_eval(&callee) {
+            let source = values.into_iter().next().unwrap_or(Value::Undefined);
+            return self.perform_eval(source, Some(env));
+        }
         if new {
             self.construct(callee, values)
         } else {
@@ -881,6 +912,8 @@ impl Engine<'_> {
             return Err(ScriptError::Runtime("call depth limit"));
         }
         self.call_depth += 1;
+        // Function bodies do not contribute to an enclosing eval's completion value.
+        let completion = self.completion.take();
         let r = self.frame(|e| {
             e.protect(&f)?;
             e.protect(&receiver)?;
@@ -890,6 +923,7 @@ impl Engine<'_> {
             e.invoke_inner(f, receiver, args)
         });
         self.call_depth -= 1;
+        self.completion = completion;
         match r {
             Err(ScriptError::Host(message)) if self.adapter_error.is_none() => {
                 self.throw_error("Error", &message)
