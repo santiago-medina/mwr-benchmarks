@@ -155,3 +155,7 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - `Engine::new` still defaults to stress (a GC at every allocation) for the rooting tests. Embeddings (`js_check`, `module_check`, `servo_bridge`, `servo-native/mwr.rs`) select `GcPolicy::Threshold`: collect when live objects reach max(4096, 2 × live after the last GC). `js_check --gc-stress` restores stress.
 - `Runtime::charged_bytes()` is O(1), metadata pruning runs only after a collection, and `Id` maps use a deterministic hasher.
 - s1.js: 31.9 G → 0.375 G instructions. Several full16 runner timeouts now finish in under 1 s. Details and the benchmark table are in GC_SCHEDULING.md.
+
+### Checkpoint 10: full test262 baseline (2026-11-09)
+- Full profile with the Temporal binary (`gc-lab/temporal`): **37451/47708 (78.5%)**, +1669 vs the gap-9 baseline (35782), 0 lost. Failed 5733, unsupported 4524. Runner timeouts: 246 → 53, thanks to GC scheduling. The full run now takes about 10 min, down from about 25-30 min.
+- Largest remaining buckets: Temporal 3585 non-pass (ZonedDateTime, PlainDateTime, PlainTime, PlainYearMonth, Instant are still mostly "not a constructor"), Iterator helpers 666, module code 599 + import 129, RegExp 483 (unpaired UTF-16 strings 446 across dirs), Atomics 389, WeakMap/WeakSet/WeakRef/FinalizationRegistry ~250, DataView/TypedArray ~450.
