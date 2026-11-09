@@ -71,7 +71,13 @@ for (let i = 0; i < inputs.length; i++) {
   if (JSON.stringify(nodeResults[i]) !== JSON.stringify(chromeResults[i])) {
     differences.push({
       input: inputs[i], node: nodeResults[i], chrome: chromeResults[i],
-      status: 'compatibility-difference-needs-review',
+      status: (nodeResults[i].valid && chromeResults[i].valid &&
+        nodeResults[i].protocol === 'file:' && chromeResults[i].protocol === 'file:' &&
+        nodeResults[i].href === chromeResults[i].href &&
+        nodeResults[i].origin === 'null' && chromeResults[i].origin === 'file://' &&
+        Object.keys(nodeResults[i]).every((key) => key === 'origin' || nodeResults[i][key] === chromeResults[i][key]))
+        ? 'known-file-origin-representation-difference'
+        : 'compatibility-difference-needs-review',
       security_impact_confirmed: false,
     });
   }
@@ -80,7 +86,10 @@ const result = {
   method: 'node-url-vs-chrome-url-in-blank-tab',
   base: BASE, cases: inputs.length,
   nodeVersion: process.version, chromeVersion,
-  differences: differences.length, samples: differences.slice(0, 50),
+  differences: differences.length,
+  knownCompatibilityDifferences: differences.filter(x => x.status === 'known-file-origin-representation-difference').length,
+  unresolvedDifferences: differences.filter(x => x.status === 'compatibility-difference-needs-review').length,
+  samples: differences.slice(0, 50),
   scope: 'URL API behavior, not Chromium internal url_canon functions',
   confirmed_security_bugs: 0,
 };
@@ -93,6 +102,8 @@ const lines = [
   '- Node version: ' + result.nodeVersion,
   '- Chrome version: ' + result.chromeVersion,
   '- Differences: ' + result.differences,
+  '- Known file-origin representation differences: ' + result.knownCompatibilityDifferences,
+  '- Unresolved differences: ' + result.unresolvedDifferences,
   '- Confirmed security bugs: 0',
   '',
   'No generated URL is visited. This only compares public URL API behavior.',
