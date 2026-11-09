@@ -120,3 +120,16 @@ Full test262 (strict script variant): 28157/47708 pass (59.0%), up from 26538; n
 Non-strict scripts (design: SLOPPY_MODE.md). Directive prologues set strictness per script and function; legacy octal literals and escapes are accepted only in sloppy code. Environments carry strictness, `with` object records and immutable bindings. Sloppy assignment creates globals, sloppy `delete` of identifiers works, and `this` is coerced for sloppy functions. In strict code an unresolvable name now throws before the right-hand side is evaluated (`Reference::Unresolvable`). The runner runs noStrict and raw cases as sloppy scripts (`--sloppy`).
 
 Full test262 (strict prefix, or sloppy for noStrict/raw): 29100/47708 pass (61.0%), up from 28157; no previously passing case lost. Mapped `arguments` objects (aliasing with parameters) are not implemented yet: the two gated cases that now run and need them are listed as known failures in the arrays and async profiles. eval is next.
+
+### eval, labels, mapped arguments, negative parse tests (2026-11-09)
+
+- Direct and indirect eval (src/script/eval.rs; PerformEval and EvalDeclarationInstantiation, notes in SLOPPY_MODE.md). Full test262: 30032.
+- Labelled statements with labelled break/continue, and their early errors. Full test262: 30117.
+- Mapped `arguments` objects for sloppy functions with simple parameters (10.4.4). Full test262: 30160.
+- The runner now runs parse-phase negative tests (`js_check --negative-parse`). They pass only on a real early SyntaxError; negatives for unimplemented syntax stay unsupported. The parser gained the strict-mode and statement-position early errors. Full test262: 33930.
+
+### Array copy methods, assert.js globals, step limit (2026-11-09)
+
+The Array copy-method dispatch matched the prefixed builtin name, so concat, flat, flatMap, with, toSorted, toReversed and toSpliced were all reported as unsupported. js_check now defines the assert.js globals (compareArray, isPrimitive, isNegativeZero) and raises the step limit to 50M; the runner's 10 s timeout is the guard. The engine default (10k steps) is a test guard and far too low for real pages.
+
+Full test262: 35782/47708 pass (75.0%), up from 33930; no previously passing case lost. Largest remaining buckets: Temporal not defined (4105 failures, to come from a vetted crate), standard intrinsics not implemented (1793 unsupported: TypedArray/DataView, WeakMap/WeakSet, SharedArrayBuffer/Atomics, Proxy, FinalizationRegistry), Iterator helpers (438 + 133), modules (~780 unsupported), and 246 runner timeouts.
