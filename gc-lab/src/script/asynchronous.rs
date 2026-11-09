@@ -103,9 +103,11 @@ fn expr_await(e: &Expr) -> bool {
         | Expr::AsyncFunction { .. }
         | Expr::AsyncArrow { .. } => false,
         Expr::Conditional(a, b, c) => expr_await(a) || expr_await(b) || expr_await(c),
-        Expr::Member(a, _) | Expr::Unary(_, a) | Expr::Update(a, ..) | Expr::Spread(a) => {
-            expr_await(a)
-        }
+        Expr::Member(a, _)
+        | Expr::Unary(_, a)
+        | Expr::Update(a, ..)
+        | Expr::Spread(a)
+        | Expr::ImportCall(a) => expr_await(a),
         Expr::Destructure(pattern, value) => {
             expr_await(value) || pattern.expressions().into_iter().any(expr_await)
         }
@@ -484,6 +486,10 @@ impl Compiler {
             Expr::Unary(op, e) => {
                 let value = self.expression(e)?;
                 self.eval(Expr::Unary(op.clone(), Box::new(read(value))))
+            }
+            Expr::ImportCall(e) => {
+                let value = self.expression(e)?;
+                self.eval(Expr::ImportCall(Box::new(read(value))))
             }
             Expr::Conditional(condition, yes, no) => {
                 let condition = self.expression(condition)?;

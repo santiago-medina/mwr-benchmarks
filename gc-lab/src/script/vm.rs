@@ -413,7 +413,10 @@ impl<'host> Engine<'host> {
     }
     pub fn release_globals(&mut self) {
         self.cancel_microtasks();
-        self.modules = super::modules::Registry::default();
+        // Pending `import()` capabilities hold external roots; drop them with the registry.
+        for root in std::mem::take(&mut self.modules).dynamic_roots() {
+            let _ = self.runtime.unroot(root);
+        }
         self.unhandled.clear();
         self.cancel_weak_jobs();
         self.cancel_host_jobs();

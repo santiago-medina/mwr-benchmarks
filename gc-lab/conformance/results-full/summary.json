@@ -1,9 +1,17 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "bdb81a77cc718b135cd54fed2a2d59f36b69f37d73a0eb7cf522108d75ac6b36",
-  "runner_sha256": "70e6c54621c21ed2998cedbe45f22d4ac004ecd1b127bd9b30fdeb2910ad59c2",
+  "implementation_sha256": "2e2690be71a3bda7943e875c6c4be487ce63dae000db502b5a2c3b0fc8f32188",
+  "runner_sha256": "3e6a09277f3b7c6cbd4e2229ac53d6b179417e602e41cfe37f8d4578ad1b18db",
   "new_failures": [
+    "built-ins/AbstractModuleSource/length.js",
+    "built-ins/AbstractModuleSource/name.js",
+    "built-ins/AbstractModuleSource/proto.js",
+    "built-ins/AbstractModuleSource/prototype.js",
+    "built-ins/AbstractModuleSource/prototype/Symbol.toStringTag.js",
+    "built-ins/AbstractModuleSource/prototype/constructor.js",
+    "built-ins/AbstractModuleSource/prototype/proto.js",
+    "built-ins/AbstractModuleSource/throw-from-constructor.js",
     "built-ins/Array/prototype/at/returns-undefined-for-holes-in-sparse-arrays.js",
     "built-ins/Array/prototype/concat/Array.prototype.concat_large-typed-array.js",
     "built-ins/Array/prototype/every/callbackfn-resize-arraybuffer.js",
@@ -336,12 +344,16 @@
     "built-ins/ShadowRealm/prototype/evaluate/wrapped-functions-share-no-properties-extended.js",
     "built-ins/ShadowRealm/prototype/evaluate/wrapped-functions-share-no-properties.js",
     "built-ins/ShadowRealm/prototype/importValue/descriptor.js",
+    "built-ins/ShadowRealm/prototype/importValue/import-value.js",
     "built-ins/ShadowRealm/prototype/importValue/length.js",
     "built-ins/ShadowRealm/prototype/importValue/name.js",
     "built-ins/ShadowRealm/prototype/importValue/not-constructor.js",
     "built-ins/ShadowRealm/prototype/importValue/proto.js",
     "built-ins/ShadowRealm/prototype/importValue/specifier-tostring.js",
     "built-ins/ShadowRealm/prototype/importValue/throws-if-exportname-not-string.js",
+    "built-ins/ShadowRealm/prototype/importValue/throws-if-import-value-does-not-exist.js",
+    "built-ins/ShadowRealm/prototype/importValue/throws-typeerror-import-syntax-error.js",
+    "built-ins/ShadowRealm/prototype/importValue/throws-typeerror-import-throws.js",
     "built-ins/ShadowRealm/prototype/importValue/validates-realm-object.js",
     "built-ins/ShadowRealm/prototype/proto.js",
     "built-ins/String/prototype/localeCompare/15.5.4.9_CE.js",
@@ -395,14 +407,10 @@
     "built-ins/TypedArrayConstructors/of/custom-ctor-returns-immutable-arraybuffer.js",
     "built-ins/Uint8Array/prototype/setFromBase64/throws-when-target-is-backed-by-immutable-arraybuffer.js",
     "built-ins/Uint8Array/prototype/setFromHex/throws-when-target-is-backed-by-immutable-arraybuffer.js",
-    "built-ins/decodeURI/S15.1.3.1_A1.10_T1.js",
     "built-ins/decodeURI/S15.1.3.1_A1.11_T1.js",
-    "built-ins/decodeURI/S15.1.3.1_A1.11_T2.js",
     "built-ins/decodeURI/S15.1.3.1_A1.12_T1.js",
     "built-ins/decodeURI/S15.1.3.1_A1.12_T2.js",
     "built-ins/decodeURI/S15.1.3.1_A1.12_T3.js",
-    "built-ins/decodeURI/S15.1.3.1_A1.2_T1.js",
-    "built-ins/decodeURI/S15.1.3.1_A1.2_T2.js",
     "built-ins/decodeURI/S15.1.3.1_A2.1_T1.js",
     "built-ins/decodeURI/S15.1.3.1_A2.4_T1.js",
     "built-ins/decodeURI/S15.1.3.1_A2.5_T1.js",
@@ -411,7 +419,6 @@
     "built-ins/decodeURIComponent/S15.1.3.2_A1.11_T2.js",
     "built-ins/decodeURIComponent/S15.1.3.2_A1.12_T1.js",
     "built-ins/decodeURIComponent/S15.1.3.2_A1.12_T2.js",
-    "built-ins/decodeURIComponent/S15.1.3.2_A1.12_T3.js",
     "built-ins/decodeURIComponent/S15.1.3.2_A1.2_T1.js",
     "built-ins/decodeURIComponent/S15.1.3.2_A1.2_T2.js",
     "built-ins/decodeURIComponent/S15.1.3.2_A2.1_T1.js",
@@ -527,7 +534,6 @@
     "language/expressions/delete/member-identifier-reference-null.js",
     "language/expressions/delete/member-identifier-reference-undefined.js",
     "language/expressions/division/order-of-evaluation.js",
-    "language/expressions/dynamic-import/usage-from-eval.js",
     "language/expressions/exponentiation/order-of-evaluation.js",
     "language/expressions/in/private-field-in-nested.js",
     "language/expressions/in/private-field-in.js",
@@ -566,7 +572,6 @@
     "language/global-code/new.target.js",
     "language/identifiers/start-unicode-10.0.0-escaped.js",
     "language/identifiers/start-unicode-10.0.0.js",
-    "language/identifiers/start-unicode-5.2.0.js",
     "language/identifiers/start-unicode-8.0.0-escaped.js",
     "language/identifiers/start-unicode-8.0.0.js",
     "language/identifiers/start-unicode-9.0.0-escaped.js",
@@ -713,7 +718,7 @@
     "language/types/number/S8.5_A4_T2.js",
     "language/types/undefined/S8.1_A3_T2.js"
   ],
-  "variant": "scripts: strict prefix, or sloppy for noStrict/raw; original test body",
+  "variant": "scripts: strict prefix, or sloppy for noStrict/raw; modules (full profile): includes as scripts, then the module record; original test body",
   "profile": "full",
   "scopes": [
     "built-ins",
@@ -721,55 +726,54 @@
   ],
   "total": 47708,
   "counts": {
-    "unsupported": 3182,
-    "passed": 43818,
-    "failed": 708
+    "failed": 713,
+    "passed": 44976,
+    "unsupported": 2019
   },
-  "assertions": 712412,
+  "assertions": 714249,
   "regressions": [],
   "unsupported_reasons": {
-    "unsupported execution flags: module": 444,
     "$262.createRealm (one realm)": 181,
     "syntax: surrogate strings unsupported": 34,
     "ordinary reflection on host objects": 18,
     "map output length exceeds array range": 6,
     "test262 agents (one agent per engine)": 109,
-    "unpaired UTF-16 string storage": 442,
-    "syntax: unsupported reserved expression": 596,
+    "unpaired UTF-16 string storage": 447,
+    "syntax: unsupported reserved expression": 8,
     "syntax: AST nesting limit": 3,
-    "unsupported execution flags: async,module": 19,
     "surrogate string wrapper": 1,
-    "syntax (strict): unsupported reserved expression": 50,
     "syntax (strict): unsupported or missing expression": 120,
     "syntax (strict): unsupported character": 44,
-    "syntax: unsupported character": 25,
-    "unsupported execution flags: module,raw": 2,
+    "syntax: unsupported character": 26,
     "syntax (sloppy): unsupported character": 8,
     "syntax: reserved binding identifier": 115,
     "syntax: unsupported or missing expression": 38,
     "syntax: duplicate prototype literal": 1,
     "resumable assignment pattern expressions": 24,
     "negative parse test for unimplemented syntax: optional-chaining": 26,
-    "syntax: invalid assignment target": 17,
-    "unsupported execution flags: generated,module": 284,
+    "syntax: invalid assignment target": 19,
+    "negative parse test for unimplemented syntax: import-defer": 93,
+    "negative parse test for unimplemented syntax: source-phase-imports": 86,
     "with in generator or async function": 10,
-    "yield requires a generator activation": 12,
+    "syntax (strict): unsupported reserved expression": 29,
+    "await expression shape": 44,
     "syntax: expected punctuation": 1,
-    "unsupported execution flags: generated,async,module": 9,
     "syntax (strict): unsupported property key": 16,
     "syntax: expected semicolon": 3,
-    "unsupported execution flags: module,async": 54,
-    "unsupported execution flags: generated,module,async": 18,
-    "negative parse test for unimplemented syntax: dynamic-import": 144,
-    "negative parse test for unimplemented syntax: dynamic-import,import-attributes": 1,
-    "negative parse test for unimplemented syntax: dynamic-import,source-phase-imports": 84,
-    "negative parse test for unimplemented syntax: dynamic-import,import-defer": 84,
-    "negative parse test for unimplemented syntax: dynamic-import,source-phase-imports,source-phase-imports-module-source": 63,
-    "negative parse test for unimplemented syntax: import.meta": 1,
+    "syntax: unsupported import phase": 252,
+    "syntax: unsupported import attributes": 60,
+    "negative parse test for unimplemented syntax: import-attributes": 15,
+    "negative parse test for unimplemented syntax: source-phase-imports,source-phase-imports-module-source": 63,
+    "syntax (strict): unsupported import attributes": 19,
+    "syntax (sloppy): unsupported import attributes": 2,
     "syntax: invalid accessor parameters": 3,
     "syntax: invalid update target": 2,
     "$262.evalScript": 13,
-    "negative parse test for unimplemented syntax: import-defer": 6,
+    "syntax (module): unsupported or missing expression": 8,
+    "syntax (module): surrogate strings unsupported": 6,
+    "syntax (module): unsupported reserved expression": 2,
+    "resumable catch binding expressions": 1,
+    "resumable binding pattern expressions": 12,
     "syntax: escaped reserved word": 4,
     "syntax: binding declaration requires initializer": 8,
     "resumable loop binding expressions": 37,
@@ -777,6 +781,70 @@
     "syntax: invalid shorthand binding": 1
   },
   "failures": [
+    {
+      "path": "built-ins/AbstractModuleSource/length.js",
+      "source_sha256": "e7169f48e791e47ce00d8aa6170149e3d8b6068b2176ff93a45355ae6f1839c4",
+      "status": "failed",
+      "reason": "module evaluation: Test262Error: assertion failed; expected None",
+      "assertions": 1,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/AbstractModuleSource/name.js",
+      "source_sha256": "9fdd2179c08004f33e47c345078443ca5cde28f2e1ba26460f6e98facfdb0ff3",
+      "status": "failed",
+      "reason": "module evaluation: Test262Error: assertion failed; expected None",
+      "assertions": 1,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/AbstractModuleSource/proto.js",
+      "source_sha256": "2a5e21fb569805504733865a07b0c9d84ebd4c2dcd556137f390c94e15a855c7",
+      "status": "failed",
+      "reason": "module evaluation: Test262Error: assertion failed; expected None",
+      "assertions": 1,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/AbstractModuleSource/prototype/Symbol.toStringTag.js",
+      "source_sha256": "4b5dabb617f6679467465602387772849a8ce9879dc3002d16b175398dec5adb",
+      "status": "failed",
+      "reason": "module evaluation: Test262Error: assertion failed; expected None",
+      "assertions": 1,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/AbstractModuleSource/prototype/constructor.js",
+      "source_sha256": "a69052071183bab1174fb23d501f6a1526c5c8cbb149d91500715ab1f4ccefa5",
+      "status": "failed",
+      "reason": "module evaluation: Test262Error: assertion failed; expected None",
+      "assertions": 1,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/AbstractModuleSource/prototype/proto.js",
+      "source_sha256": "2ad218a3b288a26dfdedc5f388a686e5231e15c6a120a90493af822d96ec4d85",
+      "status": "failed",
+      "reason": "module evaluation: Test262Error: assertion failed; expected None",
+      "assertions": 1,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/AbstractModuleSource/prototype.js",
+      "source_sha256": "b03a94bb55ce21b86bc548b4200c7d26f5bb027cbc69c75751f8a9ee95b3edfc",
+      "status": "failed",
+      "reason": "module evaluation: Test262Error: assertion failed; expected None",
+      "assertions": 1,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/AbstractModuleSource/throw-from-constructor.js",
+      "source_sha256": "84450c8583e11867ba5d015dc702a2d33cbb8de1f2c462cd307dd766f47f551e",
+      "status": "failed",
+      "reason": "module evaluation: Test262Error: assertion failed; expected None",
+      "assertions": 1,
+      "cleanup": true
+    },
     {
       "path": "built-ins/Array/prototype/at/returns-undefined-for-holes-in-sparse-arrays.js",
       "source_sha256": "32d020ce560af714f8c429f6d168507797304f72ef340f31c725c925e38d3969",
@@ -3410,6 +3478,14 @@
       "cleanup": true
     },
     {
+      "path": "built-ins/ShadowRealm/prototype/importValue/import-value.js",
+      "source_sha256": "7fb1b584d31e396b85fc43693d98875a4004d71d4100a815d43eb7e601dd3c66",
+      "status": "failed",
+      "reason": "expected one $DONE, got 0",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
       "path": "built-ins/ShadowRealm/prototype/importValue/length.js",
       "source_sha256": "fc81ac7220d5f229fa9dc5f76368d1266dec165339534b45e36c6db9a26526ee",
       "status": "failed",
@@ -3454,6 +3530,30 @@
       "source_sha256": "a5273544caea62281588331df3fed48d9be4102fae386b4f1b24c6eb9b83b92e",
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"ShadowRealm is not defined\", value: Object(Js(Handle { heap: 2, index: 874, serial: 969 })) })); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/ShadowRealm/prototype/importValue/throws-if-import-value-does-not-exist.js",
+      "source_sha256": "46fe93bd42f6467c53c740a8052bcad002d5c87210747e5e153650c49552e233",
+      "status": "failed",
+      "reason": "expected one $DONE, got 0",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/ShadowRealm/prototype/importValue/throws-typeerror-import-syntax-error.js",
+      "source_sha256": "eaddd3aeed05c43cc0d4ea4e513b6d04775b4c23624a96cef8996d9e9cf79398",
+      "status": "failed",
+      "reason": "expected one $DONE, got 0",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "built-ins/ShadowRealm/prototype/importValue/throws-typeerror-import-throws.js",
+      "source_sha256": "1c5e9342e4cecc32b3a0b7f59527191846c671c500c479bcc66e262544908bf8",
+      "status": "failed",
+      "reason": "expected one $DONE, got 0",
       "assertions": 0,
       "cleanup": true
     },
@@ -3879,24 +3979,10 @@
       "cleanup": true
     },
     {
-      "path": "built-ins/decodeURI/S15.1.3.1_A1.10_T1.js",
-      "source_sha256": "c2907f1491a4be1b7868f7d322bbae4b813f3e63ae52786ca04c17cfd2fbee96",
-      "status": "failed",
-      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURI/S15.1.3.1_A1.10_T1.js']' timed out after 10 seconds",
-      "assertions": 0
-    },
-    {
       "path": "built-ins/decodeURI/S15.1.3.1_A1.11_T1.js",
       "source_sha256": "de78bea284f8d8c02f0927b18e623cb194bf1074b5bbd4e91c6e7889511bb73e",
       "status": "failed",
       "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURI/S15.1.3.1_A1.11_T1.js']' timed out after 10 seconds",
-      "assertions": 0
-    },
-    {
-      "path": "built-ins/decodeURI/S15.1.3.1_A1.11_T2.js",
-      "source_sha256": "93a0543f58cf1b36d5e90fe1089e432038605d35ffa5e0a6251ced5b445efb7c",
-      "status": "failed",
-      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURI/S15.1.3.1_A1.11_T2.js']' timed out after 10 seconds",
       "assertions": 0
     },
     {
@@ -3918,20 +4004,6 @@
       "source_sha256": "3e9a6309bad9d16611da84a2fda300bd9caaa07ee52ee1727336b8b3f986eb78",
       "status": "failed",
       "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURI/S15.1.3.1_A1.12_T3.js']' timed out after 10 seconds",
-      "assertions": 0
-    },
-    {
-      "path": "built-ins/decodeURI/S15.1.3.1_A1.2_T1.js",
-      "source_sha256": "3df3875ad7f5886feb0f86e494221a45b9eebf0f6bc1791bbc7ba24e374156ed",
-      "status": "failed",
-      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURI/S15.1.3.1_A1.2_T1.js']' timed out after 10 seconds",
-      "assertions": 0
-    },
-    {
-      "path": "built-ins/decodeURI/S15.1.3.1_A1.2_T2.js",
-      "source_sha256": "977308744f91c7afe4e93a6bb61694b93ed9af50a09d2d1d519d9324a2ab095a",
-      "status": "failed",
-      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURI/S15.1.3.1_A1.2_T2.js']' timed out after 10 seconds",
       "assertions": 0
     },
     {
@@ -3988,13 +4060,6 @@
       "source_sha256": "c6739e651a16ad4f99bb64af24123acf2141a411f915e135262552470d2cc3dd",
       "status": "failed",
       "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURIComponent/S15.1.3.2_A1.12_T2.js']' timed out after 10 seconds",
-      "assertions": 0
-    },
-    {
-      "path": "built-ins/decodeURIComponent/S15.1.3.2_A1.12_T3.js",
-      "source_sha256": "abd18e7c8ef2b6b4363a3419cdeb83017113f0dbe5af921dcd6c9ad11ca1da7b",
-      "status": "failed",
-      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURIComponent/S15.1.3.2_A1.12_T3.js']' timed out after 10 seconds",
       "assertions": 0
     },
     {
@@ -4907,14 +4972,6 @@
       "cleanup": true
     },
     {
-      "path": "language/expressions/dynamic-import/usage-from-eval.js",
-      "source_sha256": "3e884a5bd18579c1c490210151f98ce5ca36dabfb324073894e2d5aa004b1982",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"SyntaxError\"), message: \"unsupported reserved expression\", value: Object(Js(Handle { heap: 2, index: 874, serial: 967 })) })); expected None",
-      "assertions": 0,
-      "cleanup": true
-    },
-    {
       "path": "language/expressions/exponentiation/order-of-evaluation.js",
       "source_sha256": "9595ddd31db79f11f168762688233e8df5ed19f0dbef9d99bd57dc8792f4e8cf",
       "status": "failed",
@@ -5214,13 +5271,6 @@
       "source_sha256": "fd256cf1f6538fbb3ee1d1c8eaa74b0da9549e6a19fd50d6edd294aa2cba2869",
       "status": "failed",
       "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/language/identifiers/start-unicode-10.0.0.js']' timed out after 10 seconds",
-      "assertions": 0
-    },
-    {
-      "path": "language/identifiers/start-unicode-5.2.0.js",
-      "source_sha256": "c263caa5bcedf3263899322e5391361828b210177e54f670c4edcab1545f3dda",
-      "status": "failed",
-      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/language/identifiers/start-unicode-5.2.0.js']' timed out after 10 seconds",
       "assertions": 0
     },
     {

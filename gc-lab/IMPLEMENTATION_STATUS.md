@@ -237,3 +237,16 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 
 - 43818/47708 pass (91.8%), +769 vs checkpoint 15 (43049). Failed 708 (-148), unsupported 3182 (-621). Lost 0.
 - Largest remaining buckets: "unsupported reserved expression" 596, module code 599 + import 129 + dynamic-import negative parse ~375, unpaired UTF-16 strings 442, createRealm 181, "reserved binding identifier" 115, test262 agents 109, runner timeouts 66, ShadowRealm 57.
+
+### Modules: spec records, `import()` and `import.meta` (gap 17, 2026-11-09/10)
+
+- Design: MODULE_RECORDS.md. `modules.rs` follows the Cyclic Module Record algorithms (16.2.1.5-16.2.1.6): LoadRequestedModules, Link (InnerModuleLinking over SCCs), Evaluate with `[[AsyncEvaluation]]` ordering for top-level await, ResolveExport with `export *` and ambiguity, module namespace exotic objects, and string export names.
+- Pull host API: `take_module_requests` / `finish_module_request`, with referrers `Script { host_defined }`, `Module` and `Realm`. js_check answers requests from files relative to the referrer; run.py passes `--module` and `--negative-resolution`.
+- `import()` (13.3.10) in both evaluators and the resumable VM: the promise is rejected on an abrupt ToString, requests for the same (referrer, specifier) are shared, and link/evaluate/namespace run as promise jobs. `import.meta` (13.3.12) is a lazy null-prototype object, one per module record. Fixed: AsyncModuleExecutionRejected now rejects the TopLevelCapability before the async parents.
+- Still unsupported (parse error "unsupported ...", never parsed as something close): import attributes (`with {...}` and the second `import()` argument, 60 cases), import phases `import.source` / `import.defer` / `import defer` / `import source` (252 + 242 negative parse cases), `$262.AbstractModuleSource`.
+- **Servo bridge (roadmap D):** `mwr.rs` still hands over the whole static graph up front. It must drain `take_module_requests`, or `import()` on a page stays pending forever.
+
+### Checkpoint 17: full test262 baseline (2026-11-10)
+
+- 44976/47708 pass (94.3%), +1158 vs checkpoint 16 (43818). Failed 713 (+5), unsupported 2019 (-1163). Lost 0. There are 12 new failures, from cases that were unsupported before and now run: 8 `built-ins/AbstractModuleSource` (source phase imports not implemented) and 4 `ShadowRealm.prototype.importValue` (ShadowRealm not defined).
+- Largest remaining buckets: unpaired UTF-16 strings 447, import phase 252 + 242 negative parse, createRealm 181, "unsupported or missing expression" 158, "reserved binding identifier" 115 (`await` as an identifier in scripts), test262 agents 109, import attributes 60, runner timeouts 60, ShadowRealm 57, await expression shape 44, resumable loop binding expressions 37.

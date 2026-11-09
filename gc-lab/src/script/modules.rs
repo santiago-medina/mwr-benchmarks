@@ -8,7 +8,7 @@ use super::{
     promises::{Capability, Internal, State},
     vm::{Engine, Object, ScriptError, Value},
 };
-use crate::dual::Id;
+use crate::dual::{ExternalRoot, Id};
 use std::collections::{HashMap, HashSet};
 type Result<T> = std::result::Result<T, ScriptError>;
 
@@ -94,6 +94,8 @@ struct Record {
     env: Option<Id>,
     /// The namespace object and its sorted [[Exports]], once created.
     namespace: Option<(Id, Vec<String>)>,
+    /// [[ImportMeta]], created lazily (§13.3.12.1); rooted by a hidden env binding.
+    meta: Option<Id>,
 }
 /// GraphLoadingState (§16.2.1.6.1); the promise is replaced by `graph_loaded`.
 struct Graph {
@@ -101,11 +103,38 @@ struct Graph {
     visited: HashSet<usize>,
     pending: usize,
     loading: bool,
+    /// The `import()` slot whose LoadRequestedModules this graph is.
+    import: Option<usize>,
 }
+/// A request in flight. `referrer` is None for a Script or Realm referrer.
 struct Pending {
-    referrer: usize,
+    referrer: Option<usize>,
     specifier: String,
     graphs: Vec<usize>,
+    imports: Vec<usize>,
+}
+/// Who waits on a HostLoadImportedModule request: a loading graph or an `import()`.
+enum Waiter {
+    Graph(usize),
+    Import(usize),
+}
+/// A pending `import()` (§13.3.10.2 ContinueDynamicImport): its capability, the
+/// loading promise and the module, held by external roots until it settles.
+struct DynamicImport {
+    cap: Capability,
+    load: Option<Capability>,
+    module: Option<usize>,
+    roots: Vec<ExternalRoot>,
+}
+/// The reaction steps of ContinueDynamicImport.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum DynamicStep {
+    /// linkAndEvaluateClosure (step 6).
+    Loaded,
+    /// onFulfilled of the evaluation promise (step 6.e).
+    Evaluated,
+    /// rejectedClosure (step 3).
+    Rejected,
 }
 /// A failed load, kept as data so several waiting graphs can each throw it.
 #[derive(Clone)]
@@ -126,7 +155,10 @@ pub(super) struct Registry {
     keys: HashMap<(String, String), usize>,
     graphs: Vec<Graph>,
     pending: HashMap<u64, Pending>,
-    inflight: HashMap<(usize, String), u64>,
+    inflight: HashMap<(Option<usize>, String), u64>,
+    /// [[LoadedModules]] of Script and Realm referrers (one host-wide map).
+    script_loaded: HashMap<String, usize>,
+    dynamic: Vec<Option<DynamicImport>>,
     outbox: Vec<ModuleRequest>,
     next_request: u64,
     next_order: u64,
@@ -134,6 +166,14 @@ pub(super) struct Registry {
     script_host_defined: u64,
 }
 impl Registry {
+    /// The external roots of every unsettled `import()`, for teardown.
+    pub(super) fn dynamic_roots(self) -> Vec<ExternalRoot> {
+        self.dynamic
+            .into_iter()
+            .flatten()
+            .flat_map(|d| d.roots)
+            .collect()
+    }
     fn index(&self, url: &str) -> Result<usize> {
         self.keys
             .get(&(url.to_string(), "javascript".to_string()))
@@ -223,6 +263,21 @@ impl Registry {
     }
 }
 impl Failure {
+    /// A load failure caused by syntax or a module type this engine does not implement:
+    /// the host sees an Unsupported error instead of a catchable rejection.
+    fn unsupported(&self) -> Option<ScriptError> {
+        match self {
+            Failure::Syntax(s)
+                if s.message.contains("unsupported") || s.message.ends_with("limit") =>
+            {
+                Some(ScriptError::Syntax(s.clone()))
+            }
+            Failure::Error(kind, m) if kind == "SyntaxError" && m.contains("unsupported") => Some(
+                ScriptError::Unsupported("unsupported module syntax or type"),
+            ),
+            _ => None,
+        }
+    }
     fn script_error(&self, e: &mut Engine<'_>) -> ScriptError {
         match self {
             Failure::Syntax(s) => ScriptError::Syntax(s.clone()),
@@ -309,6 +364,7 @@ impl Engine<'_> {
             visited: HashSet::new(),
             pending: 1,
             loading: true,
+            import: None,
         });
         self.frame(|e| e.inner_module_loading(g, root))
     }
@@ -351,7 +407,10 @@ impl Engine<'_> {
             ModuleLoad::Error { kind, message } => Err(Failure::Error(kind, message)),
         };
         if let Ok(dep) = result {
-            let loaded = &mut self.modules.records[p.referrer].loaded;
+            let loaded = match p.referrer {
+                Some(r) => &mut self.modules.records[r].loaded,
+                None => &mut self.modules.script_loaded,
+            };
             match loaded.get(&p.specifier) {
                 Some(&prev) if prev != dep => {
                     return Err(ScriptError::Host(
@@ -366,6 +425,11 @@ impl Engine<'_> {
         let mut first = None;
         for g in p.graphs {
             if let Err(err) = self.frame(|e| e.continue_module_loading(g, result.clone())) {
+                first.get_or_insert(err);
+            }
+        }
+        for slot in p.imports {
+            if let Err(err) = self.frame(|e| e.continue_dynamic_import(slot, result.clone())) {
                 first.get_or_insert(err);
             }
         }
@@ -414,6 +478,7 @@ impl Engine<'_> {
             top: None,
             env: None,
             namespace: None,
+            meta: None,
         });
         Ok(i)
     }
@@ -427,7 +492,7 @@ impl Engine<'_> {
                 if let Some(&dep) = self.modules.records[m].loaded.get(&specifier) {
                     self.inner_module_loading(g, dep)?;
                 } else {
-                    self.host_load_imported_module(m, specifier, g);
+                    self.host_load_imported_module(Some(m), specifier, Waiter::Graph(g));
                 }
                 if !self.modules.graphs[g].loading {
                     return Ok(());
@@ -450,32 +515,45 @@ impl Engine<'_> {
     }
     /// HostLoadImportedModule (§16.2.1.10): queue a request for the host. A second
     /// graph waiting on the same (referrer, specifier) joins the request in flight.
-    fn host_load_imported_module(&mut self, m: usize, specifier: String, g: usize) {
+    fn host_load_imported_module(&mut self, m: Option<usize>, specifier: String, w: Waiter) {
         let r = &mut self.modules;
-        if let Some(id) = r.inflight.get(&(m, specifier.clone())) {
-            r.pending.get_mut(id).unwrap().graphs.push(g);
-            return;
+        let id = match r.inflight.get(&(m, specifier.clone())) {
+            Some(id) => *id,
+            None => {
+                let id = r.next_request;
+                r.next_request += 1;
+                r.inflight.insert((m, specifier.clone()), id);
+                r.outbox.push(ModuleRequest {
+                    id,
+                    referrer: match m {
+                        Some(m) => Referrer::Module {
+                            url: r.records[m].url.clone(),
+                            host_defined: r.records[m].host_defined,
+                        },
+                        None => Referrer::Script {
+                            host_defined: r.script_host_defined,
+                        },
+                    },
+                    specifier: specifier.clone(),
+                    attributes: vec![],
+                });
+                r.pending.insert(
+                    id,
+                    Pending {
+                        referrer: m,
+                        specifier,
+                        graphs: vec![],
+                        imports: vec![],
+                    },
+                );
+                id
+            }
+        };
+        let p = r.pending.get_mut(&id).unwrap();
+        match w {
+            Waiter::Graph(g) => p.graphs.push(g),
+            Waiter::Import(slot) => p.imports.push(slot),
         }
-        let id = r.next_request;
-        r.next_request += 1;
-        r.inflight.insert((m, specifier.clone()), id);
-        r.outbox.push(ModuleRequest {
-            id,
-            referrer: Referrer::Module {
-                url: r.records[m].url.clone(),
-                host_defined: r.records[m].host_defined,
-            },
-            specifier: specifier.clone(),
-            attributes: vec![],
-        });
-        r.pending.insert(
-            id,
-            Pending {
-                referrer: m,
-                specifier,
-                graphs: vec![g],
-            },
-        );
     }
     /// ContinueModuleLoading (§16.2.1.6.1.2).
     fn continue_module_loading(
@@ -490,12 +568,22 @@ impl Engine<'_> {
             Ok(m) => self.inner_module_loading(g, m),
             Err(failure) => {
                 self.modules.graphs[g].loading = false;
-                Err(failure.script_error(self))
+                match self.modules.graphs[g].import {
+                    // An `import()` graph rejects its loading promise instead.
+                    Some(slot) => {
+                        let reason = self.failure_value(&failure)?;
+                        self.settle_load(slot, Err(reason))
+                    }
+                    None => Err(failure.script_error(self)),
+                }
             }
         }
     }
     /// The loading promise of a top-level graph fulfilled: Link, then Evaluate.
     fn graph_loaded(&mut self, g: usize) -> Result<()> {
+        if let Some(slot) = self.modules.graphs[g].import {
+            return self.settle_load(slot, Ok(()));
+        }
         let root = self.modules.graphs[g].root;
         self.link(root)?;
         let promise = self.evaluate(root)?;
@@ -995,11 +1083,13 @@ impl Engine<'_> {
         self.set_evaluation_error(m, error.clone())?;
         self.modules.records[m].status = Status::Evaluated;
         self.modules.records[m].order = Order::Done;
+        // Steps 8-9: the module's own [[TopLevelCapability]] rejects before its
+        // [[AsyncParentModules]] (test262 module-code/top-level-await/rejection-order).
+        if let Some(cap) = self.modules.records[m].top.clone() {
+            self.invoke(cap.reject, vec![error.clone()])?;
+        }
         for p in self.modules.records[m].async_parents.clone() {
             self.async_module_rejected(p, error.clone())?;
-        }
-        if let Some(cap) = self.modules.records[m].top.clone() {
-            self.invoke(cap.reject, vec![error])?;
         }
         Ok(())
     }
@@ -1039,6 +1129,249 @@ impl Engine<'_> {
         self.frame(|e| {
             let value = e.lookup(env, name)?;
             e.to_string(value)
+        })
+    }
+}
+/// `import()` (§13.3.10) and `import.meta` (§13.3.12).
+impl Engine<'_> {
+    /// GetActiveScriptOrModule (§9.4.1), read from the lexical environment chain: a
+    /// module's code always runs under its module environment.
+    fn active_module(&self, env: Id) -> Option<usize> {
+        let mut current = Some(env);
+        while let Some(id) = current {
+            if let Some(m) = self.modules.records.iter().position(|r| r.env == Some(id)) {
+                return Some(m);
+            }
+            current = match self.objects.get(&id) {
+                Some(Object::Environment { parent, .. }) => *parent,
+                _ => None,
+            };
+        }
+        None
+    }
+    /// EvaluateImportCall (§13.3.10.1) from step 3, with the specifier evaluated.
+    pub(super) fn import_call(&mut self, env: Id, specifier: Value) -> Result<Value> {
+        let referrer = self.active_module(env);
+        self.frame(|e| {
+            // Step 5: NewPromiseCapability(%Promise%).
+            let cap = e.new_capability()?;
+            // Steps 6-7: IfAbruptRejectPromise(ToString(specifier)).
+            let specifier = match e.to_string(specifier) {
+                Ok(s) => s,
+                Err(ScriptError::Thrown(ex)) => {
+                    e.invoke(cap.reject.clone(), vec![ex.value])?;
+                    return Ok(cap.promise);
+                }
+                Err(other) => return Err(other),
+            };
+            let mut roots = vec![];
+            for v in cap.values() {
+                if let Some(id) = v.id() {
+                    roots.push(e.runtime.root(id)?);
+                }
+            }
+            let entry = DynamicImport {
+                cap: cap.clone(),
+                load: None,
+                module: None,
+                roots,
+            };
+            let slot = match e.modules.dynamic.iter().position(Option::is_none) {
+                Some(i) => {
+                    e.modules.dynamic[i] = Some(entry);
+                    i
+                }
+                None => {
+                    e.modules.dynamic.push(Some(entry));
+                    e.modules.dynamic.len() - 1
+                }
+            };
+            // Step 12: HostLoadImportedModule(referrer, moduleRequest, empty, cap). A
+            // request this referrer already loaded is answered from [[LoadedModules]]
+            // (the host must return the same module, §16.2.1.10).
+            let cached = match referrer {
+                Some(m) => e.modules.records[m].loaded.get(&specifier).copied(),
+                None => e.modules.script_loaded.get(&specifier).copied(),
+            };
+            match cached {
+                Some(dep) => e.continue_dynamic_import(slot, Ok(dep))?,
+                None => e.host_load_imported_module(referrer, specifier, Waiter::Import(slot)),
+            }
+            Ok(cap.promise)
+        })
+    }
+    /// The value a failed load rejects with.
+    fn failure_value(&mut self, failure: &Failure) -> Result<Value> {
+        if let Some(err) = failure.unsupported() {
+            return Err(err);
+        }
+        match failure {
+            Failure::Syntax(s) => self.error_value("SyntaxError", &s.message),
+            Failure::Error(kind, message) => self.error_value(kind, message),
+        }
+    }
+    /// ContinueDynamicImport (§13.3.10.2) steps 1-2 and 7: reject, or start
+    /// LoadRequestedModules and react to its promise.
+    fn continue_dynamic_import(
+        &mut self,
+        slot: usize,
+        result: std::result::Result<usize, Failure>,
+    ) -> Result<()> {
+        let module = match result {
+            Ok(m) => m,
+            Err(failure) => {
+                let reason = self.failure_value(&failure)?;
+                return self.finish_import(slot, Err(reason));
+            }
+        };
+        let load = self.new_capability()?;
+        let mut roots = vec![];
+        for v in load.values() {
+            if let Some(id) = v.id() {
+                roots.push(self.runtime.root(id)?);
+            }
+        }
+        let loaded = self.internal_function(
+            Internal::DynamicImport {
+                slot,
+                step: DynamicStep::Loaded,
+            },
+            0,
+        )?;
+        let rejected = self.internal_function(
+            Internal::DynamicImport {
+                slot,
+                step: DynamicStep::Rejected,
+            },
+            1,
+        )?;
+        let Value::Object(p) = load.promise.clone() else {
+            return Err(ScriptError::Runtime("dynamic import without promise"));
+        };
+        self.attach_reaction(p, Some(loaded), Some(rejected), None)?;
+        let entry = self.modules.dynamic[slot]
+            .as_mut()
+            .ok_or(ScriptError::Runtime("settled dynamic import"))?;
+        entry.load = Some(load);
+        entry.module = Some(module);
+        entry.roots.extend(roots);
+        let g = self.modules.graphs.len();
+        self.modules.graphs.push(Graph {
+            root: module,
+            visited: HashSet::new(),
+            pending: 1,
+            loading: true,
+            import: Some(slot),
+        });
+        self.inner_module_loading(g, module)
+    }
+    /// Settles the GraphLoadingState promise of an `import()` graph.
+    fn settle_load(&mut self, slot: usize, result: std::result::Result<(), Value>) -> Result<()> {
+        let Some(load) = self.modules.dynamic[slot]
+            .as_ref()
+            .and_then(|d| d.load.clone())
+        else {
+            return Err(ScriptError::Runtime("settled dynamic import"));
+        };
+        match result {
+            Ok(()) => self.invoke(load.resolve, vec![Value::Undefined])?,
+            Err(reason) => self.invoke(load.reject, vec![reason])?,
+        };
+        Ok(())
+    }
+    /// Resolves or rejects the `import()` promise and drops its roots.
+    fn finish_import(
+        &mut self,
+        slot: usize,
+        result: std::result::Result<Value, Value>,
+    ) -> Result<()> {
+        let Some(entry) = self.modules.dynamic.get_mut(slot).and_then(Option::take) else {
+            return Err(ScriptError::Runtime("settled dynamic import"));
+        };
+        let outcome = match result {
+            Ok(v) => self.invoke(entry.cap.resolve.clone(), vec![v]),
+            Err(v) => self.invoke(entry.cap.reject.clone(), vec![v]),
+        };
+        for root in entry.roots {
+            self.runtime.unroot(root)?;
+        }
+        outcome.map(|_| ())
+    }
+    /// The reaction closures of ContinueDynamicImport (§13.3.10.2 steps 3 and 6).
+    pub(super) fn dynamic_import_step(
+        &mut self,
+        slot: usize,
+        step: DynamicStep,
+        arg: Value,
+    ) -> Result<Value> {
+        let Some(module) = self
+            .modules
+            .dynamic
+            .get(slot)
+            .and_then(|d| d.as_ref())
+            .and_then(|d| d.module)
+        else {
+            return Err(ScriptError::Runtime("invalid dynamic import continuation"));
+        };
+        match step {
+            DynamicStep::Rejected => self.finish_import(slot, Err(arg))?,
+            DynamicStep::Loaded => {
+                // Steps 6.a-b: Link(); an abrupt completion rejects.
+                match self.link(module) {
+                    Ok(()) => {}
+                    Err(ScriptError::Thrown(ex)) => {
+                        self.finish_import(slot, Err(ex.value))?;
+                        return Ok(Value::Undefined);
+                    }
+                    Err(other) => return Err(other),
+                }
+                // Steps 6.c-f: Evaluate(), then react to its promise.
+                let Value::Object(p) = self.evaluate(module)? else {
+                    return Err(ScriptError::Runtime("module evaluation without promise"));
+                };
+                let fulfilled = self.internal_function(
+                    Internal::DynamicImport {
+                        slot,
+                        step: DynamicStep::Evaluated,
+                    },
+                    0,
+                )?;
+                let rejected = self.internal_function(
+                    Internal::DynamicImport {
+                        slot,
+                        step: DynamicStep::Rejected,
+                    },
+                    1,
+                )?;
+                self.attach_reaction(p, Some(fulfilled), Some(rejected), None)?;
+                self.unhandled.remove(&p);
+            }
+            DynamicStep::Evaluated => {
+                // Step 6.e.i: GetModuleNamespace(module).
+                let namespace = self.module_namespace(module)?;
+                self.finish_import(slot, Ok(namespace))?;
+            }
+        }
+        Ok(Value::Undefined)
+    }
+    /// `import.meta` (§13.3.12.1): the module's [[ImportMeta]], a null-prototype
+    /// object; HostGetImportMetaProperties adds nothing yet.
+    pub(super) fn import_meta(&mut self, env: Id) -> Result<Value> {
+        let m = self
+            .active_module(env)
+            .ok_or(ScriptError::Runtime("import.meta outside a module"))?;
+        if let Some(id) = self.modules.records[m].meta {
+            return Ok(Value::Object(id));
+        }
+        let menv = self.modules.records[m]
+            .env
+            .ok_or(ScriptError::Runtime("module environment missing"))?;
+        self.frame(|e| {
+            let id = e.new_object(None)?;
+            e.protect(&Value::Object(id))?;
+            e.initialize(menv, "\0importMeta", Value::Object(id))?;
+            e.modules.records[m].meta = Some(id);
+            Ok(Value::Object(id))
         })
     }
 }

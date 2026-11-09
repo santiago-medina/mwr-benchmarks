@@ -68,6 +68,11 @@ pub(super) enum Internal {
         index: usize,
         reject: bool,
     },
+    /// A step of ContinueDynamicImport (§13.3.10.2) for registry slot `slot`.
+    DynamicImport {
+        slot: usize,
+        step: super::modules::DynamicStep,
+    },
     AsyncResume {
         activation: Id,
         reject: bool,
@@ -111,7 +116,7 @@ impl Internal {
     pub fn edges(&self) -> Vec<Id> {
         match self {
             Self::AggregateElement { group, guard, .. } => vec![*group, *guard],
-            Self::ModuleSettled { .. } => vec![],
+            Self::ModuleSettled { .. } | Self::DynamicImport { .. } => vec![],
             Self::AsyncResume { activation, .. } => vec![*activation],
             Self::Resolve { cell, .. } | Self::Capability { cell } => vec![*cell],
             Self::Finally {
@@ -622,6 +627,7 @@ impl Engine<'_> {
                 reject,
             } => self.aggregate_element(group, guard, index, reject, arg(0)),
             Internal::ModuleSettled { index, reject } => self.module_settled(index, arg(0), reject),
+            Internal::DynamicImport { slot, step } => self.dynamic_import_step(slot, step, arg(0)),
             Internal::AsyncResume { activation, reject } => {
                 let generator = self
                     .data(activation)?

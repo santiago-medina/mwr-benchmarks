@@ -84,3 +84,13 @@ impl Engine {
 The Servo bridge (`mwr.rs` module_loader) still provides the whole static graph up front; it does not drain `take_module_requests` yet, so `import()` on a page leaves the promise pending. That is a **roadmap D follow-up**, recorded next to the host job queue drain. The module limits (128 modules, 1 MiB) are test guards and must be revisited for the Servo path.
 
 Kill line: 3 fix rounds per smoke bucket without progress, then narrow the survey or revisit this note.
+
+## Phase 3 as implemented (2026-11-10)
+
+- Parser: `import(x)` and `import(x,)` give `Expr::ImportCall`. `import()`, `import(...x)` and `new import(x)` are real early SyntaxErrors. `import(x, opts)` (import attributes), `import.source` and `import.defer` (import phases) stay "unsupported", never parsed as something close. `import.meta` outside module code is an early SyntaxError.
+- EvaluateImportCall (13.3.10.1): the referrer is the active module, found by walking the environment chain up to a record's module environment; otherwise it is the script (`Referrer::Script` with `set_script_host_defined`). The capability is created first and ToString runs next, so an abrupt ToString rejects the promise. Pending imports live in `Registry.dynamic` slots whose capability values are held through `ExternalRoot`s, which are released when the import settles or the realm is torn down (`release_globals`).
+- A second request with the same (referrer, specifier) joins the one in flight (16.2.1.10, FinishLoadingImportedModule: the same answer for the same pair). Script-referrer results are cached in `script_loaded`.
+- ContinueDynamicImport (13.3.10.2) uses internal promise reactions (`Internal::DynamicImport { slot, step }`), so link, evaluate and namespace run in the job order the spec gives: the load promise, then `Link()`, then `Evaluate()`, then the namespace.
+- A load failure whose cause is syntax this engine does not implement is reported to the host as Unsupported, not as a rejection (`Failure::unsupported`), so those test262 cases count as unsupported, not as failed.
+- Spec fix found by `rejection-order.js`: AsyncModuleExecutionRejected (16.2.1.6.5) rejects the module's `[[TopLevelCapability]]` (step 9) before it recurses into `[[AsyncParentModules]]`. An earlier draft did it the other way round, which reordered the `import()` rejections.
+- Smoke: language/expressions/import.meta 22/22, language/expressions/dynamic-import 556 passed, 0 failed (the remainder is unsupported: unimplemented syntax in fixtures 232, import phases 153, import attributes 60).

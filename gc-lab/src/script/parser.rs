@@ -87,6 +87,10 @@ pub enum Expr {
     SuperCall(Vec<Expr>),
     NewTarget,
     ClassInit(Box<ClassInit>),
+    /// `import(specifier)` (§13.3.10).
+    ImportCall(Box<Expr>),
+    /// `import.meta` (§13.3.12), module code only.
+    ImportMeta,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Class {
@@ -2429,6 +2433,13 @@ impl Parser<'_> {
                 }
                 return self.postfix(Expr::NewTarget);
             }
+            // ImportCall is a CallExpression, not a MemberExpression: `new import(x)`
+            // has no production (§13.3.5); `new (import(x))` is fine.
+            if self.current() == &Token::Name("import".into())
+                && self.tokens.get(self.cursor + 1).map(|t| &t.0) == Some(&Token::Punct('('))
+            {
+                return Err(self.error("import() cannot be used with new"));
+            }
             let mut f = self.primary()?;
             loop {
                 if self.punct('.') {
@@ -2680,18 +2691,41 @@ impl Parser<'_> {
                 "false" => Ok(Expr::Bool(false)),
                 "this" => Ok(Expr::This),
                 "null" => Ok(Expr::Null),
-                // `import(`/`import.meta` (phase 3 of MODULE_RECORDS.md), `new` forms not yet
-                // parsed here, and words that are identifiers in some sloppy contexts stay
-                // unsupported; every other reserved word in primary position is an early
-                // SyntaxError (§13.2 PrimaryExpression has no production for it).
-                "import"
-                    if matches!(
-                        self.tokens.get(self.cursor).map(|t| &t.0),
-                        Some(Token::Punct('(')) | Some(Token::Punct('.'))
-                    ) =>
-                {
-                    Err(self.error("unsupported reserved expression"))
+                // §13.3.10 ImportCall: `import ( AssignmentExpression[+In] ,opt )`. The
+                // two-argument form carries import attributes, which are not implemented.
+                "import" if self.punct('(') => {
+                    if self.current() == &Token::Punct(')') {
+                        return Err(self.error("import() requires a specifier"));
+                    }
+                    if self.op("...") {
+                        return Err(self.error("spread argument in import()"));
+                    }
+                    let specifier = self.assignment()?;
+                    if self.punct(',') {
+                        if !self.punct(')') {
+                            return Err(self.error("unsupported import attributes"));
+                        }
+                    } else {
+                        self.expect(')')?;
+                    }
+                    Ok(Expr::ImportCall(Box::new(specifier)))
                 }
+                // §13.3.12 ImportMeta: only in module code (§16.2.1.1 early error otherwise).
+                "import" if self.punct('.') => {
+                    if matches!(self.current(), Token::Name(n) if n == "source" || n == "defer") {
+                        return Err(self.error("unsupported import phase"));
+                    }
+                    if !self.word("meta") {
+                        return Err(self.error("expected import.meta"));
+                    }
+                    if !self.module {
+                        return Err(self.error("import.meta outside a module"));
+                    }
+                    Ok(Expr::ImportMeta)
+                }
+                // `new` forms not yet parsed here and words that are identifiers in some
+                // sloppy contexts stay unsupported; every other reserved word in primary
+                // position is an early SyntaxError (§13.2 has no production for it).
                 "new" | "let" | "yield" | "await" => {
                     Err(self.error("unsupported reserved expression"))
                 }
@@ -3449,9 +3483,11 @@ fn validate_loop(
                 work.push((a, d + 1));
                 work.extend(b.iter().map(|e| (e, d + 1)));
             }
-            Expr::Member(a, _) | Expr::Unary(_, a) | Expr::Update(a, ..) | Expr::Spread(a) => {
-                work.push((a, d + 1))
-            }
+            Expr::Member(a, _)
+            | Expr::Unary(_, a)
+            | Expr::Update(a, ..)
+            | Expr::Spread(a)
+            | Expr::ImportCall(a) => work.push((a, d + 1)),
             Expr::Conditional(a, b, c) => {
                 work.push((a, d + 1));
                 work.push((b, d + 1));

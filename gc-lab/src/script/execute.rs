@@ -672,6 +672,12 @@ impl Engine<'_> {
             Expr::Class(c) => self.eval_class(c, env, None),
             Expr::PrivateName(n) => self.lookup(env, n),
             Expr::NewTarget => self.lookup(env, "%newtarget"),
+            // §13.3.10.1 step 2: the specifier's evaluation throws; ToString rejects.
+            Expr::ImportCall(specifier) => {
+                let specifier = self.eval(specifier, env)?;
+                self.import_call(env, specifier)
+            }
+            Expr::ImportMeta => self.import_meta(env),
             Expr::ClassInit(init) => self.eval_class_init(init, env),
             Expr::SuperCall(args) => self.super_call(args, env),
             Expr::SuperMember(_) | Expr::SuperComputed(_) => {
