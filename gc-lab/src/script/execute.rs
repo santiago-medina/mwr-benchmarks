@@ -991,6 +991,7 @@ impl Engine<'_> {
                 }
                 if let Some(program) = program {
                     return self.start_async(
+                        id,
                         environment,
                         params,
                         body,
@@ -1007,8 +1008,15 @@ impl Engine<'_> {
                 if class && self.pending_construct.is_none() {
                     return self.throw_error("TypeError", "class constructor requires new");
                 }
-                let local =
-                    self.function_environment(environment, &params, &body, kind, receiver, &args)?;
+                let local = self.function_environment(
+                    id,
+                    environment,
+                    &params,
+                    &body,
+                    kind,
+                    receiver,
+                    &args,
+                )?;
                 let result = self.block(&body, local, true)?;
                 if kind == FunctionKind::DerivedConstructor {
                     return match result {

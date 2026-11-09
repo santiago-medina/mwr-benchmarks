@@ -775,6 +775,24 @@ impl Engine<'_> {
         )?;
         Ok(Value::Object(id))
     }
+    /// CreateMappedArgumentsObject without the map (set by function_environment):
+    /// `callee` is the function itself, as a writable, non-enumerable data property.
+    pub(super) fn mapped_arguments_object(
+        &mut self,
+        function: Id,
+        args: &[Value],
+    ) -> Result<Value> {
+        let value = self.arguments_object(args)?;
+        let Value::Object(id) = value else {
+            unreachable!()
+        };
+        let mut d = self.data(id)?.clone();
+        d.properties
+            .retain(|(k, _)| *k != super::objects::Key::from("callee"));
+        self.replace_data(id, d)?;
+        self.hidden(id, "callee", Value::Object(function))?;
+        Ok(value)
+    }
     fn bind_function(&mut self, target: Value, mut args: Vec<Value>) -> Result<Value> {
         if !self.callable(&target) {
             return self.throw_error("TypeError", "bind target not callable");

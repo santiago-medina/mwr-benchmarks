@@ -97,6 +97,8 @@ pub(super) struct Data {
     pub typed: Option<super::typed_arrays::Typed>,
     pub enumeration: Option<super::enumeration::Cursor>,
     pub arguments: bool,
+    /// Mapped arguments object: index → (environment, binding name) still aliased.
+    pub parameter_map: Option<Vec<Option<(Id, String)>>>,
     pub array: bool,
     pub response: Option<super::network::Response>,
     pub request: Option<super::network::Request>,
@@ -128,6 +130,7 @@ impl Data {
             typed: None,
             enumeration: None,
             arguments: false,
+            parameter_map: None,
             array: false,
             iterator: None,
             collection: None,
@@ -152,6 +155,13 @@ impl Data {
             .chain(self.view.as_ref().map(|v| v.buffer))
             .chain(self.typed.as_ref().map(|t| t.view.buffer))
             .chain(self.boxed.as_ref().and_then(Value::id))
+            .chain(
+                self.parameter_map
+                    .iter()
+                    .flatten()
+                    .flatten()
+                    .map(|(env, _)| *env),
+            )
             .chain(self.iterator.as_ref().and_then(|i| i.target))
             .chain(self.regexp_cursor.as_ref().map(|c| c.regexp))
             .chain(self.request.as_ref().into_iter().flat_map(|r| r.edges()))
@@ -318,7 +328,31 @@ impl Engine<'_> {
                 });
             }
         }
-        Ok(self.data(id)?.own(&key).cloned())
+        let data = self.data(id)?;
+        let mut property = data.own(&key).cloned();
+        if let (Some(p), Some((env, name))) = (&mut property, self.mapped_slot(data, &key)) {
+            if let (Kind::Data { value, .. }, Some(Object::Environment { bindings, .. })) =
+                (&mut p.kind, self.objects.get(&env))
+            {
+                if let Some(Some(v)) = bindings.get(&name) {
+                    *value = v.clone();
+                }
+            }
+        }
+        Ok(property)
+    }
+    fn mapped_slot(&self, data: &Data, key: &Key) -> Option<(Id, String)> {
+        let index = key.index()? as usize;
+        data.parameter_map.as_ref()?.get(index)?.clone()
+    }
+    fn unmap(&mut self, id: Id, key: &Key) -> Result<()> {
+        let mut d = self.data(id)?.clone();
+        if let (Some(map), Some(index)) = (&mut d.parameter_map, key.index()) {
+            if let Some(slot) = map.get_mut(index as usize) {
+                *slot = None;
+            }
+        }
+        self.replace_data(id, d)
     }
     pub(super) fn has(&self, mut id: Id, key: impl Into<Key>) -> Result<bool> {
         let key = key.into();
@@ -384,6 +418,36 @@ impl Engine<'_> {
         }
         if self.data(id)?.array {
             return self.array_define(id, key, d);
+        }
+        if let Some((env, name)) = self.mapped_slot(self.data(id)?, &key) {
+            // [[DefineOwnProperty]] of a mapped arguments object (10.4.4.2).
+            let mut next = d.clone();
+            if d.data() && d.value.is_none() && d.writable == Some(false) {
+                next.value = Some(
+                    self.own(id, &key)?
+                        .and_then(|p| match p.kind {
+                            Kind::Data { value, .. } => Some(value),
+                            _ => None,
+                        })
+                        .unwrap_or(Value::Undefined),
+                );
+            }
+            let mut data = self.data(id)?.clone();
+            if !data.apply(key.clone(), next) {
+                return Ok(false);
+            }
+            self.replace_data(id, data)?;
+            if d.accessor() {
+                self.unmap(id, &key)?;
+            } else {
+                if let Some(value) = d.value.clone() {
+                    self.initialize(env, &name, value)?;
+                }
+                if d.writable == Some(false) {
+                    self.unmap(id, &key)?;
+                }
+            }
+            return Ok(true);
         }
         let mut data = self.data(id)?.clone();
         let accepted = data.apply(key, d);
@@ -502,6 +566,11 @@ impl Engine<'_> {
         }
         let mut d = self.data(id)?.clone();
         d.properties.retain(|(k, _)| *k != key);
+        if let (Some(map), Some(index)) = (&mut d.parameter_map, key.index()) {
+            if let Some(slot) = map.get_mut(index as usize) {
+                *slot = None;
+            }
+        }
         self.replace_data(id, d)?;
         Ok(true)
     }

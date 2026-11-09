@@ -89,7 +89,8 @@ impl Engine<'_> {
         args: Vec<Value>,
         program: Arc<Program>,
     ) -> Result<Value> {
-        let local = self.function_environment(env, &params, &body, kind, receiver, &args)?;
+        let local =
+            self.function_environment(function, env, &params, &body, kind, receiver, &args)?;
         let prototype = self.get_member(Value::Object(function), "prototype")?;
         let asynchronous = matches!(
             kind,

@@ -8,6 +8,7 @@ type Result<T> = std::result::Result<T, ScriptError>;
 impl Engine<'_> {
     pub(super) fn function_environment(
         &mut self,
+        function: Id,
         parent: Id,
         params: &[Param],
         body: &[Stmt],
@@ -36,6 +37,10 @@ impl Engine<'_> {
         let parameters = self.new_environment(Some(parent), &declarations, false)?;
         self.protect(&Value::Object(parameters))?;
         let sloppy = matches!(body.first(), Some(Stmt::Sloppy));
+        let simple = params.iter().all(|p| {
+            !p.rest && p.default.is_none() && matches!(p.binding, parser::Pattern::Name(_))
+        });
+        let mut mapped = None;
         self.set_env_strict(parameters, !sloppy);
         // Sloppy functions coerce `this`: nullish → global object, primitives → wrappers.
         let receiver = match receiver {
@@ -66,7 +71,17 @@ impl Engine<'_> {
                 self.initialize(parameters, "this", receiver)?;
             }
             if !names.iter().any(|name| name == "arguments") {
-                let arguments = self.arguments_object(args)?;
+                // Sloppy functions with simple parameter lists get a mapped arguments
+                // object (CreateMappedArgumentsObject); the map is filled in below once
+                // the body environment exists.
+                let arguments = if sloppy && simple {
+                    self.mapped_arguments_object(function, args)?
+                } else {
+                    self.arguments_object(args)?
+                };
+                if sloppy && simple {
+                    mapped = arguments.id();
+                }
                 self.mutable_binding(parameters, "arguments", arguments)?;
             }
         }
@@ -103,6 +118,29 @@ impl Engine<'_> {
                 let value = self.lookup(parameters, &name)?;
                 self.initialize(local, &name, value)?;
             }
+        }
+        if let Some(arguments) = mapped {
+            // Map index i to the last parameter named like it, in the environment
+            // where the body resolves that name (the body copy when `var` redeclares it).
+            let mut map: Vec<Option<(Id, String)>> = vec![None; args.len().min(params.len())];
+            let mut seen = std::collections::HashSet::new();
+            for index in (0..map.len()).rev() {
+                let parser::Pattern::Name(name) = &params[index].binding else {
+                    continue;
+                };
+                if !seen.insert(name.clone()) {
+                    continue;
+                }
+                let env = if self.env_has_own(local, name) {
+                    local
+                } else {
+                    parameters
+                };
+                map[index] = Some((env, name.clone()));
+            }
+            let mut d = self.data(arguments)?.clone();
+            d.parameter_map = Some(map);
+            self.replace_data(arguments, d)?;
         }
         Ok(local)
     }

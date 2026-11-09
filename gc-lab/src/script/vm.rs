@@ -551,6 +551,9 @@ impl<'host> Engine<'host> {
         );
         Ok(id)
     }
+    pub(super) fn env_has_own(&self, env: Id, name: &str) -> bool {
+        matches!(self.objects.get(&env), Some(Object::Environment { bindings, .. }) if bindings.contains_key(name))
+    }
     pub(super) fn env_strict(&self, env: Id) -> bool {
         !matches!(
             self.objects.get(&env),

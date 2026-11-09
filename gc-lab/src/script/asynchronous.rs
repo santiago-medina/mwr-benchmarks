@@ -995,6 +995,7 @@ impl Activation {
 impl Engine<'_> {
     pub(super) fn start_async(
         &mut self,
+        function: Id,
         env: Id,
         params: Vec<Param>,
         body: Vec<Stmt>,
@@ -1006,15 +1007,16 @@ impl Engine<'_> {
         let cap = self.capability(Value::Object(
             self.intrinsics.as_ref().unwrap().functions["Promise"],
         ))?;
-        let local = match self.function_environment(env, &params, &body, kind, receiver, &args) {
-            Ok(local) => local,
-            Err(ScriptError::Thrown(error)) => {
-                self.protect(&error.value)?;
-                self.invoke(cap.reject, vec![error.value])?;
-                return Ok(cap.promise);
-            }
-            Err(error) => return Err(error),
-        };
+        let local =
+            match self.function_environment(function, env, &params, &body, kind, receiver, &args) {
+                Ok(local) => local,
+                Err(ScriptError::Thrown(error)) => {
+                    self.protect(&error.value)?;
+                    self.invoke(cap.reject, vec![error.value])?;
+                    return Ok(cap.promise);
+                }
+                Err(error) => return Err(error),
+            };
         self.start_program(local, program, cap)
     }
     pub(super) fn start_program(
