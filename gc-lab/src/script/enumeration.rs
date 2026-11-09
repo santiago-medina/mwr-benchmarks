@@ -92,7 +92,8 @@ impl Engine<'_> {
                     }
                 }
             } else {
-                cursor.current = self.data(current)?.prototype;
+                // §14.7.5.10 EnumerateObjectProperties walks [[GetPrototypeOf]] (proxy traps run).
+                cursor.current = self.get_prototype_of(current)?;
                 cursor.keys = None;
             }
         }

@@ -92,7 +92,8 @@ impl Engine<'_> {
                         let spread =
                             self.get_member(item.clone(), Key::Symbol(super::symbols::SPREADABLE))?;
                         if spread == Value::Undefined {
-                            self.data(source)?.array
+                            // §23.1.3.2.1 IsConcatSpreadable step 4: IsArray(O).
+                            self.is_array(&Value::Object(source))?
                         } else {
                             spread.truthy()
                         }

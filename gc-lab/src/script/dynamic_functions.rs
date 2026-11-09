@@ -105,7 +105,13 @@ impl Engine<'_> {
             return self.throw_error("TypeError", "Function.toString requires a callable");
         }
         if let Value::Object(id) = receiver {
-            if let Some(source) = self.data(id)?.source.clone() {
+            // A callable proxy has no [[SourceText]]: NativeFunction form (§20.2.3.5 step 3).
+            let source = if self.is_proxy(id) {
+                None
+            } else {
+                self.data(id)?.source.clone()
+            };
+            if let Some(source) = source {
                 return Ok(Value::String(source));
             }
         }

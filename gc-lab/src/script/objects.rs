@@ -182,43 +182,43 @@ impl Data {
             .map(|(_, p)| p)
     }
 }
+/// IsCompatiblePropertyDescriptor (§10.1.6.2): the validation half of
+/// ValidateAndApplyPropertyDescriptor (§10.1.6.3).
+pub(super) fn compatible_descriptor(
+    extensible: bool,
+    d: &Descriptor,
+    current: Option<&Property>,
+) -> bool {
+    let Some(old) = current else {
+        return extensible;
+    };
+    if old.configurable {
+        return true;
+    }
+    if d.configurable == Some(true) || d.enumerable.is_some_and(|v| v != old.enumerable) {
+        return false;
+    }
+    let accessor = matches!(old.kind, Kind::Accessor { .. });
+    if d.data() && accessor || d.accessor() && !accessor {
+        return false;
+    }
+    match &old.kind {
+        Kind::Data {
+            value,
+            writable: false,
+        } => !(d.writable == Some(true) || d.value.as_ref().is_some_and(|v| !v.same_value(value))),
+        Kind::Accessor { get, set } => {
+            !(d.get.as_ref().is_some_and(|v| !v.same_value(get))
+                || d.set.as_ref().is_some_and(|v| !v.same_value(set)))
+        }
+        _ => true,
+    }
+}
 impl Data {
     pub(super) fn apply(&mut self, key: Key, d: Descriptor) -> bool {
         let old = self.own(&key).cloned();
-        if old.is_none() && !self.extensible {
+        if !compatible_descriptor(self.extensible, &d, old.as_ref()) {
             return false;
-        }
-        if let Some(old) = &old {
-            if !old.configurable {
-                if d.configurable == Some(true) || d.enumerable.is_some_and(|v| v != old.enumerable)
-                {
-                    return false;
-                }
-                let accessor = matches!(old.kind, Kind::Accessor { .. });
-                if d.data() && accessor || d.accessor() && !accessor {
-                    return false;
-                }
-                match &old.kind {
-                    Kind::Data {
-                        value,
-                        writable: false,
-                    } => {
-                        if d.writable == Some(true)
-                            || d.value.as_ref().is_some_and(|v| !v.same_value(value))
-                        {
-                            return false;
-                        }
-                    }
-                    Kind::Accessor { get, set } => {
-                        if d.get.as_ref().is_some_and(|v| !v.same_value(get))
-                            || d.set.as_ref().is_some_and(|v| !v.same_value(set))
-                        {
-                            return false;
-                        }
-                    }
-                    _ => {}
-                }
-            }
         }
         let mut p = old.unwrap_or_else(|| Property::data(Value::Undefined, false, false, false));
         if d.accessor() && !matches!(p.kind, Kind::Accessor { .. }) {
@@ -316,8 +316,12 @@ impl Engine<'_> {
         self.replace_data(id, Data::new(prototype))?;
         Ok(id)
     }
-    pub(super) fn own(&self, id: Id, key: impl Into<Key>) -> Result<Option<Property>> {
+    /// [[GetOwnProperty]].
+    pub(super) fn own(&mut self, id: Id, key: impl Into<Key>) -> Result<Option<Property>> {
         let key = key.into();
+        if self.is_proxy(id) {
+            return self.proxy_own(id, &key);
+        }
         if let Some(typed) = &self.data(id)?.typed {
             if let Some(index) = super::typed_arrays::numeric_index(&key) {
                 let value = self.typed_get(typed, index)?;
@@ -354,9 +358,12 @@ impl Engine<'_> {
         }
         self.replace_data(id, d)
     }
-    pub(super) fn has(&self, mut id: Id, key: impl Into<Key>) -> Result<bool> {
+    pub(super) fn has(&mut self, mut id: Id, key: impl Into<Key>) -> Result<bool> {
         let key = key.into();
         for _ in 0..10_000 {
+            if self.is_proxy(id) {
+                return self.proxy_has(id, &key);
+            }
             if let Some(typed) = &self.data(id)?.typed {
                 if let Some(index) = super::typed_arrays::numeric_index(&key) {
                     return self.typed_valid(typed, index);
@@ -385,6 +392,9 @@ impl Engine<'_> {
             let Some(id) = at else {
                 return Ok(Value::Undefined);
             };
+            if self.is_proxy(id) {
+                return self.proxy_get(id, &key, receiver);
+            }
             if let Some(typed) = &self.data(id)?.typed {
                 if let Some(index) = super::typed_arrays::numeric_index(&key) {
                     return self.typed_get(typed, index);
@@ -410,6 +420,9 @@ impl Engine<'_> {
         let key = key.into();
         if d.data() && d.accessor() {
             return self.throw_error("TypeError", "mixed descriptor");
+        }
+        if self.is_proxy(id) {
+            return self.proxy_define(id, &key, d);
         }
         if let Some(typed) = self.data(id)?.typed.clone() {
             if let Some(index) = super::typed_arrays::numeric_index(&key) {
@@ -487,6 +500,9 @@ impl Engine<'_> {
         let mut found = None;
         for _ in 0..10_000 {
             let Some(id) = at else { break };
+            if self.is_proxy(id) {
+                return self.proxy_set(id, &key, value, receiver);
+            }
             if let Some(typed) = self.data(id)?.typed.clone() {
                 if let Some(index) = super::typed_arrays::numeric_index(&key) {
                     if receiver == Value::Object(id) {
@@ -556,6 +572,9 @@ impl Engine<'_> {
     }
     pub(super) fn delete(&mut self, id: Id, key: impl Into<Key>) -> Result<bool> {
         let key = key.into();
+        if self.is_proxy(id) {
+            return self.proxy_delete(id, &key);
+        }
         if let Some(typed) = &self.data(id)?.typed {
             if let Some(index) = super::typed_arrays::numeric_index(&key) {
                 return self.typed_valid(typed, index).map(|valid| !valid);
@@ -574,7 +593,11 @@ impl Engine<'_> {
         self.replace_data(id, d)?;
         Ok(true)
     }
+    /// [[SetPrototypeOf]] (OrdinarySetPrototypeOf, §10.1.2.1).
     pub(super) fn set_prototype(&mut self, id: Id, prototype: Option<Id>) -> Result<bool> {
+        if self.is_proxy(id) {
+            return self.proxy_set_prototype(id, prototype);
+        }
         if self.data(id)?.prototype == prototype {
             return Ok(true);
         }
@@ -592,7 +615,12 @@ impl Engine<'_> {
             if p == id {
                 return Ok(false);
             }
-            at = self.data(p)?.prototype;
+            // Step 8.c.i: a proxy parent ends the cycle check.
+            at = if self.is_proxy(p) {
+                None
+            } else {
+                self.data(p)?.prototype
+            };
         }
         Err(ScriptError::Runtime("prototype traversal limit"))
     }
@@ -653,7 +681,11 @@ impl Engine<'_> {
         self.put_data(id, "configurable", Value::Bool(p.configurable))?;
         Ok(Value::Object(id))
     }
-    pub(super) fn own_keys(&self, id: Id) -> Result<Vec<Key>> {
+    /// [[OwnPropertyKeys]].
+    pub(super) fn own_keys(&mut self, id: Id) -> Result<Vec<Key>> {
+        if self.is_proxy(id) {
+            return self.proxy_own_keys(id);
+        }
         if let Some(typed) = &self.data(id)?.typed {
             let length = self.typed_length(typed)?.unwrap_or(0);
             let mut keys: Vec<_> = (0..length)

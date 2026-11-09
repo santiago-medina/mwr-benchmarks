@@ -133,3 +133,12 @@ Full test262 (strict prefix, or sloppy for noStrict/raw): 29100/47708 pass (61.0
 The Array copy-method dispatch matched the prefixed builtin name, so concat, flat, flatMap, with, toSorted, toReversed and toSpliced were all reported as unsupported. js_check now defines the assert.js globals (compareArray, isPrimitive, isNegativeZero) and raises the step limit to 50M; the runner's 10 s timeout is the guard. The engine default (10k steps) is a test guard and far too low for real pages.
 
 Full test262: 35782/47708 pass (75.0%), up from 33930; no previously passing case lost. Largest remaining buckets: Temporal not defined (4105 failures, to come from a vetted crate), standard intrinsics not implemented (1793 unsupported: TypedArray/DataView, WeakMap/WeakSet, SharedArrayBuffer/Atomics, Proxy, FinalizationRegistry), Iterator helpers (438 + 133), modules (~780 unsupported), and 246 runner timeouts.
+
+### Proxy and Reflect (2026-11-09)
+
+Proxy exotic objects (design: PROXY.md): `Object::Proxy`, the `Proxy` constructor and `Proxy.revocable`, all thirteen traps with their §10.5 invariant checks, and proxy dispatch in the essential internal methods and their prototype walks. Callers that read ordinary slots now go through the internal methods: `Object.*`/`Reflect.*`, SetIntegrityLevel/TestIntegrityLevel, OrdinaryHasInstance, for-in, IsArray (JSON, concat, ArraySpeciesCreate, `Object.prototype.toString`), BoundFunctionCreate and GetFunctionRealm. Proxy target and handler are rooted for the duration of an internal method, because a trap may revoke its own proxy. Also fixed while there:
+- `Reflect[Symbol.toStringTag]`.
+- `instanceof` with a primitive left operand no longer reads `prototype` (§7.3.21 step 3).
+- `with` object records resolve a name once (`Reference::WithBinding`) and re-check HasProperty in GetBindingValue/SetMutableBinding, so proxy environments see the spec's trap sequence.
+
+Smoke: built-ins/Proxy passes everything except the 37 cross-realm cases (`$262.createRealm`); 2039 cases across with/assignment/Proxy/Reflect and the 382 cases that use `new Proxy` elsewhere lost nothing against the gap-9 baseline. Still missing: private elements on proxies (no storage for them on `Object::Proxy`), and the Annex B `__proto__`/`__defineGetter__`/`__lookupGetter__` family (not implemented at all, ~69 cases).

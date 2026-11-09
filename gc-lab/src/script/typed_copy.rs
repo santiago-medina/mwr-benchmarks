@@ -93,7 +93,7 @@ impl Engine<'_> {
             }
             let (_, _, target_length) = self.typed_record(receiver)?;
             if let Value::Object(source) = arg(0) {
-                if self.data(source)?.typed.is_some() {
+                if !self.is_proxy(source) && self.data(source)?.typed.is_some() {
                     let (_, source, length) = self.typed_record(Value::Object(source))?;
                     if !offset.is_finite()
                         || offset > target_length as f64

@@ -191,11 +191,13 @@ impl Engine<'_> {
             }
             Expr::Name(name) => {
                 // A call through a `with` object reference gets the object as `this`.
-                let receiver = match self.with_base(env, name)? {
+                // One ResolveBinding for both the value and the `this` (§13.3.6.1).
+                let (function, base) = self.lookup_with_base(env, name)?;
+                let receiver = match base {
                     Some(object) => Value::Object(object),
                     None => Value::Undefined,
                 };
-                Ok((receiver, self.eval(callee, env)?))
+                Ok((receiver, function))
             }
             _ => Ok((Value::Undefined, self.eval(callee, env)?)),
         }

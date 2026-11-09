@@ -8,6 +8,9 @@ use crate::dual::Id;
 type Result<T> = std::result::Result<T, ScriptError>;
 pub(super) enum Reference {
     Binding(Id, String),
+    /// A name resolved to a `with` object environment (§9.1.1.2): the binding
+    /// object, the name and strictness. Resolved once, so traps run once.
+    WithBinding(Id, String, bool),
     /// A strict-mode name that resolved nowhere before the right-hand side ran.
     Unresolvable(String),
     /// Base, key, and whether the reference is in strict mode code.
@@ -28,7 +31,17 @@ impl Engine<'_> {
             Expr::Name(name) if self.env_strict(env) && self.unresolvable(env, name)? => {
                 Ok(Reference::Unresolvable(name.clone()))
             }
-            Expr::Name(name) => Ok(Reference::Binding(env, name.clone())),
+            Expr::Name(name) => match self.with_base(env, name)? {
+                Some(object) => {
+                    self.protect(&Value::Object(object))?;
+                    Ok(Reference::WithBinding(
+                        object,
+                        name.clone(),
+                        self.env_strict(env),
+                    ))
+                }
+                None => Ok(Reference::Binding(env, name.clone())),
+            },
             Expr::Member(base, key) => {
                 let base = self.eval(base, env)?;
                 self.protect(&base)?;
@@ -53,6 +66,17 @@ impl Engine<'_> {
     fn reference_get(&mut self, reference: &Reference) -> Result<Value> {
         match reference {
             Reference::Binding(env, name) => self.lookup(*env, name),
+            Reference::WithBinding(object, name, strict) => {
+                // §9.1.1.2.6 GetBindingValue steps 2-4.
+                if !self.has(*object, name)? {
+                    if *strict {
+                        return self
+                            .throw_error("ReferenceError", &format!("{name} is not defined"));
+                    }
+                    return Ok(Value::Undefined);
+                }
+                self.get_member(Value::Object(*object), name.as_str())
+            }
             Reference::Unresolvable(name) => {
                 self.throw_error("ReferenceError", &format!("{name} is not defined"))
             }
@@ -64,6 +88,13 @@ impl Engine<'_> {
         self.protect(&value)?;
         match reference {
             Reference::Binding(env, name) => self.assign_binding(env, &name, value.clone())?,
+            Reference::WithBinding(object, name, strict) => {
+                // §9.1.1.2.5 SetMutableBinding steps 1-3.
+                if !self.has(object, &name)? && strict {
+                    return self.throw_error("ReferenceError", &format!("{name} is not defined"));
+                }
+                self.assign_member(Value::Object(object), name.into(), value.clone(), strict)?
+            }
             Reference::Unresolvable(name) => {
                 return self.throw_error("ReferenceError", &format!("{name} is not defined"))
             }

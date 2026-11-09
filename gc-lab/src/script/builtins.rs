@@ -33,6 +33,7 @@ const ERRORS: &[&str] = &[
 const METHODS: &[(&str, &[&str])] = &[
     ("Error.prototype", &["toString"]),
     ("Map", &["groupBy"]),
+    ("Proxy", &["revocable"]),
     ("JSON", &["parse", "stringify"]),
     (
         "Number",
@@ -211,7 +212,7 @@ impl Engine<'_> {
             "[Symbol.asyncIterator]"
         } else if matches!(name, "Array.species" | "Promise.species") {
             "get [Symbol.species]"
-        } else if name == "Function.prototype" {
+        } else if name == "Function.prototype" || name == "%ProxyRevoke%" {
             ""
         } else {
             name.rsplit('.').next().unwrap()
@@ -221,7 +222,8 @@ impl Engine<'_> {
             | "Symbol.prototype.toString"
             | "Symbol.prototype.valueOf" => 0,
             "BigInt.asIntN" | "BigInt.asUintN" => 2,
-            "BigInt.prototype.valueOf" => 0,
+            "BigInt.prototype.valueOf" | "%ProxyRevoke%" => 0,
+            "Proxy" | "Proxy.revocable" => 2,
             "AggregateError"
             | "Object.hasOwn"
             | "Object.groupBy"
@@ -402,6 +404,7 @@ impl Engine<'_> {
             "Date",
             "RegExp",
             "%ThrowTypeError%",
+            "Proxy",
         ];
         names.extend(super::typed_arrays::NAMES.iter().map(|(name, _)| *name));
         names.extend(ERRORS.iter().copied());
@@ -425,6 +428,16 @@ impl Engine<'_> {
         let reflect = self.new_object(Some(object))?;
         self.runtime.link(env, reflect)?;
         objects.insert("Reflect".into(), reflect);
+        // §28.1.14 Reflect [ %Symbol.toStringTag% ]: "Reflect", configurable only.
+        self.define(
+            reflect,
+            super::objects::Key::Symbol(1),
+            Descriptor {
+                value: Some(Value::String("Reflect".into())),
+                configurable: Some(true),
+                ..Descriptor::default()
+            },
+        )?;
         let json = self.new_object(Some(object))?;
         self.runtime.link(env, json)?;
         objects.insert("JSON".into(), json);
@@ -691,7 +704,10 @@ impl Engine<'_> {
     }
     fn object_argument(&mut self, v: Value) -> Result<Id> {
         if let Value::Object(id) = v {
-            self.data(id)?;
+            // Proxies have no Data but implement every internal method (§10.5).
+            if !self.is_proxy(id) {
+                self.data(id)?;
+            }
             Ok(id)
         } else {
             self.throw_error("TypeError", "expected object")
@@ -700,7 +716,9 @@ impl Engine<'_> {
     pub(super) fn object_coercible(&mut self, v: Value) -> Result<Id> {
         match v {
             Value::Object(id) => {
-                self.data(id)?;
+                if !self.is_proxy(id) {
+                    self.data(id)?;
+                }
                 Ok(id)
             }
             Value::Null | Value::Undefined => self.throw_error("TypeError", "null or undefined"),
@@ -802,8 +820,9 @@ impl Engine<'_> {
         } else {
             args.remove(0)
         };
+        // §10.4.1.3 BoundFunctionCreate step 1: targetFunction.[[GetPrototypeOf]]().
         let p = if let Value::Object(id) = target {
-            self.data(id)?.prototype
+            self.get_prototype_of(id)?
         } else {
             Some(self.intrinsics.as_ref().unwrap().function)
         };
@@ -899,6 +918,9 @@ impl Engine<'_> {
         receiver: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name == "Proxy" || name.starts_with("Proxy.") {
+            return self.proxy_builtin(name, args);
+        }
         if name == "eval" {
             // Indirect eval: global environment, sloppy unless the code says otherwise.
             let source = args.into_iter().next().unwrap_or(Value::Undefined);
@@ -1160,7 +1182,9 @@ impl Engine<'_> {
                 let p = match arg(0) {
                     Value::Null => None,
                     Value::Object(id) => {
-                        self.data(id)?;
+                        if !self.is_proxy(id) {
+                            self.data(id)?;
+                        }
                         Some(id)
                     }
                     _ => return self.throw_error("TypeError", "prototype must be object or null"),
@@ -1184,6 +1208,16 @@ impl Engine<'_> {
                     Value::Bool(_) => "Boolean",
                     Value::Symbol(_) => "Symbol",
                     Value::BigInt(_) => "BigInt",
+                    // §20.1.3.6 step 4: IsArray sees through proxies; other proxies have no brand slots.
+                    Value::Object(id) if self.is_proxy(*id) => {
+                        if self.is_array(&receiver)? {
+                            "Array"
+                        } else if self.callable(&receiver) {
+                            "Function"
+                        } else {
+                            "Object"
+                        }
+                    }
                     _ if self.callable(&receiver) => "Function",
                     Value::Object(id) => {
                         let d = self.data(*id)?;
@@ -1241,7 +1275,7 @@ impl Engine<'_> {
                     unreachable!()
                 };
                 for _ in 0..10_000 {
-                    match self.data(at)?.prototype {
+                    match self.get_prototype_of(at)? {
                         Some(p) if p == id => return Ok(Value::Bool(true)),
                         Some(p) => at = p,
                         None => return Ok(Value::Bool(false)),
@@ -1378,17 +1412,13 @@ impl Engine<'_> {
                 }
             }
             "getPrototypeOf" => Ok(self
-                .data(id)?
-                .prototype
+                .get_prototype_of(id)?
                 .map(Value::Object)
                 .unwrap_or(Value::Null)),
             "setPrototypeOf" => {
                 let p = match arg(1) {
                     Value::Null => None,
-                    Value::Object(p) => {
-                        self.data(p)?;
-                        Some(p)
-                    }
+                    Value::Object(p) => Some(p),
                     _ => return self.throw_error("TypeError", "invalid prototype"),
                 };
                 let ok = self.set_prototype(id, p)?;
@@ -1400,7 +1430,59 @@ impl Engine<'_> {
                     self.throw_error("TypeError", "prototype change refused")
                 }
             }
-            "isExtensible" => Ok(Value::Bool(self.data(id)?.extensible)),
+            "isExtensible" => Ok(Value::Bool(self.is_extensible(id)?)),
+            "preventExtensions" | "seal" | "freeze" if self.is_proxy(id) => {
+                // SetIntegrityLevel (§7.3.15) through the proxy's internal methods.
+                if !self.prevent_extensions(id)? {
+                    return if reflect {
+                        Ok(Value::Bool(false))
+                    } else {
+                        self.throw_error("TypeError", "preventExtensions refused")
+                    };
+                }
+                if method != "preventExtensions" {
+                    for key in self.own_keys(id)? {
+                        let mut d = Descriptor {
+                            configurable: Some(false),
+                            ..Descriptor::default()
+                        };
+                        if method == "freeze" {
+                            match self.own(id, &key)? {
+                                None => continue,
+                                Some(p) if matches!(p.kind, Kind::Data { .. }) => {
+                                    d.writable = Some(false)
+                                }
+                                Some(_) => {}
+                            }
+                        }
+                        if !self.define(id, &key, d)? {
+                            return self.throw_error("TypeError", "property definition refused");
+                        }
+                    }
+                }
+                Ok(if reflect {
+                    Value::Bool(true)
+                } else {
+                    Value::Object(id)
+                })
+            }
+            "isSealed" | "isFrozen" if self.is_proxy(id) => {
+                // TestIntegrityLevel (§7.3.16).
+                if self.is_extensible(id)? {
+                    return Ok(Value::Bool(false));
+                }
+                for key in self.own_keys(id)? {
+                    if let Some(p) = self.own(id, &key)? {
+                        if p.configurable
+                            || method == "isFrozen"
+                                && matches!(p.kind, Kind::Data { writable: true, .. })
+                        {
+                            return Ok(Value::Bool(false));
+                        }
+                    }
+                }
+                Ok(Value::Bool(true))
+            }
             "preventExtensions" | "seal" | "freeze" => {
                 if let Some(typed) = self.data(id)?.typed.clone() {
                     if !self.typed_fixed(&typed)? {

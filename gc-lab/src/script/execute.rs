@@ -63,7 +63,7 @@ pub(super) fn number_string(n: f64) -> String {
 impl Engine<'_> {
     pub(super) fn callable(&self, v: &Value) -> bool {
         matches!(v, Value::Native { .. })
-            || matches!(v,Value::Object(id) if matches!(self.objects.get(id),Some(Object::Closure{..}|Object::Builtin{..}|Object::Bound{..})))
+            || matches!(v,Value::Object(id) if matches!(self.objects.get(id),Some(Object::Closure{..}|Object::Builtin{..}|Object::Bound{..}|Object::Proxy{callable:true,..})))
     }
     pub(super) fn thrown(&self, value: Value) -> ScriptError {
         let (name, message) = if let Value::Object(id) = &value {
@@ -947,7 +947,11 @@ impl Engine<'_> {
             return self.throw_error("TypeError", "value is not callable");
         };
         match self.objects.get(&id).cloned() {
+            Some(Object::Proxy { .. }) => self.proxy_call(id, receiver, args),
             Some(Object::Builtin { name, data }) => {
+                if name == "%ProxyRevoke%" {
+                    return self.proxy_revoke(id);
+                }
                 if let Some(action) = data.internal {
                     self.promise_internal(action, args)
                 } else {
@@ -1044,12 +1048,14 @@ impl Engine<'_> {
                 ..
             }) => true,
             Some(Object::Bound { target, .. }) => self.constructible(target),
+            Some(Object::Proxy { constructor, .. }) => *constructor,
             Some(Object::Builtin { name, .. }) => {
                 super::typed_arrays::kind(name).is_some()
                     || name == "%TypedArray%"
                     || matches!(
                         name.as_str(),
                         "Promise"
+                            | "Proxy"
                             | "ArrayBuffer"
                             | "DataView"
                             | "Array"
@@ -1099,7 +1105,14 @@ impl Engine<'_> {
                     if new_target == f { target } else { new_target },
                 )
             }
+            Some(Object::Proxy {
+                constructor: true, ..
+            }) => self.proxy_construct(id, args, new_target),
             Some(Object::Builtin { name, .. }) => {
+                if name == "Proxy" {
+                    let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Undefined);
+                    return self.proxy_create(arg(0), arg(1)).map(Value::Object);
+                }
                 if name == "Date" {
                     return self.construct_date(new_target, args);
                 }
@@ -1153,12 +1166,15 @@ impl Engine<'_> {
                         "Object" | "Array" | "String" | "Number" | "Boolean"
                     )
                 {
-                    let p = self.get_member(new_target, "prototype")?;
+                    let p = self.get_member(new_target.clone(), "prototype")?;
                     self.protect(&p)?;
                     if name == "Object" {
                         let p = match p {
                             Value::Object(p) => p,
-                            _ => self.intrinsics.as_ref().unwrap().object,
+                            _ => {
+                                self.function_realm_check(&new_target)?;
+                                self.intrinsics.as_ref().unwrap().object
+                            }
                         };
                         return self.new_object(Some(p)).map(Value::Object);
                     }
@@ -1197,6 +1213,8 @@ impl Engine<'_> {
                 let p = if let Value::Object(p) = p {
                     p
                 } else {
+                    // §10.1.14 GetPrototypeFromConstructor step 3.a: GetFunctionRealm(constructor).
+                    self.function_realm_check(&new_target)?;
                     self.intrinsics.as_ref().unwrap().object
                 };
                 let id = self.new_object(Some(p))?;
@@ -1446,19 +1464,21 @@ impl Engine<'_> {
                 return self.instanceof(value, target.clone());
             }
         }
+        // §7.3.21 OrdinaryHasInstance step 3: a primitive O is false before C.prototype is read.
+        let Value::Object(id) = value else {
+            return Ok(false);
+        };
         let p = self.get_member(ctor, "prototype")?;
         let Value::Object(p) = p else {
             return self.throw_error("TypeError", "constructor prototype is not object");
         };
-        let Value::Object(id) = value else {
-            return Ok(false);
-        };
-        let mut at = self.data(id)?.prototype;
+        // OrdinaryHasInstance step 6 walks [[GetPrototypeOf]] (proxies run their trap).
+        let mut at = self.get_prototype_of(id)?;
         for _ in 0..10_000 {
             match at {
                 None => return Ok(false),
                 Some(a) if a == p => return Ok(true),
-                Some(a) => at = self.data(a)?.prototype,
+                Some(a) => at = self.get_prototype_of(a)?,
             }
         }
         Err(ScriptError::Runtime("prototype traversal limit"))

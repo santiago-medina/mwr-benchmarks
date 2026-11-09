@@ -165,7 +165,8 @@ impl Engine<'_> {
     }
     pub(super) fn array_species_create(&mut self, original: Id, len: u32) -> Result<Id> {
         let mut constructor = Value::Undefined;
-        if self.data(original)?.array {
+        // §10.4.2.3 ArraySpeciesCreate step 3: IsArray(originalArray) (follows proxies).
+        if self.is_array(&Value::Object(original))? {
             constructor = self.get_member(Value::Object(original), "constructor")?;
             self.protect(&constructor)?;
             if matches!(constructor, Value::Object(_)) {
@@ -240,9 +241,7 @@ impl Engine<'_> {
             }
             "Array.species" => return Ok(receiver),
             "Array.isArray" => {
-                return Ok(Value::Bool(
-                    matches!(arg(0),Value::Object(id)if self.data(id)?.array),
-                ))
+                return self.is_array(&arg(0)).map(Value::Bool);
             }
             "Array.prototype.values" => return self.array_iterator(receiver, 1),
             "Array.prototype.keys" => return self.array_iterator(receiver, 0),
@@ -258,7 +257,9 @@ impl Engine<'_> {
                 let Some(target) = state.target else {
                     return self.iterator_result(Value::Undefined, true);
                 };
-                if self.data(target)?.typed.is_some() {
+                // §23.1.5.1 step 2.b: only a real TypedArray has [[ViewedArrayBuffer]];
+                // a proxy target takes the LengthOfArrayLike path.
+                if !self.is_proxy(target) && self.data(target)?.typed.is_some() {
                     self.typed_record(Value::Object(target))?;
                 }
                 let len = self.length_of(target)?;

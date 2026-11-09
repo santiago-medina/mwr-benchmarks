@@ -484,6 +484,8 @@ impl Engine<'_> {
         let p = if let Value::Object(p) = p {
             p
         } else {
+            // §10.1.14 GetPrototypeFromConstructor step 3.a: GetFunctionRealm(constructor).
+            self.function_realm_check(&new_target)?;
             self.intrinsics.as_ref().unwrap().object
         };
         let id = self.new_object(Some(p))?;

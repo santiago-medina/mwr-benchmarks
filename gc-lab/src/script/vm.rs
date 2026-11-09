@@ -98,6 +98,13 @@ pub(super) enum Object {
         args: Vec<Value>,
         data: Data,
     },
+    /// Proxy exotic object (§10.5); `None` slots mean revoked. See PROXY.md.
+    Proxy {
+        target: Option<Id>,
+        handler: Option<Id>,
+        callable: bool,
+        constructor: bool,
+    },
     Node {
         tag: String,
         text: String,
@@ -653,23 +660,41 @@ impl<'host> Engine<'host> {
         }
     }
     /// The global object, if `name` is one of its properties (unresolved references).
-    fn global_property(&self, name: &str) -> Result<Option<Id>> {
+    fn global_property(&mut self, name: &str) -> Result<Option<Id>> {
         let Some(i) = &self.intrinsics else {
             return Ok(None);
         };
         let global = i.global;
         Ok(self.has(global, name)?.then_some(global))
     }
-    pub(super) fn lookup(&mut self, mut env: Id, name: &str) -> Result<Value> {
+    pub(super) fn lookup(&mut self, env: Id, name: &str) -> Result<Value> {
+        self.lookup_with_base(env, name).map(|(v, _)| v)
+    }
+    /// ResolveBinding + GetBindingValue in one walk; also returns the `with` object
+    /// that holds the binding (the call `this`, §13.3.6.1 EvaluateCall step 1.b.ii).
+    pub(super) fn lookup_with_base(
+        &mut self,
+        mut env: Id,
+        name: &str,
+    ) -> Result<(Value, Option<Id>)> {
         loop {
             if let Some(object) = self.env_with_object(env) {
                 if self.with_binding(object, name)? {
-                    return self.get_member(Value::Object(object), name);
+                    // §9.1.1.2.6 GetBindingValue: HasProperty again, then Get.
+                    if !self.has(object, name)? {
+                        if self.env_strict(env) {
+                            return self
+                                .throw_error("ReferenceError", &format!("{name} is not defined"));
+                        }
+                        return Ok((Value::Undefined, Some(object)));
+                    }
+                    let v = self.get_member(Value::Object(object), name)?;
+                    return Ok((v, Some(object)));
                 }
             }
             if let Some(Object::Environment { aliases, .. }) = self.objects.get(&env) {
                 if let Some((target, name)) = aliases.get(name).cloned() {
-                    return self.lookup(target, &name);
+                    return self.lookup_with_base(target, &name);
                 }
             }
             let Some(Object::Environment {
@@ -683,11 +708,13 @@ impl<'host> Engine<'host> {
             };
             if object_bindings.contains(name) {
                 let global = self.intrinsics.as_ref().unwrap().global;
-                return self.get_member(Value::Object(global), name);
+                return self
+                    .get_member(Value::Object(global), name)
+                    .map(|v| (v, None));
             }
             if let Some(v) = bindings.get(name) {
                 return match v.clone() {
-                    Some(v) => Ok(v),
+                    Some(v) => Ok((v, None)),
                     None => {
                         self.throw_error("ReferenceError", "binding used before initialization")
                     }
@@ -739,7 +766,9 @@ impl<'host> Engine<'host> {
             ));
         }
         if let Some(global) = self.global_property(name)? {
-            return self.get_member(Value::Object(global), name);
+            return self
+                .get_member(Value::Object(global), name)
+                .map(|v| (v, None));
         }
         self.throw_error("ReferenceError", &format!("{name} is not defined"))
     }
@@ -822,6 +851,11 @@ impl<'host> Engine<'host> {
         loop {
             if let Some(object) = self.env_with_object(env) {
                 if self.with_binding(object, name)? {
+                    // §9.1.1.2.5 SetMutableBinding steps 1-2.
+                    if !self.has(object, name)? && strict {
+                        return self
+                            .throw_error("ReferenceError", &format!("{name} is not defined"));
+                    }
                     return self.assign_member(Value::Object(object), name.into(), value, strict);
                 }
             }

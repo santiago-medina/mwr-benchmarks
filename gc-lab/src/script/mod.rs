@@ -85,6 +85,8 @@ mod calendar;
 mod dates;
 mod regexp_builtins;
 
+mod proxy;
+
 mod patterns;
 
 mod identifiers;

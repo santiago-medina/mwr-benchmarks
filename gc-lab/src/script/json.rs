@@ -279,7 +279,8 @@ impl Engine<'_> {
         let value = self.get_member(Value::Object(holder), key.clone())?;
         self.protect(&value)?;
         if let Value::Object(id) = value.clone() {
-            let keys = if self.data(id)?.array {
+            // §25.5.1.1 InternalizeJSONProperty step 2.a: IsArray (follows proxies, §7.2.2).
+            let keys = if self.is_array(&Value::Object(id))? {
                 let len = self.length_of(id)?;
                 (0..len).map(|i| i.to_string()).collect()
             } else {
@@ -310,7 +311,7 @@ impl Engine<'_> {
             vec![Value::String(key), value],
         )
     }
-    fn json_keys(&self, id: Id) -> Result<Vec<String>> {
+    fn json_keys(&mut self, id: Id) -> Result<Vec<String>> {
         let mut keys = vec![];
         for key in self.own_keys(id)? {
             if let Key::String(s) = key {
@@ -358,7 +359,8 @@ impl Engine<'_> {
         let replacer = args.get(1).cloned().unwrap_or(Value::Undefined);
         let mut keys = None;
         if let Value::Object(id) = replacer.clone() {
-            if self.data(id)?.array {
+            // §25.5.2 JSON.stringify step 5.b: IsArray(replacer) (follows proxies).
+            if self.is_array(&Value::Object(id))? {
                 let len = self.length_of(id)?;
                 let mut list = vec![];
                 for i in 0..len {
@@ -366,7 +368,7 @@ impl Engine<'_> {
                     let mut v = self.get_member(replacer.clone(), i.to_string())?;
                     self.protect(&v)?;
                     if let Value::Object(id) = v.clone() {
-                        if let Some(boxed) = self.data(id)?.boxed.clone() {
+                        if let Some(boxed) = self.boxed_slot(id)? {
                             v = match boxed {
                                 Value::String(_) => Value::String(self.to_string(v)?),
                                 Value::Number(_) => Value::number(self.to_number(v)?),
@@ -386,7 +388,7 @@ impl Engine<'_> {
         }
         let mut space = args.get(2).cloned().unwrap_or(Value::Undefined);
         if let Value::Object(id) = space.clone() {
-            if let Some(boxed) = self.data(id)?.boxed.clone() {
+            if let Some(boxed) = self.boxed_slot(id)? {
                 space = match boxed {
                     Value::String(_) => Value::String(self.to_string(space)?),
                     Value::Number(_) => Value::number(self.to_number(space)?),
@@ -454,7 +456,7 @@ impl Engine<'_> {
             self.protect(&value)?;
         }
         if let Value::Object(id) = value.clone() {
-            if let Some(boxed) = self.data(id)?.boxed.clone() {
+            if let Some(boxed) = self.boxed_slot(id)? {
                 value = match boxed {
                     Value::Number(_) => Value::number(self.to_number(value)?),
                     Value::String(_) => Value::String(self.to_string(value)?),
