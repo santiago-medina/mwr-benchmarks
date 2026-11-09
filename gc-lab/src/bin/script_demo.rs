@@ -29,6 +29,8 @@ fn main() {
             std::process::exit(2);
         }
     };
+    // The corpus contract (compare_script.py runs Node with the same prefix) is strict code.
+    let source = format!("\"use strict\";\n{source}");
     let mut engine = Engine::new(Model::Indirect, Model::Indirect).unwrap();
     let result = engine.execute(&source).and_then(|_| {
         engine
