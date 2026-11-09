@@ -61,6 +61,15 @@ pub(super) fn number_string(n: f64) -> String {
     n.to_string()
 }
 impl Engine<'_> {
+    fn temporal_constructor(name: &str) -> bool {
+        #[cfg(feature = "temporal")]
+        return super::temporal::is_constructor(name);
+        #[cfg(not(feature = "temporal"))]
+        {
+            let _ = name;
+            false
+        }
+    }
     pub(super) fn callable(&self, v: &Value) -> bool {
         matches!(v, Value::Native { .. })
             || matches!(v,Value::Object(id) if matches!(self.objects.get(id),Some(Object::Closure{..}|Object::Builtin{..}|Object::Bound{..}|Object::Proxy{callable:true,..})))
@@ -1052,6 +1061,7 @@ impl Engine<'_> {
             Some(Object::Builtin { name, .. }) => {
                 super::typed_arrays::kind(name).is_some()
                     || name == "%TypedArray%"
+                    || Self::temporal_constructor(name)
                     || matches!(
                         name.as_str(),
                         "Promise"
@@ -1115,6 +1125,10 @@ impl Engine<'_> {
                 }
                 if name == "Date" {
                     return self.construct_date(new_target, args);
+                }
+                #[cfg(feature = "temporal")]
+                if super::temporal::is_constructor(&name) {
+                    return self.construct_temporal(&name, new_target, args);
                 }
                 if name == "RegExp" {
                     return self.construct_regexp(new_target, args, false);

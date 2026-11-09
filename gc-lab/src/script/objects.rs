@@ -112,6 +112,8 @@ pub(super) struct Data {
     pub collection_cursor: Option<super::collections::Cursor>,
     pub string_cursor: Option<super::strings::Cursor>,
     pub iterator: Option<super::arrays::IteratorState>,
+    #[cfg(feature = "temporal")]
+    pub temporal: Option<std::rc::Rc<super::temporal::Slot>>,
 }
 impl Data {
     pub fn new(prototype: Option<Id>) -> Self {
@@ -144,6 +146,8 @@ impl Data {
             internal: None,
             cell: None,
             job: None,
+            #[cfg(feature = "temporal")]
+            temporal: None,
         }
     }
     fn edges(&self) -> Vec<Id> {

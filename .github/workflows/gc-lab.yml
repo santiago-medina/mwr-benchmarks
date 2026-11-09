@@ -50,6 +50,12 @@ jobs:
         run: python3 gc-lab/conformance/run.py --source gc-lab/.test262-source --profile arrays --check-baseline
       - name: Preserve approved Promise cases
         run: python3 gc-lab/conformance/run.py --source gc-lab/.test262-source --profile promises --check-baseline
+      - name: Build the Temporal checker (second manifest, fetches temporal_rs =0.2.6 with the committed lockfile)
+        run: cargo +stable build --manifest-path gc-lab/temporal/Cargo.toml --release --locked
+      - name: Preserve approved Temporal cases
+        run: >-
+          python3 gc-lab/conformance/run.py --source gc-lab/.test262-source --profile temporal
+          --binary gc-lab/temporal/target/release/js_check --check-baseline
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -79,6 +85,7 @@ jobs:
             gc-lab/conformance/results-arrays/
             gc-lab/conformance/results-promises/
             gc-lab/conformance/results-async/
+            gc-lab/conformance/results-temporal/
             gc-lab/conformance/async-contract-node.json
             gc-lab/conformance/module-contract-node.json
             gc-lab/conformance/module-differential.json

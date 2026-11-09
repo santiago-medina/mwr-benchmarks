@@ -5,3 +5,7 @@ edition = "2021"
 default-run = "gc-lab"
 
 [dependencies]
+
+[lints.rust]
+# Set only by the second manifest, temporal/Cargo.toml (TEMPORAL.md).
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("temporal"))'] }

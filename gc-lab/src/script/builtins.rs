@@ -508,6 +508,8 @@ impl Engine<'_> {
         self.bootstrap_generators(env, &mut objects, iterator)?;
         self.bootstrap_dates(env, &mut objects)?;
         self.bootstrap_regexp(env, &mut objects, iterator)?;
+        #[cfg(feature = "temporal")]
+        self.bootstrap_temporal(env, &mut objects)?;
         let constructors: Vec<_> = self
             .intrinsics
             .as_ref()
@@ -925,6 +927,10 @@ impl Engine<'_> {
             // Indirect eval: global environment, sloppy unless the code says otherwise.
             let source = args.into_iter().next().unwrap_or(Value::Undefined);
             return self.perform_eval(source, None);
+        }
+        #[cfg(feature = "temporal")]
+        if name.starts_with("Temporal.") {
+            return self.temporal_builtin(name, receiver, args);
         }
         if name == "Date" || name.starts_with("Date.") {
             return self.date_builtin(name, receiver, args);

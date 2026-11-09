@@ -12,6 +12,7 @@ ARRAY_SCOPES = ['built-ins/Array/*.js', 'built-ins/Array/isArray'] + ['built-ins
 PROMISE_SCOPES=['built-ins/Promise/*.js','built-ins/Promise/resolve','built-ins/Promise/reject','built-ins/Promise/prototype/then','built-ins/Promise/prototype/catch','built-ins/Promise/prototype/finally']
 
 FULL_SCOPES = ['built-ins', 'language']  # whole-suite yardstick for replacing SpiderMonkey
+TEMPORAL_SCOPES = ['built-ins/Temporal']  # needs the gc-lab/temporal build (--binary)
 ASYNC_SCOPES = ['language/expressions/async-function', 'language/expressions/async-arrow-function', 'language/expressions/await', 'language/statements/async-function']
 
 # Negative parse cases for syntax the parser does not implement could only pass by accident.
@@ -24,7 +25,7 @@ def items(value):
 def main():
     p=argparse.ArgumentParser(__doc__)
     p.add_argument('--workers',type=int,default=4)
-    p.add_argument('--profile',choices=['objects','arrays','promises','async','full'],default='objects')
+    p.add_argument('--profile',choices=['objects','arrays','promises','async','temporal','full'],default='objects')
     p.add_argument('--source',type=Path,required=True)
     p.add_argument('--binary',type=Path,default=HERE.parent/'target/release/js_check')
     p.add_argument('--output',type=Path,default=None)
@@ -32,7 +33,7 @@ def main():
     p.add_argument('--check-baseline',action='store_true',help='gate on lost passes and newly failing cases; known failures stay reported')
     args=p.parse_args(); binary=args.binary.resolve(); root=args.source.resolve()/'test'
     assert (args.source/'.revision').read_text().strip()==REVISION, 'Use the pinned verified source from fetch.py'
-    scopes={'objects':SCOPES,'arrays':ARRAY_SCOPES,'promises':PROMISE_SCOPES,'async':ASYNC_SCOPES,'full':FULL_SCOPES}[args.profile]
+    scopes={'objects':SCOPES,'arrays':ARRAY_SCOPES,'promises':PROMISE_SCOPES,'async':ASYNC_SCOPES,'temporal':TEMPORAL_SCOPES,'full':FULL_SCOPES}[args.profile]
     suffix='' if args.profile=='objects' else '-'+args.profile
     args.output=args.output or HERE/('results'+suffix)
     cases=sorted({path for scope in scopes for path in (root.glob(scope) if '*' in scope else (root/scope).rglob('*.js')) if not path.name.endswith('_FIXTURE.js')})
@@ -43,15 +44,15 @@ def main():
         meta=meta.group(1); flags=items(field(meta,'flags')); includes=items(field(meta,'includes')); negative=field(meta,'negative')
         result=dict(path=path.relative_to(root).as_posix(),source_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
         reason=None
-        if 'module' in flags or ('async' in flags and args.profile not in ('promises','async','full')): reason='unsupported execution flags: '+','.join(flags)
-        elif includes and args.profile!='full': reason='unsupported harness includes: '+','.join(includes)
+        if 'module' in flags or ('async' in flags and args.profile not in ('promises','async','temporal','full')): reason='unsupported execution flags: '+','.join(flags)
+        elif includes and args.profile not in ('temporal','full'): reason='unsupported harness includes: '+','.join(includes)
         elif negative and not re.search(r'phase:\s*(runtime|parse)',negative): reason='negative resolution test (modules)'
-        elif negative and 'phase: parse' in negative and args.profile!='full': reason='negative parse test outside full profile'
+        elif negative and 'phase: parse' in negative and args.profile not in ('temporal','full'): reason='negative parse test outside full profile'
         elif negative and set(items(field(meta,'features')))&UNIMPLEMENTED_SYNTAX: reason='negative parse test for unimplemented syntax: '+','.join(sorted(set(items(field(meta,'features')))&UNIMPLEMENTED_SYNTAX))
         if reason: return dict(result,status='unsupported',reason=reason,assertions=0)
         expected=re.search(r'type:\s*(\w+)',negative) if negative else None
         parse_negative=bool(negative) and re.search(r'phase:\s*parse',negative) is not None
-        command=[str(binary),str(path)] + ([expected.group(1)] if expected else []) + (['--negative-parse'] if parse_negative else []) + (['--strict-only'] if parse_negative and 'onlyStrict' in flags else []) + (['--async'] if 'async' in flags else []) + (['--sloppy'] if 'noStrict' in flags or 'raw' in flags else []) + (['--include='+str(root.parent/'harness'/i) for i in includes] if args.profile=='full' and 'raw' not in flags else [])
+        command=[str(binary),str(path)] + ([expected.group(1)] if expected else []) + (['--negative-parse'] if parse_negative else []) + (['--strict-only'] if parse_negative and 'onlyStrict' in flags else []) + (['--async'] if 'async' in flags else []) + (['--sloppy'] if 'noStrict' in flags or 'raw' in flags else []) + (['--include='+str(root.parent/'harness'/i) for i in includes] if args.profile in ('temporal','full') and 'raw' not in flags else [])
         try:
             r=subprocess.run(command,capture_output=True,text=True,timeout=10)
             data=json.loads(r.stdout)

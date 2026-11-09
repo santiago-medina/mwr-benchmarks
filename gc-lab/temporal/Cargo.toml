@@ -1,0 +1,32 @@
+# Second manifest for the same sources (gc-lab/TEMPORAL.md): builds gc-lab with
+# Temporal support. gc-lab/Cargo.toml stays dependency-free and offline.
+#
+# temporal_rs approved by Santiago 2026-11-09. Rust Unsafe Security Auditor
+# (#92), collab #311: SOUND for this use; 513 unsafe sites across 17 transitive
+# crates, 0 in the crates that parse JS input (temporal_rs, ixdtf,
+# timezone_provider, tzif, calendrical_calculations, jiff-tzdb). No `sys-local`
+# feature (iana-time-zone FFI is unreviewed). Cargo.lock floors (keep them on
+# any update): yoke >= 0.8.3, bytes >= 1.11.1, memchr >= 2.8.2. Residual risk is
+# panics (DoS): every crate call runs under catch_unwind (src/script/temporal.rs).
+[package]
+name = "gc-lab"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+path = "../src/lib.rs"
+
+[[bin]]
+name = "js_check"
+path = "../src/bin/js_check.rs"
+
+[dependencies]
+temporal_rs = { version = "=0.2.6", default-features = false, features = ["compiled_data"] }
+
+[features]
+default = ["temporal"]
+temporal = []

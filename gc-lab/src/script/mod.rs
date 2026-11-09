@@ -86,6 +86,8 @@ mod dates;
 mod regexp_builtins;
 
 mod proxy;
+#[cfg(feature = "temporal")]
+mod temporal;
 
 mod patterns;
 
