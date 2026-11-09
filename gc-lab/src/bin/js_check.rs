@@ -30,6 +30,7 @@ fn main() {
     let asynchronous = remaining.iter().any(|s| s == "--async");
     let sloppy = remaining.iter().any(|s| s == "--sloppy");
     let gc_stress = remaining.iter().any(|s| s == "--gc-stress");
+    let can_block = remaining.iter().any(|s| s == "--can-block");
     let mut includes = String::new();
     for file in remaining
         .iter()
@@ -88,6 +89,8 @@ fn main() {
     }
     let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
     e.enable_test_harness();
+    // [[CanBlock]] of the main agent: test262's CanBlockIsTrue flag maps to --can-block.
+    e.set_can_block(can_block);
     e.set_gc_policy(if gc_stress {
         GcPolicy::Stress
     } else {
@@ -112,11 +115,24 @@ fn main() {
     if result.is_ok() {
         result = e.microtask_checkpoint(10_000).map(|_| ());
     }
-    // FinalizationRegistry cleanup runs as its own host task after the checkpoint.
-    while result.is_ok() && e.pending_finalization_cleanups() != 0 {
-        result = e
-            .run_finalization_cleanup()
-            .and_then(|_| e.microtask_checkpoint(10_000).map(|_| ()));
+    // Host event loop: FinalizationRegistry cleanup tasks, then timers and Atomics waiter
+    // jobs (setTimeout, waitAsync), each followed by a microtask checkpoint.
+    while result.is_ok() {
+        if e.pending_finalization_cleanups() != 0 {
+            result = e
+                .run_finalization_cleanup()
+                .and_then(|_| e.microtask_checkpoint(10_000).map(|_| ()));
+        } else if let Some(deadline) = e.next_host_job() {
+            let now = std::time::Instant::now();
+            if deadline > now {
+                std::thread::sleep(deadline - now);
+            }
+            result = e
+                .run_host_jobs()
+                .and_then(|_| e.microtask_checkpoint(10_000).map(|_| ()));
+        } else {
+            break;
+        }
     }
     let (done, error) = e.async_test_state();
     let harness_error = if result.is_err() {

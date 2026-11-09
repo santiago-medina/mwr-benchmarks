@@ -439,6 +439,7 @@ impl Engine<'_> {
             "Boolean",
             "BigInt",
             "ArrayBuffer",
+            "SharedArrayBuffer",
             "DataView",
             "Date",
             "RegExp",
@@ -544,6 +545,7 @@ impl Engine<'_> {
         self.bootstrap_enumeration(env, iterator)?;
         self.bootstrap_bigint(env, &mut objects)?;
         self.bootstrap_buffers(env, &mut objects)?;
+        self.bootstrap_atomics(env, &mut objects)?;
         self.bootstrap_typed(env, &mut objects)?;
         self.bootstrap_generators(env, &mut objects, iterator)?;
         self.bootstrap_dates(env, &mut objects)?;
@@ -732,6 +734,9 @@ impl Engine<'_> {
                     self.hidden(global, &n, v)?;
                 }
             }
+        }
+        if let Some(host) = objects.get("$262").copied() {
+            self.bootstrap_host_global(host, global)?;
         }
         let number = objects["Number"];
         for (key, n) in [
@@ -1052,14 +1057,18 @@ impl Engine<'_> {
         if name == "GeneratorFunction" {
             return self.dynamic_function_kind(super::vm::FunctionKind::Generator, args, None);
         }
+        if name.starts_with("Atomics.") || name.starts_with("$262.") || name == "setTimeout" {
+            return self.atomics_builtin(name, receiver, args);
+        }
         if name.starts_with("Uint8Array.") {
             return self.uint8_base64_builtin(name, receiver, args);
         }
         if super::typed_arrays::kind(name).is_some() || name.starts_with("%TypedArray%") {
             return self.typed_builtin(name, receiver, args);
         }
-        if matches!(name, "ArrayBuffer" | "DataView")
+        if matches!(name, "ArrayBuffer" | "SharedArrayBuffer" | "DataView")
             || name.starts_with("ArrayBuffer.")
+            || name.starts_with("SharedArrayBuffer.")
             || name.starts_with("DataView.")
         {
             return self.buffer_builtin(name, receiver, args);

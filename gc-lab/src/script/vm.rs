@@ -165,6 +165,7 @@ pub struct Engine<'host> {
     pub(super) symbol_descriptions: HashMap<u64, Option<String>>,
     pub(super) symbol_registry: HashMap<String, u64>,
     pub(super) weak: super::weak::WeakState,
+    pub(super) atomics: super::atomics::AtomicsState,
     pub(super) join_stack: Vec<Id>,
     pub(super) jobs: std::collections::VecDeque<super::promises::QueuedJob>,
     pub(super) next_job: u64,
@@ -211,6 +212,7 @@ impl<'host> Engine<'host> {
             symbol_descriptions: HashMap::new(),
             symbol_registry: HashMap::new(),
             weak: Default::default(),
+            atomics: Default::default(),
             join_stack: vec![],
             jobs: super::promises::empty_queue(),
             next_job: 1,
@@ -258,6 +260,7 @@ impl<'host> Engine<'host> {
             symbol_descriptions: self.symbol_descriptions,
             symbol_registry: self.symbol_registry,
             weak: self.weak,
+            atomics: self.atomics,
             join_stack: self.join_stack,
             jobs: self.jobs,
             next_job: self.next_job,
@@ -413,6 +416,7 @@ impl<'host> Engine<'host> {
         self.modules = super::modules::Registry::default();
         self.unhandled.clear();
         self.cancel_weak_jobs();
+        self.cancel_host_jobs();
         if let Some(global) = self.global.take() {
             self.runtime.unroot(global).expect("owned global root");
         }

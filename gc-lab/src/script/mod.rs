@@ -70,6 +70,7 @@ mod bigint;
 
 mod bigint_vm;
 
+mod atomics;
 mod buffer_elements;
 mod buffers;
 

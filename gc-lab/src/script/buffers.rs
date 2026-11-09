@@ -19,6 +19,9 @@ pub(super) struct Buffer {
     pub bytes: Vec<u8>,
     pub maximum: Option<usize>,
     pub detached: bool,
+    /// IsSharedArrayBuffer (§25.2.2.2): set for SharedArrayBuffer stores, which never
+    /// detach. Only one agent exists today (SHARED_MEMORY.md), so the bytes stay a Vec.
+    pub shared: bool,
     budget: Rc<Cell<usize>>,
 }
 impl Drop for Buffer {
@@ -62,6 +65,22 @@ impl Engine<'_> {
         }
         self.throw_error("TypeError", "receiver is not an ArrayBuffer")
     }
+    /// RequireInternalSlot(O, [[ArrayBufferData]]) plus the IsSharedArrayBuffer check that
+    /// ArrayBuffer.prototype (false) and SharedArrayBuffer.prototype (true) methods make.
+    fn buffer_receiver(&mut self, value: Value, shared: bool) -> Result<Store> {
+        if let Value::Object(id) = value {
+            if let Some(buffer) = self.data(id).ok().and_then(|d| d.buffer.clone()) {
+                if buffer.borrow().shared == shared {
+                    return Ok(buffer);
+                }
+            }
+        }
+        if shared {
+            self.throw_error("TypeError", "receiver is not a SharedArrayBuffer")
+        } else {
+            self.throw_error("TypeError", "receiver is not an ArrayBuffer")
+        }
+    }
     fn view_slot(&mut self, value: Value) -> Result<View> {
         if let Value::Object(id) = value {
             if let Some(view) = self.data(id).ok().and_then(|d| d.view.clone()) {
@@ -94,11 +113,26 @@ impl Engine<'_> {
         maximum: Option<usize>,
         prototype: Option<Id>,
     ) -> Result<Value> {
+        self.new_buffer_kind(length, maximum, prototype, false)
+    }
+    /// AllocateArrayBuffer (§25.1.3.1) / AllocateSharedArrayBuffer (§25.2.2.1).
+    pub(super) fn new_buffer_kind(
+        &mut self,
+        length: usize,
+        maximum: Option<usize>,
+        prototype: Option<Id>,
+        shared: bool,
+    ) -> Result<Value> {
         if maximum.is_some_and(|max| max > MAX_BYTES || max < length) {
             return self.throw_error("RangeError", "invalid buffer maximum");
         }
-        let prototype =
-            prototype.unwrap_or(self.intrinsics.as_ref().unwrap().collection["ArrayBuffer"]);
+        let prototype = prototype.unwrap_or(
+            self.intrinsics.as_ref().unwrap().collection[if shared {
+                "SharedArrayBuffer"
+            } else {
+                "ArrayBuffer"
+            }],
+        );
         let id = self.new_object(Some(prototype))?;
         self.protect(&Value::Object(id))?;
         let bytes = self.allocate_bytes(length, 0)?;
@@ -107,6 +141,7 @@ impl Engine<'_> {
             bytes,
             maximum,
             detached: false,
+            shared,
             budget: self.buffer_bytes.clone(),
         }));
         let mut data = self.data(id)?.clone();
@@ -114,7 +149,7 @@ impl Engine<'_> {
         self.replace_data(id, data)?;
         Ok(Value::Object(id))
     }
-    fn detach_buffer(buffer: &mut Buffer) {
+    pub(super) fn detach_buffer(buffer: &mut Buffer) {
         buffer
             .budget
             .set(buffer.budget.get().saturating_sub(buffer.bytes.len()));
@@ -128,7 +163,8 @@ impl Engine<'_> {
         args: Vec<Value>,
     ) -> Result<Value> {
         let arg = |i| args.get(i).cloned().unwrap_or(Value::Undefined);
-        if name == "ArrayBuffer" {
+        if name == "ArrayBuffer" || name == "SharedArrayBuffer" {
+            // §25.1.4.1 ArrayBuffer ( length [ , options ] ) / §25.2.3.1 SharedArrayBuffer.
             let length = self.to_index(arg(0))?;
             let maximum = if let Value::Object(options) = arg(1) {
                 let value = self.get_member(Value::Object(options), "maxByteLength")?;
@@ -140,14 +176,19 @@ impl Engine<'_> {
             } else {
                 None
             };
-            if length > MAX_BYTES as u64 {
-                return self.throw_error("RangeError", "host buffer allocation limit");
-            }
-            if maximum.is_some_and(|max| max < length as usize || max > MAX_BYTES) {
+            // AllocateArrayBuffer step 2: byteLength > maxByteLength is checked first; the
+            // host allocation limits only apply after OrdinaryCreateFromConstructor (step 3).
+            if maximum.is_some_and(|max| (max as u64) < length) {
                 return self.throw_error("RangeError", "invalid buffer maximum");
             }
             let prototype = self.get_member(target, "prototype")?;
-            return self.new_buffer(
+            if length > MAX_BYTES as u64 {
+                return self.throw_error("RangeError", "host buffer allocation limit");
+            }
+            if maximum.is_some_and(|max| max > MAX_BYTES) {
+                return self.throw_error("RangeError", "invalid buffer maximum");
+            }
+            return self.new_buffer_kind(
                 length as usize,
                 maximum,
                 if let Value::Object(id) = prototype {
@@ -155,6 +196,7 @@ impl Engine<'_> {
                 } else {
                     None
                 },
+                name == "SharedArrayBuffer",
             );
         }
         let source = arg(0);
@@ -236,7 +278,7 @@ impl Engine<'_> {
         let i = self.intrinsics.as_ref().unwrap();
         let object = i.object;
         let function = i.function;
-        for name in ["ArrayBuffer", "DataView"] {
+        for name in ["ArrayBuffer", "SharedArrayBuffer", "DataView"] {
             let prototype = self.new_object(Some(object))?;
             self.runtime.link(env, prototype)?;
             objects.insert(format!("{name}.prototype"), prototype);
@@ -256,6 +298,8 @@ impl Engine<'_> {
             )?;
             let getters: &[&str] = if name == "ArrayBuffer" {
                 &["byteLength", "detached", "maxByteLength", "resizable"]
+            } else if name == "SharedArrayBuffer" {
+                &["byteLength", "growable", "maxByteLength"]
             } else {
                 &["buffer", "byteLength", "byteOffset"]
             };
@@ -295,6 +339,8 @@ impl Engine<'_> {
                     ("transfer".into(), 0),
                     ("transferToFixedLength".into(), 0),
                 ]
+            } else if name == "SharedArrayBuffer" {
+                vec![("grow".into(), 1), ("slice".into(), 2)]
             } else {
                 ELEMENTS
                     .iter()
@@ -318,7 +364,13 @@ impl Engine<'_> {
         }
         let view = self.intrinsic_function(env, "ArrayBuffer.isView", Some(function))?;
         self.hidden(objects["ArrayBuffer"], "isView", Value::Object(view))?;
-        let species = self.intrinsic_function(env, "ArrayBuffer.species", Some(function))?;
+        for owner in ["ArrayBuffer", "SharedArrayBuffer"] {
+            self.buffer_species(env, function, objects[owner], &format!("{owner}.species"))?;
+        }
+        Ok(())
+    }
+    fn buffer_species(&mut self, env: Id, function: Id, owner: Id, name: &str) -> Result<()> {
+        let species = self.intrinsic_function(env, name, Some(function))?;
         self.define(
             species,
             "name",
@@ -336,7 +388,7 @@ impl Engine<'_> {
             },
         )?;
         self.define(
-            objects["ArrayBuffer"],
+            owner,
             Key::Symbol(2),
             Descriptor {
                 get: Some(Value::Object(species)),
@@ -353,10 +405,10 @@ impl Engine<'_> {
         args: Vec<Value>,
     ) -> Result<Value> {
         let arg = |i| args.get(i).cloned().unwrap_or(Value::Undefined);
-        if matches!(name, "ArrayBuffer" | "DataView") {
+        if matches!(name, "ArrayBuffer" | "SharedArrayBuffer" | "DataView") {
             return self.throw_error("TypeError", "buffer/view constructor requires new");
         }
-        if name == "ArrayBuffer.species" {
+        if name == "ArrayBuffer.species" || name == "SharedArrayBuffer.species" {
             return Ok(receiver);
         }
         if name == "ArrayBuffer.isView" {
@@ -410,7 +462,10 @@ impl Engine<'_> {
             return Ok(kind.read(&buffer.borrow().bytes[start..start + kind.size()], little));
         }
         let source = receiver.clone();
-        let buffer = self.buffer_slot(receiver)?;
+        if name.starts_with("SharedArrayBuffer.") {
+            return self.shared_buffer_builtin(method, receiver, args);
+        }
+        let buffer = self.buffer_receiver(receiver, false)?;
         match method {
             "byteLength" => {
                 let length = buffer.borrow().bytes.len();
@@ -515,7 +570,7 @@ impl Engine<'_> {
                 self.protect(&constructor)?;
                 let output = self.construct(constructor, vec![Value::number(count as f64)])?;
                 self.protect(&output)?;
-                let target = self.buffer_slot(output.clone())?;
+                let target = self.buffer_receiver(output.clone(), false)?;
                 if output == source
                     || Rc::ptr_eq(&target, &buffer)
                     || target.borrow().detached
@@ -535,6 +590,99 @@ impl Engine<'_> {
                 Ok(output)
             }
             _ => Err(ScriptError::Unsupported("buffer operation")),
+        }
+    }
+    /// SharedArrayBuffer.prototype getters and methods (§25.2.5).
+    fn shared_buffer_builtin(
+        &mut self,
+        method: &str,
+        receiver: Value,
+        args: Vec<Value>,
+    ) -> Result<Value> {
+        let arg = |i| args.get(i).cloned().unwrap_or(Value::Undefined);
+        let source = receiver.clone();
+        let buffer = self.buffer_receiver(receiver, true)?;
+        match method {
+            // §25.2.5.2 get byteLength: ArrayBufferByteLength(O, seq-cst).
+            "byteLength" => Ok(Value::number(buffer.borrow().bytes.len() as f64)),
+            // §25.2.5.4 get growable: not IsFixedLengthArrayBuffer(O).
+            "growable" => Ok(Value::Bool(buffer.borrow().maximum.is_some())),
+            // §25.2.5.5 get maxByteLength.
+            "maxByteLength" => {
+                let b = buffer.borrow();
+                Ok(Value::number(b.maximum.unwrap_or(b.bytes.len()) as f64))
+            }
+            // §25.2.5.3 grow ( newLength ).
+            "grow" => {
+                // Step 3: not growable → TypeError (before ToIndex).
+                let Some(max) = buffer.borrow().maximum else {
+                    return self.throw_error("TypeError", "SharedArrayBuffer is not growable");
+                };
+                let length = self.to_index(arg(0))?;
+                if length > max as u64 {
+                    return self.throw_error("RangeError", "grow length exceeds maxByteLength");
+                }
+                let old = buffer.borrow().bytes.len();
+                if (length as usize) < old {
+                    return self.throw_error("RangeError", "SharedArrayBuffer cannot shrink");
+                }
+                let mut bytes = self.allocate_bytes(length as usize, old)?;
+                let mut b = buffer.borrow_mut();
+                bytes[..old].copy_from_slice(&b.bytes);
+                self.buffer_bytes
+                    .set(self.buffer_bytes.get() - old + bytes.len());
+                b.bytes = bytes;
+                Ok(Value::Undefined)
+            }
+            // §25.2.5.6 slice ( start, end ).
+            "slice" => {
+                let length = buffer.borrow().bytes.len() as u64;
+                let first = self.relative_index(arg(0), length)?;
+                let end = if arg(1) == Value::Undefined {
+                    length
+                } else {
+                    self.relative_index(arg(1), length)?
+                };
+                let count = end.saturating_sub(first);
+                // Step 9: SpeciesConstructor(O, %SharedArrayBuffer%).
+                let default =
+                    Value::Object(self.intrinsics.as_ref().unwrap().functions["SharedArrayBuffer"]);
+                let constructor = self.get_member(source.clone(), "constructor")?;
+                self.protect(&constructor)?;
+                let constructor = if constructor == Value::Undefined {
+                    default
+                } else {
+                    if !matches!(constructor, Value::Object(_)) {
+                        return self
+                            .throw_error("TypeError", "buffer constructor is not an object");
+                    }
+                    let species = self.get_member(constructor, Key::Symbol(2))?;
+                    if matches!(species, Value::Null | Value::Undefined) {
+                        default
+                    } else {
+                        species
+                    }
+                };
+                self.protect(&constructor)?;
+                let output = self.construct(constructor, vec![Value::number(count as f64)])?;
+                self.protect(&output)?;
+                // Steps 11-14: a distinct SharedArrayBuffer at least newLen bytes long.
+                let target = self.buffer_receiver(output.clone(), true)?;
+                if Rc::ptr_eq(&target, &buffer) {
+                    return self.throw_error("TypeError", "species result is the same buffer");
+                }
+                if (target.borrow().bytes.len() as u64) < count {
+                    return self.throw_error("TypeError", "species result is too small");
+                }
+                let b = buffer.borrow();
+                let count = (count as usize).min(b.bytes.len().saturating_sub(first as usize));
+                if count != 0 {
+                    target.borrow_mut().bytes[..count]
+                        .copy_from_slice(&b.bytes[first as usize..first as usize + count]);
+                }
+                Ok(output)
+            }
+            _ => Err(ScriptError::Unsupported("SharedArrayBuffer operation")),
         }
     }
 }

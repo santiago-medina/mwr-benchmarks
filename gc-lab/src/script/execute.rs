@@ -1096,6 +1096,7 @@ impl Engine<'_> {
                             | "Iterator"
                             | "Proxy"
                             | "ArrayBuffer"
+                            | "SharedArrayBuffer"
                             | "DataView"
                             | "Array"
                             | "Map"
@@ -1190,7 +1191,10 @@ impl Engine<'_> {
                     return self.construct_typed(&name, new_target, args);
                 }
 
-                if matches!(name.as_str(), "ArrayBuffer" | "DataView") {
+                if matches!(
+                    name.as_str(),
+                    "ArrayBuffer" | "SharedArrayBuffer" | "DataView"
+                ) {
                     return self.construct_buffer(&name, new_target, args);
                 }
 

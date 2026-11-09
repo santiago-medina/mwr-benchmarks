@@ -222,3 +222,18 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 
 - 43049/47708 pass (90.2%), +393 vs checkpoint 14 (42656). Failed 856 (-219), unsupported 3803 (-174). Lost 2: `language/identifiers/start-unicode-5.2.0.js` and `start-unicode-5.2.0-escaped.js`, both load timeouts (each passes alone in 3.7 s).
 - Largest remaining buckets: Atomics 389 (+ SharedArrayBuffer 104), module code 599 + import 129 + dynamic-import negative parse ~375, "unsupported reserved expression" 596, RegExp 482 (unpaired UTF-16 strings 442), "reserved binding identifier" 115 (includes `await` as an identifier in scripts), ShadowRealm 57-64, runner timeouts 67.
+
+### SharedArrayBuffer and Atomics (gap 16, 2026-11-09)
+
+- Design: SHARED_MEMORY.md. A SharedArrayBuffer is a `Buffer` with `shared: true` (constructor, byteLength, growable, maxByteLength, grow, slice, @@species). ArrayBuffer and SharedArrayBuffer methods reject receivers of the other kind.
+- Atomics (`script/atomics.rs`): load, store, compareExchange, add, sub, and, or, xor, exchange, isLockFree, pause, wait, waitAsync and notify, following ValidateIntegerTypedArray / ValidateAtomicAccess / RevalidateAtomicAccess. There is a single agent, so every access is sequentially consistent.
+- [[CanBlock]] is false by default, so a synchronous `Atomics.wait` throws a TypeError. `js_check --can-block` sets it, and run.py maps `CanBlockIsTrue` to that flag.
+- waitAsync timers and notify resolutions are host jobs, drained by the embedder through `next_host_job()` / `run_host_jobs()`. js_check does this; **the Servo bridge must too** (roadmap D).
+- Harness-only `$262` (detachArrayBuffer, gc, global, agent.sleep/monotonicNow; createRealm, evalScript and agent.start are Unsupported) and `setTimeout`.
+- Fixed: the ArrayBuffer and SharedArrayBuffer constructors now get `prototype` from newTarget before the host allocation-limit RangeError.
+- Open: multi-agent tests (109 Atomics cases, unsupported) need a thread-safe byte store and Worker agents. Immutable ArrayBuffer (`immutable`, `sliceToImmutable`, about 58 cases) is not implemented.
+
+### Checkpoint 16: full test262 baseline (2026-11-09)
+
+- 43818/47708 pass (91.8%), +769 vs checkpoint 15 (43049). Failed 708 (-148), unsupported 3182 (-621). Lost 0.
+- Largest remaining buckets: "unsupported reserved expression" 596, module code 599 + import 129 + dynamic-import negative parse ~375, unpaired UTF-16 strings 442, createRealm 181, "reserved binding identifier" 115, test262 agents 109, runner timeouts 66, ShadowRealm 57.
