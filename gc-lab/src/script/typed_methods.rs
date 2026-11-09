@@ -18,6 +18,7 @@ impl Engine<'_> {
         for (method, length) in [
             ("at", 1),
             ("join", 1),
+            ("toLocaleString", 0),
             ("includes", 1),
             ("indexOf", 1),
             ("lastIndexOf", 1),
@@ -156,6 +157,8 @@ impl Engine<'_> {
                 }
                 self.typed_get(&typed, n)
             }
+            // §23.2.3.31 after ValidateTypedArray (done by typed_record).
+            "toLocaleString" => self.locale_join(id, len),
             "join" => {
                 let separator = if arg(0) == Value::Undefined {
                     ",".into()

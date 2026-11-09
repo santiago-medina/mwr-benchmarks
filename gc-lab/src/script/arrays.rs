@@ -357,6 +357,7 @@ impl Engine<'_> {
                 )?;
                 Ok(value)
             }
+            "Array.prototype.toLocaleString" => self.locale_join(id, length as u64),
             "Array.prototype.join" => {
                 let separator = if arg(0) == Value::Undefined {
                     ",".into()
@@ -453,5 +454,42 @@ impl Engine<'_> {
             }
             _ => self.array_extended(name, id, length, args),
         }
+    }
+}
+impl Engine<'_> {
+    /// §23.1.3.32 Array.prototype.toLocaleString steps 4-7 (shared with
+    /// %TypedArray%.prototype.toLocaleString, §23.2.3.31): each element that is
+    /// not undefined or null contributes ToString(Invoke(element, "toLocaleString")).
+    /// The separator is the implementation-defined list separator ",".
+    pub(super) fn locale_join(&mut self, id: Id, length: u64) -> Result<Value> {
+        if self.join_stack.contains(&id) {
+            return Ok(Value::String(String::new()));
+        }
+        self.join_stack.push(id);
+        let result = (|| {
+            let mut output = String::new();
+            for index in 0..length {
+                self.tick()?;
+                if index > 0 {
+                    output.push(',');
+                }
+                let v = self.get_member(Value::Object(id), index.to_string())?;
+                self.protect(&v)?;
+                if !matches!(v, Value::Null | Value::Undefined) {
+                    let f = self.get_member(v.clone(), "toLocaleString")?;
+                    if !self.callable(&f) {
+                        return self.throw_error("TypeError", "toLocaleString is not a function");
+                    }
+                    let s = self.invoke_this(f, v, vec![])?;
+                    output.push_str(&self.to_string(s)?);
+                }
+                if output.len() > 1_048_576 {
+                    return Err(ScriptError::Runtime("string size limit"));
+                }
+            }
+            Ok(Value::String(output))
+        })();
+        self.join_stack.pop();
+        result
     }
 }

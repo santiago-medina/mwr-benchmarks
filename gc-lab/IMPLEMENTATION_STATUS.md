@@ -159,3 +159,15 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 ### Checkpoint 10: full test262 baseline (2026-11-09)
 - Full profile with the Temporal binary (`gc-lab/temporal`): **37451/47708 (78.5%)**, +1669 vs the gap-9 baseline (35782), 0 lost. Failed 5733, unsupported 4524. Runner timeouts: 246 → 53, thanks to GC scheduling. The full run now takes about 10 min, down from about 25-30 min.
 - Largest remaining buckets: Temporal 3585 non-pass (ZonedDateTime, PlainDateTime, PlainTime, PlainYearMonth, Instant are still mostly "not a constructor"), Iterator helpers 666, module code 599 + import 129, RegExp 483 (unpaired UTF-16 strings 446 across dirs), Atomics 389, WeakMap/WeakSet/WeakRef/FinalizationRegistry ~250, DataView/TypedArray ~450.
+
+### Temporal complete, Number formatting, toLocaleString (2026-11-09)
+- Temporal: PlainTime, PlainDateTime, Instant, ZonedDateTime, PlainYearMonth, PlainMonthDay and `Temporal.Now` are implemented on `temporal_rs` (TEMPORAL.md). The `built-ins/Temporal` smoke run passes 4613/4613. `intl402/Temporal` is not started.
+- `Number.prototype.toFixed`, `toExponential` and `toPrecision` use exact digit generation with integer arithmetic (§21.1.3.2/.3/.5). `toString(radix)` uses shortest round-trip digits and is no longer unsupported. `toLocaleString` is ToString, since there is no ECMA-402.
+- `Object.prototype.toLocaleString` (§20.1.3.5). `Array.prototype.toLocaleString` and `%TypedArray%.prototype.toLocaleString` (§23.1.3.32, §23.2.3.31) invoke each element's `toLocaleString`.
+
+### Checkpoint 11: full test262 baseline (2026-11-09)
+- Full profile with the Temporal binary: **41200/47708 (86.4%)**, +3749 vs checkpoint 10 (37451). Failed 2200, unsupported 4308.
+- 4 lost, all with verdicts:
+  - Two runner timeouts under load (`TypedArray/prototype/set/typedarray-arg-src-backed-by-resizable-buffer`, `identifiers/start-unicode-8.0.0-escaped`) pass alone in 1.5 s and 2.5 s.
+  - Two `TypedArray/prototype/toLocaleString/this-is-not-*` cases had been false passes, because the method was undefined. They now pass through the real implementation, which was added in the fix pass after the run.
+- Largest remaining buckets: Iterator helpers (442 "Iterator is not defined", 666 in the directory), module code 599 + import 129, RegExp 482 (unpaired UTF-16 strings 449), Atomics 389, DisposableStack/AsyncDisposableStack 187, WeakMap 141, ShadowRealm 57.

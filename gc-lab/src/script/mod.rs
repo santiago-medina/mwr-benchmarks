@@ -31,6 +31,7 @@ mod array_methods;
 
 mod json;
 
+mod number_format;
 mod numeric;
 
 mod string_search;

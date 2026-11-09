@@ -93,6 +93,7 @@ const METHODS: &[(&str, &[&str])] = &[
             "isPrototypeOf",
             "valueOf",
             "toString",
+            "toLocaleString",
         ],
     ),
     ("Array", &["isArray", "from", "of"]),
@@ -118,6 +119,7 @@ const METHODS: &[(&str, &[&str])] = &[
             "pop",
             "join",
             "toString",
+            "toLocaleString",
             "map",
             "filter",
             "forEach",
@@ -154,7 +156,17 @@ const METHODS: &[(&str, &[&str])] = &[
     ),
     ("Function.prototype", &["call", "bind", "apply", "toString"]),
     ("String.prototype", &["valueOf", "toString"]),
-    ("Number.prototype", &["valueOf", "toString"]),
+    (
+        "Number.prototype",
+        &[
+            "valueOf",
+            "toString",
+            "toFixed",
+            "toExponential",
+            "toPrecision",
+            "toLocaleString",
+        ],
+    ),
     ("Boolean.prototype", &["valueOf", "toString"]),
     (
         "assert",
@@ -293,9 +305,12 @@ impl Engine<'_> {
             | "Function.prototype"
             | "Object.prototype.toString"
             | "Object.prototype.valueOf"
+            | "Object.prototype.toLocaleString"
+            | "Array.prototype.toLocaleString"
             | "String.prototype.valueOf"
             | "String.prototype.toString"
             | "Number.prototype.valueOf"
+            | "Number.prototype.toLocaleString"
             | "Boolean.prototype.valueOf"
             | "Boolean.prototype.toString" => 0,
             _ => 1,
@@ -1202,6 +1217,17 @@ impl Engine<'_> {
                 }
                 return Ok(Value::Object(id));
             }
+            // §20.1.3.5: Invoke(this, "toString"), keeping a primitive receiver.
+            "Object.prototype.toLocaleString" => {
+                if matches!(receiver, Value::Undefined | Value::Null) {
+                    return self.throw_error(
+                        "TypeError",
+                        "Object.prototype.toLocaleString called on null or undefined",
+                    );
+                }
+                let f = self.get_member(receiver.clone(), "toString")?;
+                return self.invoke_this(f, receiver, vec![]);
+            }
             "Object.prototype.valueOf" => {
                 return self.object_coercible(receiver).map(Value::Object)
             }
@@ -1312,11 +1338,14 @@ impl Engine<'_> {
             if name.ends_with("valueOf") {
                 return Ok(primitive);
             }
-            if name == "Number.prototype.toString"
-                && arg(0) != Value::Undefined
-                && self.to_number(arg(0))? != 10.0
-            {
-                return Err(ScriptError::Unsupported("number radix"));
+            if let Some(method) = name.strip_prefix("Number.prototype.to") {
+                if matches!(
+                    method,
+                    "Fixed" | "Exponential" | "Precision" | "String" | "LocaleString"
+                ) {
+                    let x = self.to_number(primitive.clone())?;
+                    return self.number_format(&format!("to{method}"), x, arg(0));
+                }
             }
             return self.to_string(primitive).map(Value::String);
         }

@@ -80,3 +80,11 @@ Migration later: roadmap C needs a public native-extension API (host objects wit
 5. `intl402/Temporal` (2040): only what does not need Intl formatting (calendars other than ISO come with the crate's compiled data).
 
 Kill line: 3 fix rounds on the same sub-bucket (one type's directory) without progress means a narrower survey of that directory's failure reasons before more code.
+
+## Status after step 4 (2026-11-09)
+
+All eight types and `Temporal.Now` are implemented. The `built-ins/Temporal` smoke run passes 4613/4613.
+
+- `Temporal.Now`: the host hooks (`SystemHost`) take the clock from `std::time::SystemTime`. The system time zone is UTC, because ECMA-262 SystemTimeZoneIdentifier (in the Date section) is implementation-defined. The crate's `sys-local` feature stays off (unaudited FFI). A Servo embedding that wants the user's zone passes it through the host later.
+- Overflowing years: property-bag years outside ±1e9 are mapped into the same position of the 400-year Gregorian cycle near ±1e9 (`clamp_year`), so the leap-year checks used for overflow (`PlainMonthDay.from` with a huge `year`) keep their parity. The value is out of range anyway and is rejected wherever the year is used as a date.
+- `intl402/Temporal` is not started. Most of it needs Intl formatting (`toLocaleString`) or non-ISO calendar arithmetic through `Intl.DateTimeFormat`.
