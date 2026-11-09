@@ -1,7 +1,8 @@
 //! One Test262 script case per process (strict unless `--sloppy`); no source rewriting or helper stubs.
 //! `--include=FILE` prepends an official harness include (as the reference runner does).
+//! `--gc-stress` collects at every allocation (rooting debug); the default is the threshold policy.
 use gc_lab::{
-    script::{parser, Engine, ScriptError},
+    script::{parser, Engine, GcPolicy, ScriptError},
     Model,
 };
 fn quote(s: &str) -> String {
@@ -28,6 +29,7 @@ fn main() {
     let remaining: Vec<_> = args.collect();
     let asynchronous = remaining.iter().any(|s| s == "--async");
     let sloppy = remaining.iter().any(|s| s == "--sloppy");
+    let gc_stress = remaining.iter().any(|s| s == "--gc-stress");
     let mut includes = String::new();
     for file in remaining
         .iter()
@@ -86,6 +88,11 @@ fn main() {
     }
     let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
     e.enable_test_harness();
+    e.set_gc_policy(if gc_stress {
+        GcPolicy::Stress
+    } else {
+        GcPolicy::Threshold
+    });
     // The engine default (10k steps) is an embedding safety budget; conformance cases such as
     // testTypedArray.js loops need far more. The runner's per-case timeout bounds runaway cases.
     e.set_step_limit(50_000_000);

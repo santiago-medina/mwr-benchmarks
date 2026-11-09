@@ -10,7 +10,7 @@ use std::sync::{
 
 use crate::runtime::job_queue::MicrotaskRunnable;
 use crate::{DomTypeHolder, JSTraceable};
-use gc_lab::script::{DomAdapter, Engine, SuspendedEngine};
+use gc_lab::script::{DomAdapter, Engine, GcPolicy, SuspendedEngine};
 use gc_lab::Model;
 use js::context::JSContext;
 use js::jsapi::JSTracer;
@@ -369,6 +369,7 @@ fn create_session(cx: &mut JSContext, doc: &Document, source: &str) -> Result<Rc
         lifetime: Life::default(),
     });
     let mut engine = Engine::new(Model::Indirect, Model::Indirect).map_err(|e| format!("{e:?}"))?;
+    engine.set_gc_policy(GcPolicy::Threshold);
     engine
         .set_dom_adapter(Box::new(NativeAdapter::new(cx, state.registry.clone())))
         .map_err(|e| format!("{e:?}"))?;

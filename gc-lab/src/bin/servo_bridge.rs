@@ -2,7 +2,7 @@
 use gc_lab::{
     script::{
         wire::{encode, LineAdapter},
-        Engine,
+        Engine, GcPolicy,
     },
     Model,
 };
@@ -29,6 +29,7 @@ fn main() {
     };
     let source = std::fs::read_to_string(path).expect("source file");
     let mut engine = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    engine.set_gc_policy(GcPolicy::Threshold);
     engine.set_dom_adapter(Box::new(LineAdapter)).unwrap();
     if let Err(error) = engine.execute(&source) {
         released(&mut engine);

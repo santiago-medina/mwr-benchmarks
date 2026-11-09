@@ -223,7 +223,7 @@ impl Engine<'_> {
         if result.is_err() {
             self.cancel_microtasks();
         }
-        self.collect();
+        self.maybe_collect();
         result
     }
     /// Run exactly the host-scheduled job. Stale/cancelled tokens are harmless.
@@ -262,7 +262,7 @@ impl Engine<'_> {
         if result.is_err() {
             self.cancel_microtasks();
         }
-        self.collect();
+        self.maybe_collect();
         result.map(|_| true)
     }
     pub(super) fn enqueue_job(&mut self, job: Job) -> Result<()> {

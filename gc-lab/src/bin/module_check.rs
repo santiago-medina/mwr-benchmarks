@@ -1,6 +1,6 @@
 //! Filesystem test host. Browser module URL/security policy belongs to Servo.
 use gc_lab::{
-    script::{parser::parse_module, wire, Engine, ModuleSource, ModuleStatus},
+    script::{parser::parse_module, wire, Engine, GcPolicy, ModuleSource, ModuleStatus},
     Model,
 };
 use std::{
@@ -56,6 +56,7 @@ fn main() {
         .canonicalize()
         .unwrap();
     let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.set_gc_policy(GcPolicy::Threshold);
     e.enable_test_harness();
     let result = (|| -> Result<(String, String), String> {
         let mut sources = vec![];

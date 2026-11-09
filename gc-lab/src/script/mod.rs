@@ -6,7 +6,7 @@ mod host;
 mod objects;
 pub mod parser;
 mod vm;
-pub use vm::{Engine, ScriptError, SuspendedEngine};
+pub use vm::{Engine, GcPolicy, ScriptError, SuspendedEngine};
 
 mod adapter;
 pub use adapter::DomAdapter;

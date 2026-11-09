@@ -3,6 +3,37 @@
 //! This is a protocol experiment, not an integration with Servo or two concurrent GCs.
 use crate::{Collection, Error, Handle, Heap, Model, Root};
 use std::collections::{HashMap, HashSet};
+use std::hash::{BuildHasherDefault, Hasher};
+
+/// Deterministic multiply-rotate hasher for `Id` keys (GC_SCHEDULING.md). `Id`s are
+/// internal allocation counters, never attacker-chosen, so SipHash's HashDoS
+/// resistance buys nothing here and it dominated GC profiles.
+#[derive(Default, Clone, Copy)]
+pub struct IdHasher(u64);
+impl Hasher for IdHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        for chunk in bytes.chunks(8) {
+            let mut word = [0u8; 8];
+            word[..chunk.len()].copy_from_slice(chunk);
+            self.write_u64(u64::from_le_bytes(word));
+        }
+    }
+    fn write_u64(&mut self, word: u64) {
+        self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(0x51_7c_c1_b7_27_22_0a_95);
+    }
+    fn write_usize(&mut self, word: usize) {
+        self.write_u64(word as u64);
+    }
+    fn write_isize(&mut self, word: isize) {
+        self.write_u64(word as u64);
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+pub type BuildIdHasher = BuildHasherDefault<IdHasher>;
+pub type IdMap<V> = HashMap<Id, V, BuildIdHasher>;
+pub type IdSet = HashSet<Id, BuildIdHasher>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Domain {
@@ -51,10 +82,13 @@ pub struct Collected {
 pub struct Runtime {
     dom: Heap,
     js: Heap,
-    records: HashMap<Id, Record>,
+    records: IdMap<Record>,
     budget: Option<usize>,
     stress: bool,
-    foreign_roots: HashSet<Id>,
+    foreign_roots: IdSet,
+    /// Running total of `charged_bytes()`; kept in O(1) (see GC_SCHEDULING.md).
+    charged: usize,
+    collections: u64,
 }
 
 impl Runtime {
@@ -67,10 +101,12 @@ impl Runtime {
         Ok(Self {
             dom: Heap::new(dom),
             js: Heap::new(js),
-            records: HashMap::new(),
+            records: IdMap::default(),
             budget: None,
             stress: false,
-            foreign_roots: HashSet::new(),
+            foreign_roots: IdSet::default(),
+            charged: 0,
+            collections: 0,
         })
     }
 
@@ -103,6 +139,13 @@ impl Runtime {
         std::mem::size_of::<Id>()
     }
     pub fn charged_bytes(&self) -> usize {
+        self.charged
+    }
+    /// Number of joint collections so far, including budget-triggered ones.
+    pub fn collections(&self) -> u64 {
+        self.collections
+    }
+    fn recount_charge(&self) -> usize {
         self.records
             .values()
             .map(|r| {
@@ -112,7 +155,7 @@ impl Runtime {
             .sum()
     }
     fn fits(&self, extra: usize) -> bool {
-        self.charged_bytes()
+        self.charged
             .checked_add(extra)
             .is_some_and(|total| self.budget.is_none_or(|limit| total <= limit))
     }
@@ -152,6 +195,7 @@ impl Runtime {
                 links: vec![],
             },
         );
+        self.charged += charge;
         Ok(id)
     }
 
@@ -176,11 +220,14 @@ impl Runtime {
         let links = &mut self.records.get_mut(&from).unwrap().links;
         links.try_reserve(1).map_err(|_| Error::AllocationFailed)?;
         links.push(to);
+        self.charged += Self::edge_charge();
         Ok(())
     }
     pub fn clear_edges(&mut self, id: Id) -> Result<(), Error> {
         self.value(id)?;
-        self.records.get_mut(&id).unwrap().links.clear();
+        let links = &mut self.records.get_mut(&id).unwrap().links;
+        self.charged -= links.len() * Self::edge_charge();
+        links.clear();
         Ok(())
     }
     /// Remove one edge, without allocating or collecting.
@@ -190,6 +237,7 @@ impl Runtime {
         let links = &mut self.records.get_mut(&from).unwrap().links;
         if let Some(index) = links.iter().position(|id| *id == to) {
             links.remove(index);
+            self.charged -= Self::edge_charge();
         }
         Ok(())
     }
@@ -233,9 +281,9 @@ impl Runtime {
             .chain(self.js.root_handles().into_iter().map(Id::Js))
             .collect()
     }
-    pub fn reachable(&self, seeds: &[Id]) -> Result<HashSet<Id>, Error> {
+    pub fn reachable(&self, seeds: &[Id]) -> Result<IdSet, Error> {
         let mut pending = seeds.to_vec();
-        let mut live = HashSet::new();
+        let mut live = IdSet::default();
         while let Some(id) = pending.pop() {
             self.value(id)?;
             if live.insert(id) {
@@ -274,12 +322,23 @@ impl Runtime {
         // never collect independently while bridge edges exist.
         let dom = self.dom.collect_with_roots(&dom);
         let js = self.js.collect_with_roots(&js);
-        self.records.retain(|id, _| live.contains(id));
+        let mut reclaimed = 0;
+        self.records.retain(|id, r| {
+            let keep = live.contains(id);
+            if !keep {
+                reclaimed += Self::allocation_charge(r.payload.len()).unwrap()
+                    + r.links.len() * Self::edge_charge();
+            }
+            keep
+        });
+        self.charged = before - reclaimed;
+        debug_assert_eq!(self.charged, self.recount_charge());
         self.foreign_roots.retain(|id| live.contains(id));
+        self.collections += 1;
         Ok(Collected {
             dom,
             js,
-            reclaimed_charge: before - self.charged_bytes(),
+            reclaimed_charge: reclaimed,
         })
     }
 

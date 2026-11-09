@@ -137,9 +137,20 @@ pub(super) enum Object {
     },
 }
 
+/// When the engine collects. See GC_SCHEDULING.md.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GcPolicy {
+    /// A full joint collection at every allocation safepoint (rooting tests).
+    Stress,
+    /// Collect when live objects reach max(MIN_GC_THRESHOLD, GC_GROWTH_FACTOR x live after the last GC).
+    Threshold,
+}
+pub const MIN_GC_THRESHOLD: usize = 4096;
+pub const GC_GROWTH_FACTOR: usize = 2;
+
 pub struct Engine<'host> {
     pub(super) runtime: Runtime,
-    pub(super) objects: HashMap<Id, Object>,
+    pub(super) objects: crate::dual::IdMap<Object>,
     roots: Vec<ExternalRoot>,
     pub(super) modules: super::modules::Registry,
     pub(super) network: super::network::Network,
@@ -163,6 +174,9 @@ pub struct Engine<'host> {
     pub(super) done_count: usize,
     pub(super) done_error: Option<String>,
     stress: bool,
+    /// Threshold policy: collect when live objects reach this (GC_SCHEDULING.md).
+    next_gc: usize,
+    seen_collections: u64,
     steps: usize,
     step_limit: usize,
     pub(super) call_depth: usize,
@@ -170,7 +184,7 @@ pub struct Engine<'host> {
     pub(super) completion: Option<(Value, Option<ExternalRoot>)>,
     pub(super) native_depth: usize,
     pub(super) adapter: Option<Box<dyn super::adapter::DomAdapter + 'host>>,
-    pub(super) remote_nodes: HashMap<Id, u64>,
+    pub(super) remote_nodes: crate::dual::IdMap<u64>,
     pub(super) adapter_error: Option<String>,
     pub(super) pending_release: Vec<u64>,
     pub(super) private_symbols: HashSet<u64>,
@@ -181,7 +195,7 @@ impl<'host> Engine<'host> {
     pub fn new(dom: Model, js: Model) -> Result<Self> {
         Ok(Self {
             runtime: Runtime::new(dom, js)?,
-            objects: HashMap::new(),
+            objects: Default::default(),
             roots: vec![],
             network: super::network::Network::default(),
             modules: super::modules::Registry::default(),
@@ -205,13 +219,15 @@ impl<'host> Engine<'host> {
             done_count: 0,
             done_error: None,
             stress: true,
+            next_gc: MIN_GC_THRESHOLD,
+            seen_collections: 0,
             steps: 0,
             step_limit: 10_000,
             call_depth: 0,
             completion: None,
             native_depth: 0,
             adapter: None,
-            remote_nodes: HashMap::new(),
+            remote_nodes: Default::default(),
             adapter_error: None,
             pending_release: vec![],
             private_symbols: HashSet::new(),
@@ -249,6 +265,8 @@ impl<'host> Engine<'host> {
             done_count: self.done_count,
             done_error: self.done_error,
             stress: self.stress,
+            next_gc: self.next_gc,
+            seen_collections: self.seen_collections,
             steps: self.steps,
             step_limit: self.step_limit,
             call_depth: self.call_depth,
@@ -279,6 +297,27 @@ impl<'host> Engine<'host> {
     pub fn set_stress(&mut self, enabled: bool) {
         self.stress = enabled;
     }
+    /// Stress (the library default) collects at every allocation safepoint; embeddings
+    /// that run real code select Threshold. See GC_SCHEDULING.md.
+    pub fn set_gc_policy(&mut self, policy: GcPolicy) {
+        self.stress = policy == GcPolicy::Stress;
+    }
+    pub fn gc_policy(&self) -> GcPolicy {
+        if self.stress {
+            GcPolicy::Stress
+        } else {
+            GcPolicy::Threshold
+        }
+    }
+    pub fn collections(&self) -> u64 {
+        self.runtime.collections()
+    }
+    /// Collect under Stress; under Threshold only once the live heap reached the trigger.
+    pub(super) fn maybe_collect(&mut self) {
+        if self.stress || self.runtime.live_objects() >= self.next_gc {
+            self.collect();
+        }
+    }
     pub fn set_budget(&mut self, bytes: Option<usize>) {
         self.runtime.set_budget(bytes);
     }
@@ -305,6 +344,12 @@ impl<'host> Engine<'host> {
         self.prune_metadata();
     }
     pub(super) fn prune_metadata(&mut self) {
+        self.seen_collections = self.runtime.collections();
+        self.next_gc = self
+            .runtime
+            .live_objects()
+            .saturating_mul(GC_GROWTH_FACTOR)
+            .max(MIN_GC_THRESHOLD);
         let dead: Vec<_> = self
             .remote_nodes
             .iter()
@@ -440,15 +485,17 @@ impl<'host> Engine<'host> {
         Ok(())
     }
     pub(super) fn allocate(&mut self, domain: Domain, tag: i64) -> Result<Id> {
-        if self.stress {
-            self.collect();
-        }
+        self.maybe_collect();
         if let Some(error) = self.adapter_error.clone() {
             return Err(ScriptError::Host(error));
         }
         let result = self.runtime.allocate(domain, tag, 64);
-        // The budget can trigger backend collection even with stress disabled.
-        self.prune_metadata();
+        // The budget can trigger backend collection under either policy.
+        if self.runtime.collections() != self.seen_collections {
+            self.prune_metadata();
+        } else if !self.pending_release.is_empty() {
+            self.flush_remote_releases();
+        }
         Ok(result?)
     }
     pub(super) fn protect(&mut self, value: &Value) -> Result<()> {

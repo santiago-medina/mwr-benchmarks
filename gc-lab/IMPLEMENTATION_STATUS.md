@@ -150,3 +150,8 @@ Temporal comes from `temporal_rs =0.2.6` (audited by Rust Unsafe Security Audito
 ### Temporal, step 2: Temporal.PlainDate (2026-11-09)
 
 Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (ToIntegerWithTruncation on the ISO fields, calendar identifier canonicalised), `from` (ToTemporalDate with the property bag read in spec order: `day`, `era`, `eraYear`, `month`, `monthCode`, `year`, era fields only for calendars that have eras), `compare`, all 16 getters, `add`, `subtract`, `with`, `withCalendar`, `until`, `since` (largestUnit/smallestUnit/roundingIncrement/roundingMode, time units rejected), `equals`, `toString` (`calendarName`), `toJSON`, `toLocaleString`, and `valueOf` (TypeError). `Temporal.Duration` now accepts a PlainDate as `relativeTo`. Still unsupported: `toPlainYearMonth`, `toPlainMonthDay`, `toPlainDateTime` and `toZonedDateTime`, which wait for those types. Profile `temporal`: 1028/4613 pass (was 421). PlainDate is 561/654 and Duration is 426/540. Next: PlainTime and PlainDateTime.
+
+### GC scheduling: threshold policy (2026-11-09)
+- `Engine::new` still defaults to stress (a GC at every allocation) for the rooting tests. Embeddings (`js_check`, `module_check`, `servo_bridge`, `servo-native/mwr.rs`) select `GcPolicy::Threshold`: collect when live objects reach max(4096, 2 × live after the last GC). `js_check --gc-stress` restores stress.
+- `Runtime::charged_bytes()` is O(1), metadata pruning runs only after a collection, and `Id` maps use a deterministic hasher.
+- s1.js: 31.9 G → 0.375 G instructions. Several full16 runner timeouts now finish in under 1 s. Details and the benchmark table are in GC_SCHEDULING.md.
