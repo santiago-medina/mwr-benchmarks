@@ -208,3 +208,17 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 
 - 42656/47708 pass (89.4%), +335 vs checkpoint 13 (42321). Lost 1: `TypedArray/prototype/set/typedarray-arg-src-backed-by-resizable-buffer.js`, a load timeout (passes alone in 5 s).
 - Largest remaining buckets: Atomics 389 (126 "not defined"), DisposableStack/AsyncDisposableStack 187 + SuppressedError 18 + 62 negative parse (explicit-resource-management), module code 599 + import 129, RegExp 482 (unpaired UTF-16 strings 447), ShadowRealm 57-64, runner timeouts 60.
+
+### Explicit resource management (gap 15, 2026-11-09)
+
+- Design: RESOURCE_MANAGEMENT.md. Built-ins in `script/disposal.rs`: DisposableStack, AsyncDisposableStack, SuppressedError, `%AsyncIteratorPrototype%[@@asyncDispose]`, with DisposeCapability / AddDisposableResource / DisposeResources following the spec records.
+- Syntax: `using` and `await using` declarations are their own declaration kinds (never lowered to `const`), with the early errors (script and eval top level, case clauses, `for (using x in ...)`, `await using` outside async code, the name `let`, binding patterns, missing initialiser). Both the tree-walker (`Engine::using_scope`) and the VM (`DisposeStart` / `DisposeSync` / `DisposeAsync` inside a `Try{finally}`) dispose at scope exit; for-of disposes each iteration before IteratorClose.
+- Known deviation: async disposal awaits one promise from `dispose_async` and not one inline Await per resource, so microtask tick counts can differ from the spec.
+- Also fixed: sloppy `let = 1` as an expression statement, `x[]` as a real SyntaxError, and NamedEvaluation for VM declaration initialisers (`Op::EvalNamed`).
+- Smoke: language/statements/{using,await-using} 165/178 (0 failed; 10 module cases and 3 parser gaps). for-of, for-await-of, block and the three built-in dirs: 2143/2225, the 7 failures already failed before.
+- Open parser gaps found here: `await` as a binding identifier in scripts (`var await`), and `var let` in sloppy mode (blocks the `*-declaring-let-split-across-two-lines` cases).
+
+### Checkpoint 15: full test262 baseline (2026-11-09)
+
+- 43049/47708 pass (90.2%), +393 vs checkpoint 14 (42656). Failed 856 (-219), unsupported 3803 (-174). Lost 2: `language/identifiers/start-unicode-5.2.0.js` and `start-unicode-5.2.0-escaped.js`, both load timeouts (each passes alone in 3.7 s).
+- Largest remaining buckets: Atomics 389 (+ SharedArrayBuffer 104), module code 599 + import 129 + dynamic-import negative parse ~375, "unsupported reserved expression" 596, RegExp 482 (unpaired UTF-16 strings 442), "reserved binding identifier" 115 (includes `await` as an identifier in scripts), ShadowRealm 57-64, runner timeouts 67.

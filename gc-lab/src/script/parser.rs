@@ -217,6 +217,16 @@ pub fn strip_labels(mut statement: &Stmt) -> &Stmt {
 pub(super) fn continue_label(label: &str) -> String {
     format!("\0continue {label}")
 }
+/// `using` / `await using` binding kinds (explicit resource management): immutable,
+/// lexical, and never lowered to `const` (RESOURCE_MANAGEMENT.md).
+pub fn is_using(kind: &str) -> bool {
+    kind == "using" || kind == "await using"
+}
+pub(super) fn has_direct_using(body: &[Stmt]) -> bool {
+    direct_statements(body)
+        .iter()
+        .any(|s| matches!(s, Stmt::Bind { kind, .. } if is_using(kind)))
+}
 pub fn direct_statements(body: &[Stmt]) -> Vec<&Stmt> {
     let mut out = vec![];
     for statement in body {
@@ -606,6 +616,13 @@ pub(super) fn parse_eval(
     p.prologue(0)?;
     let mut body = p.statements(false)?;
     p.legacy_check()?;
+    // §14.3.1.1: a Script (and eval code) has no top-level UsingDeclaration.
+    if has_direct_using(&body) {
+        return Err(SyntaxError {
+            offset: 0,
+            message: "using declaration at the top level of a script",
+        });
+    }
     if !p.strict {
         body.insert(0, Stmt::Sloppy);
     }
@@ -964,6 +981,13 @@ impl Parser<'_> {
         self.name().map(Pattern::Name)
     }
     fn binding_statement(kind: &str, pattern: Pattern, init: Option<Expr>) -> Stmt {
+        if is_using(kind) {
+            return Stmt::Bind {
+                kind: kind.into(),
+                pattern,
+                init,
+            };
+        }
         match pattern {
             Pattern::Name(name) => match kind {
                 "const" => Stmt::Const(name, init.unwrap()),
@@ -986,14 +1010,20 @@ impl Parser<'_> {
             } else {
                 None
             };
-            if init.is_none() && (kind == "const" || !matches!(pattern, Pattern::Name(_))) {
+            if init.is_none()
+                && (kind == "const" || is_using(kind) || !matches!(pattern, Pattern::Name(_)))
+            {
                 return Err(self.error("binding declaration requires initializer"));
             }
             declarations.push(Self::binding_statement(kind, pattern, init));
             if !self.punct(',') {
                 break;
             }
-            pattern = self.binding_pattern()?;
+            pattern = if is_using(kind) {
+                self.using_binding()?
+            } else {
+                self.binding_pattern()?
+            };
         }
         Ok(if declarations.len() == 1 {
             declarations.pop().unwrap()
@@ -1562,8 +1592,53 @@ impl Parser<'_> {
         }
         self.statement()
     }
+    /// A `using` (1 token) or `await using` (2 tokens) declaration starts at token `i`
+    /// (§14.3.1 UsingDeclaration: `using [no LineTerminator here] BindingList`,
+    /// `await [no LineTerminator here] using [no LineTerminator here] BindingList`).
+    /// Returns the keyword length. `using[x]`, `using\nx` and escaped `using` stay
+    /// expressions.
+    fn using_ahead(&self, i: usize) -> Option<usize> {
+        let at = |i: usize| self.tokens.get(i).map(|t| &t.0);
+        let same_line = |i: usize| {
+            i + 1 < self.tokens.len()
+                && !self.source[self.tokens[i].1..self.tokens[i + 1].1]
+                    .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
+        };
+        let binding = |j: usize| {
+            // `await` / `yield` are left to name()'s context checks.
+            matches!(at(j), Some(Token::Name(n)) if !reserved(n) || n == "await" || n == "yield")
+                || matches!(at(j), Some(Token::EscapedName(_)))
+        };
+        let using = |j: usize| at(j) == Some(&Token::Name("using".into()));
+        if using(i) && same_line(i) && binding(i + 1) {
+            return Some(1);
+        }
+        if at(i) == Some(&Token::Name("await".into()))
+            && using(i + 1)
+            && same_line(i)
+            && same_line(i + 1)
+            && binding(i + 2)
+        {
+            return Some(2);
+        }
+        None
+    }
+    /// A using declaration's BindingIdentifier: no patterns, and never `let`.
+    fn using_binding(&mut self) -> Result<Pattern, SyntaxError> {
+        if matches!(self.current(), Token::Punct('[') | Token::Punct('{')) {
+            return Err(self.error("using declarations take no binding patterns"));
+        }
+        let name = self.name()?;
+        if name == "let" {
+            return Err(self.error("let is disallowed as a lexically bound name"));
+        }
+        Ok(Pattern::Name(name))
+    }
     /// A lexical or async function declaration starts at token `i`.
     fn lexical_ahead(&self, i: usize) -> bool {
+        if self.using_ahead(i).is_some() {
+            return true;
+        }
         let at = |i: usize| self.tokens.get(i).map(|t| &t.0);
         let same_line = |i: usize| {
             !self.source[self.tokens[i].1..self.tokens[i + 1].1]
@@ -1738,7 +1813,19 @@ impl Parser<'_> {
         if self.word("for") {
             let asynchronous = self.word("await");
             self.expect('(')?;
-            let kind = if self.word("const") {
+            // §14.7.5 ForInOfStatement: `for ( [lookahead ≠ using of] ForDeclaration of ...`.
+            // `for (using of = x;;)` is still a declaration; `for (using of of y)` is not.
+            let using = self.using_ahead(self.cursor).filter(|&n| {
+                n == 2
+                    || self.tokens.get(self.cursor + 1).map(|t| &t.0)
+                        != Some(&Token::Name("of".into()))
+                    || self.tokens.get(self.cursor + 2).map(|t| &t.0)
+                        == Some(&Token::Op("=".into()))
+            });
+            let kind = if let Some(n) = using {
+                self.cursor += n;
+                Some(if n == 2 { "await using" } else { "using" })
+            } else if self.word("const") {
                 Some("const")
             } else if self.word("let") {
                 Some("let")
@@ -1748,7 +1835,14 @@ impl Parser<'_> {
                 None
             };
             let init = if let Some(kind) = kind {
-                let binding = self.binding_pattern()?;
+                let binding = if is_using(kind) {
+                    self.using_binding()?
+                } else {
+                    self.binding_pattern()?
+                };
+                if is_using(kind) && self.current() == &Token::Name("in".into()) {
+                    return Err(self.error("for-in cannot declare using bindings"));
+                }
                 if self.word("in") {
                     let iterable = self.sequence()?;
                     self.expect(')')?;
@@ -1851,6 +1945,10 @@ impl Parser<'_> {
                 {
                     body.push(self.statement()?);
                 }
+                // §14.3.1.1: UsingDeclaration directly in a CaseClause / DefaultClause.
+                if has_direct_using(&body) {
+                    return Err(self.error("using declaration directly in a switch case"));
+                }
                 cases.push((test, body));
             }
             let all: Vec<Stmt> = cases.iter().flat_map(|(_, b)| b.iter().cloned()).collect();
@@ -1941,8 +2039,24 @@ impl Parser<'_> {
                 finally,
             });
         }
+        if let Some(n) = self.using_ahead(self.cursor) {
+            self.cursor += n;
+            let kind = if n == 2 { "await using" } else { "using" };
+            let pattern = self.using_binding()?;
+            let s = self.declaration_tail(kind, pattern)?;
+            self.semi()?;
+            return Ok(s);
+        }
+        // §14.3.1: in sloppy code `let` not followed by a binding (`let = 1`, `let;`)
+        // is an identifier expression statement.
+        let let_declaration = self.current() == &Token::Name("let".into())
+            && (self.strict
+                || matches!(
+                    self.tokens.get(self.cursor + 1).map(|t| &t.0),
+                    Some(Token::Punct('[' | '{') | Token::Name(_) | Token::EscapedName(_))
+                ));
         let s = if self.current() == &Token::Name("const".into())
-            || self.current() == &Token::Name("let".into())
+            || let_declaration
             || self.current() == &Token::Name("var".into())
         {
             let Token::Name(kind) = self.take() else {
@@ -2305,6 +2419,9 @@ impl Parser<'_> {
                 if self.punct('.') {
                     f = self.member_after_dot(f)?;
                 } else if self.punct('[') {
+                    if self.current() == &Token::Punct(']') {
+                        return Err(self.error("expected expression in computed member"));
+                    }
                     let k = self.sequence()?;
                     self.expect(']')?;
                     f = Expr::Computed(Box::new(f), Box::new(k));
@@ -2643,6 +2760,9 @@ impl Parser<'_> {
             if self.punct('.') {
                 e = self.member_after_dot(e)?;
             } else if self.punct('[') {
+                if self.current() == &Token::Punct(']') {
+                    return Err(self.error("expected expression in computed member"));
+                }
                 let k = self.sequence()?;
                 self.expect(']')?;
                 e = Expr::Computed(Box::new(e), Box::new(k));
@@ -2922,6 +3042,9 @@ fn validate_loop(
                 pattern,
                 init,
             } => {
+                if kind == "await using" && !in_async {
+                    return Err(err("await using outside async function"));
+                }
                 if kind == "var" && pattern.names().iter().any(|name| names.contains(name)) {
                     return Err(err("var conflicts with lexical binding"));
                 }
@@ -3092,7 +3215,10 @@ fn validate_loop(
                         .into_iter()
                         .map(|expression| (expression, depth)),
                 );
-                if kind == "let" || kind == "const" {
+                if kind == "await using" && !in_async {
+                    return Err(err("await using outside async function"));
+                }
+                if kind == "let" || kind == "const" || is_using(kind) {
                     let mut names = std::collections::HashSet::new();
                     for name in binding.names() {
                         if !names.insert(name) {

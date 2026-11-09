@@ -286,6 +286,11 @@ impl Engine<'_> {
                 ..Default::default()
             },
         )?;
+        self.intrinsics
+            .as_mut()
+            .unwrap()
+            .collection
+            .insert("AsyncIterator".into(), iterator_proto);
         let generator_proto = self.new_object(Some(iterator_proto))?;
         self.runtime.link(env, generator_proto)?;
         let function_proto = self.new_object(Some(function))?;

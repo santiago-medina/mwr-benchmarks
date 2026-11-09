@@ -105,6 +105,20 @@ impl Engine<'_> {
         } else {
             env
         };
+        let head = init.map(std::slice::from_ref).unwrap_or_default();
+        self.using_scope(head, local, |e| {
+            e.for_body(init, test, update, body, local, can_return)
+        })
+    }
+    fn for_body(
+        &mut self,
+        init: Option<&Stmt>,
+        test: Option<&Expr>,
+        update: Option<&Expr>,
+        body: &Stmt,
+        mut local: Id,
+        can_return: bool,
+    ) -> Result<Option<Value>> {
         if let Some(init) = init {
             self.statement(init, local, can_return)?;
         }

@@ -278,14 +278,16 @@ impl Engine<'_> {
         can_return: bool,
     ) -> Result<Option<Value>> {
         self.hoist_functions(body, env)?;
-        for s in body {
-            self.tick()?;
-            let completion = self.frame(|e| e.statement(s, env, can_return))?;
-            if completion.is_some() {
-                return Ok(completion);
+        self.using_scope(body, env, |e| {
+            for s in body {
+                e.tick()?;
+                let completion = e.frame(|e| e.statement(s, env, can_return))?;
+                if completion.is_some() {
+                    return Ok(completion);
+                }
             }
-        }
-        Ok(None)
+            Ok(None)
+        })
     }
     fn scoped(&mut self, body: &[Stmt], env: Id, can_return: bool) -> Result<Option<Value>> {
         let local = self.new_environment(Some(env), body, false)?;
@@ -334,6 +336,11 @@ impl Engine<'_> {
                 pattern,
                 init,
             } => {
+                if kind == "await using" {
+                    return Err(ScriptError::Unsupported(
+                        "await using in a synchronous body",
+                    ));
+                }
                 if let Some(init) = init {
                     let value = if let super::parser::Pattern::Name(n) = pattern {
                         self.eval_named(init, env, n)?
@@ -346,7 +353,12 @@ impl Engine<'_> {
                     } else {
                         env
                     };
-                    self.bind_pattern(pattern, value, env, target)?;
+                    self.bind_pattern(pattern, value.clone(), env, target)?;
+                    if kind == "using" {
+                        // §14.3.1.2: AddDisposableResource(scope, value, sync-dispose).
+                        let scope = self.lookup(env, "%dispose")?;
+                        self.add_using_resource(&scope, value, false)?;
+                    }
                 }
             }
             Stmt::Empty => {}
@@ -554,6 +566,11 @@ impl Engine<'_> {
                 }
                 let value = e.get_member(result, "value")?;
                 e.protect(&value)?;
+                if kind == "await using" {
+                    return Err(ScriptError::Unsupported(
+                        "await using in a synchronous loop",
+                    ));
+                }
                 let pending = e.frame(|e| {
                     let local = if kind == "var" || kind == "assignment" {
                         env
@@ -568,16 +585,26 @@ impl Engine<'_> {
                         id
                     };
                     if kind == "assignment" {
-                        e.assign_pattern(binding, value, local)?;
+                        e.assign_pattern(binding, value.clone(), local)?;
                     } else {
                         let target = if kind == "var" {
                             e.var_environment(env)?
                         } else {
                             local
                         };
-                        e.bind_pattern(binding, value, local, target)?;
+                        e.bind_pattern(binding, value.clone(), local, target)?;
                     }
-                    e.statement(body, local, can_return)
+                    if kind != "using" {
+                        return e.statement(body, local, can_return);
+                    }
+                    // §14.7.5.7 ForIn/OfBodyEvaluation: each iteration's using binding is
+                    // disposed before the next step (and before IteratorClose).
+                    let scope = e.new_using_scope()?;
+                    e.initialize(local, "%dispose", scope.clone())?;
+                    let out = e
+                        .add_using_resource(&scope, value, false)
+                        .and_then(|_| e.statement(body, local, can_return));
+                    e.dispose_scope_outcome(&scope, out)
                 });
                 match pending {
                     Ok(None) | Err(ScriptError::LoopContinue) => Ok((false, None)),
@@ -1062,6 +1089,7 @@ impl Engine<'_> {
                 super::typed_arrays::kind(name).is_some()
                     || name == "%TypedArray%"
                     || Self::temporal_constructor(name)
+                    || super::disposal::is_constructor(name)
                     || matches!(
                         name.as_str(),
                         "Promise"
@@ -1130,6 +1158,9 @@ impl Engine<'_> {
                 }
                 if name == "Iterator" {
                     return self.construct_iterator(f, new_target);
+                }
+                if super::disposal::is_constructor(&name) {
+                    return self.construct_disposal(&name, new_target);
                 }
                 if name == "Date" {
                     return self.construct_date(new_target, args);

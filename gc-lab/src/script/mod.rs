@@ -27,6 +27,7 @@ mod modules;
 pub use modules::{ModuleSource, ModuleStatus};
 
 mod collections;
+mod disposal;
 mod weak;
 
 mod array_methods;

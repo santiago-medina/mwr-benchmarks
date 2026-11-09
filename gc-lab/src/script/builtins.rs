@@ -28,6 +28,7 @@ const ERRORS: &[&str] = &[
     "RangeError",
     "ReferenceError",
     "SyntaxError",
+    "SuppressedError",
     "Test262Error",
 ];
 const METHODS: &[(&str, &[&str])] = &[
@@ -248,6 +249,7 @@ impl Engine<'_> {
             "Proxy" | "Proxy.revocable" => 2,
             "Object.prototype.__proto__.get" => 0,
             "Object.prototype.__defineGetter__" | "Object.prototype.__defineSetter__" => 2,
+            "SuppressedError" => 3,
             "AggregateError"
             | "Object.hasOwn"
             | "Object.groupBy"
@@ -547,6 +549,7 @@ impl Engine<'_> {
         self.bootstrap_dates(env, &mut objects)?;
         self.bootstrap_regexp(env, &mut objects, iterator)?;
         self.bootstrap_iterator_helpers(env, &mut objects, iterator)?;
+        self.bootstrap_disposal(env, &mut objects)?;
         #[cfg(feature = "temporal")]
         self.bootstrap_temporal(env, &mut objects)?;
         let constructors: Vec<_> = self
@@ -1009,6 +1012,9 @@ impl Engine<'_> {
     ) -> Result<Value> {
         if super::iterator_helpers::handles(name) {
             return self.iterator_builtin(name, receiver, args);
+        }
+        if super::disposal::handles(name) {
+            return self.disposal_builtin(name, receiver, args);
         }
         if name == "Proxy" || name.starts_with("Proxy.") {
             return self.proxy_builtin(name, args);

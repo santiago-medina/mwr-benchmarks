@@ -25,11 +25,25 @@ impl Engine<'_> {
         let mut data = self.data(id)?.clone();
         data.error_class = Some(name.into());
         self.replace_data(id, data)?;
-        let offset = usize::from(name == "AggregateError");
+        // §20.5.7.1 AggregateError(errors, message, options), §20.5.8.1
+        // SuppressedError(error, suppressed, message): the message moves right.
+        let offset = match name {
+            "AggregateError" => 1,
+            "SuppressedError" => 2,
+            _ => 0,
+        };
         let message = args.get(offset).cloned().unwrap_or(Value::Undefined);
         if message != Value::Undefined {
             let message = self.to_string(message)?;
             self.hidden(id, "message", Value::String(message))?;
+        }
+        if name == "SuppressedError" {
+            // Steps 4-5: CreateNonEnumerableDataPropertyOrThrow "error", "suppressed".
+            for (i, key) in ["error", "suppressed"].into_iter().enumerate() {
+                let v = args.get(i).cloned().unwrap_or(Value::Undefined);
+                self.hidden(id, key, v)?;
+            }
+            return Ok(result);
         }
         if let Some(Value::Object(options)) = args.get(offset + 1) {
             if self.has(*options, "cause")? {

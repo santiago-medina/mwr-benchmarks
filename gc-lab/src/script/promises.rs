@@ -102,6 +102,10 @@ pub(super) enum Internal {
     CloseSyncIterator {
         iterator: Value,
     },
+    DisposeStep {
+        job: Id,
+        reject: bool,
+    },
 }
 impl Internal {
     pub fn edges(&self) -> Vec<Id> {
@@ -121,7 +125,7 @@ impl Internal {
             Self::Thunk { value, .. } => value.id().into_iter().collect(),
             Self::IterResult { .. } => vec![],
             Self::AsyncGeneratorReturn { generator, .. } => vec![*generator],
-            Self::FromAsyncStep { job, .. } => vec![*job],
+            Self::FromAsyncStep { job, .. } | Self::DisposeStep { job, .. } => vec![*job],
             Self::CloseSyncIterator { iterator } => iterator.id().into_iter().collect(),
         }
     }
@@ -133,6 +137,7 @@ pub(super) enum Cell {
     Resolving { promise: Id, resolved: bool },
     Capability { resolve: Value, reject: Value },
     FromAsync(super::from_async::FromAsync),
+    Dispose(super::disposal::AsyncDispose),
 }
 impl Cell {
     pub fn edges(&self) -> Vec<Id> {
@@ -140,6 +145,7 @@ impl Cell {
             Self::Aggregate(state) => state.edges(),
             Self::Called(_) => vec![],
             Self::FromAsync(state) => state.edges(),
+            Self::Dispose(state) => state.edges(),
             Self::Resolving { promise, .. } => vec![*promise],
             Self::Capability { resolve, reject } => [resolve, reject]
                 .into_iter()
@@ -634,6 +640,7 @@ impl Engine<'_> {
             }
             Internal::IterResult { done } => self.iterator_result(arg(0), done),
             Internal::FromAsyncStep { job, reject } => self.from_async_step(job, arg(0), reject),
+            Internal::DisposeStep { job, reject } => self.dispose_step(job, arg(0), reject),
             Internal::CloseSyncIterator { iterator } => {
                 self.close_sync_iterator_rejected(iterator, arg(0))
             }

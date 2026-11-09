@@ -532,7 +532,8 @@ impl<'host> Engine<'host> {
                         lexical.insert(name.clone());
                         if kind == "let" {
                             mutable.insert(name);
-                        } else if kind == "const" {
+                        } else {
+                            // const, using, await using: immutable bindings.
                             constants.insert(name);
                         }
                     }

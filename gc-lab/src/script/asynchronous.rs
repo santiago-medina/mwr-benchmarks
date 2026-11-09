@@ -10,6 +10,8 @@ const ASYNC_ITERATOR: u64 = 12;
 #[derive(Clone)]
 pub(super) enum Op {
     Eval(Expr, usize),
+    /// NamedEvaluation of an anonymous function or class initializer (§8.4.5).
+    EvalNamed(Expr, String, usize),
     Enumerate(usize, usize, usize),
     Iterator(usize, usize, usize),
     IteratorNext(usize, usize, usize, usize, bool),
@@ -64,6 +66,19 @@ pub(super) enum Op {
     EndTry,
     EndFinally,
     Sync(Stmt),
+    /// Explicit resource management (RESOURCE_MANAGEMENT.md): bind a fresh dispose
+    /// capability as `%dispose` in the current scope, into a register.
+    DisposeStart(usize),
+    /// AddDisposableResource for the value register; `true` = async-dispose hint.
+    Using(usize, bool),
+    /// In the scope's finally: DisposeResources synchronously, folding the pending
+    /// completion (§9.11.6).
+    DisposeSync(usize),
+    /// In the scope's finally: start async DisposeResources; the promise goes to the
+    /// second register and a pending throw moves into the disposal.
+    DisposeAsync(usize, usize, usize),
+    /// Catch target for a rejected async disposal: it becomes the pending throw.
+    DisposeRejected,
 }
 pub(super) struct Program {
     ops: Vec<Op>,
@@ -115,6 +130,7 @@ fn property_await(p: &Property) -> bool {
 pub(super) fn stmt_await(s: &Stmt) -> bool {
     match s {
         Stmt::Declarations(items) => items.iter().any(stmt_await),
+        Stmt::Bind { kind, .. } if kind == "await using" => true,
         Stmt::Bind { pattern, init, .. } => {
             init.as_ref().is_some_and(expr_await)
                 || pattern.expressions().into_iter().any(expr_await)
@@ -163,6 +179,7 @@ pub(super) fn stmt_await(s: &Stmt) -> bool {
         Stmt::ForOf {
             asynchronous: true, ..
         } => true,
+        Stmt::ForOf { kind, .. } if kind == "await using" => true,
         Stmt::ForOf {
             binding,
             iterable,
@@ -197,6 +214,15 @@ impl Compiler {
         let r = self.next;
         self.next += 1;
         r
+    }
+    /// An initializer for `name`: anonymous functions and classes get NamedEvaluation.
+    fn named(&mut self, e: &Expr, name: &str) -> Result<usize> {
+        if e.anonymous_function() && !expr_await(e) {
+            let r = self.reg();
+            self.emit(Op::EvalNamed(e.clone(), name.into(), r));
+            return Ok(r);
+        }
+        self.expression(e)
     }
     fn eval(&mut self, e: Expr) -> usize {
         let r = self.reg();
@@ -536,18 +562,119 @@ impl Compiler {
             p => p.clone(),
         })
     }
+    /// Wrap code for a scope declaring `using` bindings in a try/finally that disposes
+    /// its resources (§14.2.2 step 5, §15.2.x FunctionBody, ForIn/OfBodyEvaluation).
+    fn using_scope(
+        &mut self,
+        declarations: &[Stmt],
+        inner: impl FnOnce(&mut Self) -> Result<()>,
+    ) -> Result<()> {
+        if !super::parser::has_direct_using(declarations) {
+            return inner(self);
+        }
+        let asynchronous = super::parser::direct_statements(declarations)
+            .iter()
+            .any(|s| matches!(s, Stmt::Bind { kind, .. } if kind == "await using"));
+        let scope = self.reg();
+        self.emit(Op::DisposeStart(scope));
+        let start = self.emit(Op::Try {
+            catch: None,
+            finally: None,
+            end: 0,
+        });
+        inner(self)?;
+        self.emit(Op::EndTry);
+        let finally = self.ops.len();
+        if asynchronous {
+            let promise = self.reg();
+            let start_async = self.emit(Op::DisposeAsync(scope, promise, 0));
+            let guard = self.emit(Op::Try {
+                catch: None,
+                finally: None,
+                end: 0,
+            });
+            let ignored = self.reg();
+            self.emit(Op::Await(promise, ignored));
+            self.emit(Op::EndTry);
+            let catch = self.emit(Op::DisposeRejected);
+            self.emit(Op::EndTry);
+            let end = self.ops.len();
+            self.ops[guard] = Op::Try {
+                catch: Some(catch),
+                finally: None,
+                end,
+            };
+            self.ops[start_async] = Op::DisposeAsync(scope, promise, end);
+        } else {
+            self.emit(Op::DisposeSync(scope));
+        }
+        self.emit(Op::EndFinally);
+        let end = self.ops.len();
+        self.ops[start] = Op::Try {
+            catch: None,
+            finally: Some(finally),
+            end,
+        };
+        Ok(())
+    }
     fn body(&mut self, body: &[Stmt], scope: bool) -> Result<()> {
         if scope {
             self.emit(Op::Enter(body.to_vec()));
         } else {
             self.emit(Op::Hoist(body.to_vec()));
         }
-        for s in body {
-            self.statement(s)?;
-        }
+        self.using_scope(body, |c| {
+            for s in body {
+                c.statement(s)?;
+            }
+            Ok(())
+        })?;
         if scope {
             self.emit(Op::Exit);
         }
+        Ok(())
+    }
+    fn for_rest(
+        &mut self,
+        init: Option<&Stmt>,
+        test: Option<&Expr>,
+        update: Option<&Expr>,
+        body: &Stmt,
+    ) -> Result<()> {
+        let names = init
+            .as_ref()
+            .map(|s| s.iteration_names())
+            .unwrap_or_default();
+        if !names.is_empty() {
+            self.emit(Op::CloneIteration(names.clone()));
+        }
+        let handler = self.emit(Op::Loop(0, 0));
+        let start = self.ops.len();
+        let branch = if let Some(test) = test {
+            let test = self.expression(test)?;
+            Some(self.emit(Op::Branch(test, 0, 0)))
+        } else {
+            None
+        };
+        let body_start = self.ops.len();
+        self.statement(body)?;
+        let continue_to = self.ops.len();
+        if !names.is_empty() {
+            self.emit(Op::CloneIteration(names));
+        }
+        if let Some(update) = update {
+            self.expression(update)?;
+        }
+        self.emit(Op::Jump(start));
+        let exit = self.emit(Op::EndLoop);
+        let end = self.ops.len();
+        if let Some(branch) = branch {
+            let Op::Branch(test, _, _) = self.ops[branch] else {
+                unreachable!()
+            };
+            self.ops[branch] = Op::Branch(test, body_start, exit);
+        }
+        self.ops[handler] = Op::Loop(end, continue_to);
         Ok(())
     }
     fn statement(&mut self, s: &Stmt) -> Result<()> {
@@ -574,8 +701,15 @@ impl Compiler {
                     ));
                 }
                 if let Some(init) = init {
-                    let value = self.expression(init)?;
+                    let value = if let super::parser::Pattern::Name(n) = pattern {
+                        self.named(init, n)?
+                    } else {
+                        self.expression(init)?
+                    };
                     self.emit(Op::Bind(pattern.clone(), value, kind == "var"));
+                    if super::parser::is_using(kind) {
+                        self.emit(Op::Using(value, kind == "await using"));
+                    }
                 }
             }
             Stmt::Labeled(label, body) => {
@@ -665,55 +799,25 @@ impl Compiler {
                 if lexical {
                     self.emit(Op::Enter(vec![init.as_ref().unwrap().as_ref().clone()]));
                 }
-                if let Some(init) = init {
-                    self.statement(init)?;
-                }
-                let names = init
-                    .as_ref()
-                    .map(|s| s.iteration_names())
-                    .unwrap_or_default();
-                if !names.is_empty() {
-                    self.emit(Op::CloneIteration(names.clone()));
-                }
-                let handler = self.emit(Op::Loop(0, 0));
-                let start = self.ops.len();
-                let branch = if let Some(test) = test {
-                    let test = self.expression(test)?;
-                    Some(self.emit(Op::Branch(test, 0, 0)))
-                } else {
-                    None
-                };
-                let body_start = self.ops.len();
-                self.statement(body)?;
-                let continue_to = self.ops.len();
-                if !names.is_empty() {
-                    self.emit(Op::CloneIteration(names));
-                }
-                if let Some(update) = update {
-                    self.expression(update)?;
-                }
-                self.emit(Op::Jump(start));
-                let exit = self.emit(Op::EndLoop);
-                let end = self.ops.len();
-                if let Some(branch) = branch {
-                    let Op::Branch(test, _, _) = self.ops[branch] else {
-                        unreachable!()
-                    };
-                    self.ops[branch] = Op::Branch(test, body_start, exit);
-                }
-                self.ops[handler] = Op::Loop(end, continue_to);
+                let head: Vec<Stmt> = init.iter().map(|s| s.as_ref().clone()).collect();
+                self.using_scope(&head, |c| {
+                    if let Some(init) = init {
+                        c.statement(init)?;
+                    }
+                    c.for_rest(init.as_deref(), test.as_ref(), update.as_ref(), body)
+                })?;
                 if lexical {
                     self.emit(Op::Exit);
                 }
             }
             Stmt::Function(..) | Stmt::AsyncFunction(..) | Stmt::GeneratorFunction(..) => {}
             Stmt::Const(n, e) | Stmt::Let(n, e) => {
-                let value = self.expression(e)?;
+                let value = self.named(e, n)?;
                 self.emit(Op::Init(n.clone(), value, false));
             }
             Stmt::Var(n, e) => {
                 if let Some(e) = e {
-                    let value = self.expression(e)?;
+                    let value = self.named(e, n)?;
                     self.emit(Op::Init(n.clone(), value, true));
                 }
             }
@@ -812,7 +916,7 @@ impl Compiler {
                         ..
                     }
                 );
-                let lexical = kind == "let" || kind == "const";
+                let lexical = kind == "let" || kind == "const" || super::parser::is_using(kind);
                 if binding.expressions().into_iter().any(expr_await) {
                     return Err(ScriptError::Unsupported(
                         "resumable loop binding expressions",
@@ -860,17 +964,23 @@ impl Compiler {
                 let branch = self.emit(Op::Branch(done, 0, 0));
                 let body_start = self.ops.len();
                 if lexical {
-                    self.emit(Op::Enter(vec![declaration]));
+                    self.emit(Op::Enter(vec![declaration.clone()]));
                 }
-                if kind == "assignment" {
-                    self.eval(Expr::Destructure(
-                        Box::new(binding.clone()),
-                        Box::new(read(value)),
-                    ));
-                } else {
-                    self.emit(Op::Bind(binding.clone(), value, kind == "var"));
-                }
-                self.statement(body)?;
+                let declarations = [declaration];
+                self.using_scope(&declarations, |c| {
+                    if kind == "assignment" {
+                        c.eval(Expr::Destructure(
+                            Box::new(binding.clone()),
+                            Box::new(read(value)),
+                        ));
+                    } else {
+                        c.emit(Op::Bind(binding.clone(), value, kind == "var"));
+                        if super::parser::is_using(kind) {
+                            c.emit(Op::Using(value, kind == "await using"));
+                        }
+                    }
+                    c.statement(body)
+                })?;
                 if lexical {
                     self.emit(Op::Exit);
                 }
@@ -1600,6 +1710,10 @@ impl Engine<'_> {
                             let v = e.eval(&expr, env)?;
                             e.store(&frame, out, v)?;
                         }
+                        Op::EvalNamed(expr, name, out) => {
+                            let v = e.eval_named(&expr, env, &name)?;
+                            e.store(&frame, out, v)?;
+                        }
                         Op::Append(array, value, spread) => {
                             let Value::Object(array) = e.register(&frame, array)? else {
                                 unreachable!()
@@ -1835,6 +1949,55 @@ impl Engine<'_> {
                             } else {
                                 return Ok(Some(h.pending));
                             }
+                        }
+                        Op::DisposeStart(r) => {
+                            let scope = e.new_using_scope()?;
+                            e.initialize(env, "%dispose", scope.clone())?;
+                            e.store(&frame, r, scope)?;
+                        }
+                        Op::Using(r, asynchronous) => {
+                            let value = e.register(&frame, r)?;
+                            let scope = e.lookup(env, "%dispose")?;
+                            e.add_using_resource(&scope, value, asynchronous)?;
+                        }
+                        Op::DisposeSync(r) => {
+                            let scope = e.register(&frame, r)?;
+                            let resources = e.take_using_resources(&scope)?;
+                            let error = match &frame.handlers.last().unwrap().pending {
+                                Completion::Throw(v) => Some(v.clone()),
+                                _ => None,
+                            };
+                            if let Some(error) = e.dispose_sync(resources, error)? {
+                                e.protect(&error)?;
+                                frame.handlers.last_mut().unwrap().pending =
+                                    Completion::Throw(error);
+                            }
+                        }
+                        Op::DisposeAsync(r, out, skip) => {
+                            let scope = e.register(&frame, r)?;
+                            let resources = e.take_using_resources(&scope)?;
+                            // §9.11.6 DisposeResources: no resource recorded, no Await.
+                            if resources.is_empty() {
+                                frame.ip = skip;
+                                return Ok(None);
+                            }
+                            let h = frame.handlers.last_mut().unwrap();
+                            let error = match std::mem::replace(&mut h.pending, Completion::Normal)
+                            {
+                                Completion::Throw(v) => Some(v),
+                                other => {
+                                    h.pending = other;
+                                    None
+                                }
+                            };
+                            let promise = e.dispose_async(resources, error)?;
+                            e.store(&frame, out, promise)?;
+                        }
+                        Op::DisposeRejected => {
+                            let value = frame.incoming.take().unwrap();
+                            e.protect(&value)?;
+                            let n = frame.handlers.len();
+                            frame.handlers[n - 2].pending = Completion::Throw(value);
                         }
                         Op::Sync(s) => match e.statement(&s, env, true) {
                             Ok(Some(v)) => return e.return_value(id, &mut frame, v),
