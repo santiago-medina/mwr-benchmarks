@@ -414,6 +414,10 @@ impl Engine<'_> {
             "Array",
             "Map",
             "Set",
+            "WeakMap",
+            "WeakSet",
+            "WeakRef",
+            "FinalizationRegistry",
             "Symbol",
             "parseInt",
             "parseFloat",
@@ -531,6 +535,7 @@ impl Engine<'_> {
             }
         }
         self.bootstrap_collections(env, &mut objects, iterator)?;
+        self.bootstrap_weak(env, &mut objects)?;
         self.bootstrap_math(env, &mut objects)?;
         self.bootstrap_strings(env, &mut objects, iterator)?;
         self.bootstrap_symbols(env, &mut objects)?;
@@ -1111,8 +1116,19 @@ impl Engine<'_> {
         if name.starts_with("JSON.") {
             return self.json_builtin(name, args);
         }
+        if name == "WeakRef"
+            || name == "FinalizationRegistry"
+            || name.starts_with("WeakRef.")
+            || name.starts_with("FinalizationRegistry.")
+        {
+            return self.weak_builtin(name, receiver, args);
+        }
         if name == "Map"
             || name == "Set"
+            || name == "WeakMap"
+            || name == "WeakSet"
+            || name.starts_with("WeakMap.")
+            || name.starts_with("WeakSet.")
             || name.starts_with("Map.")
             || name.starts_with("Set.")
             || name.starts_with("%MapIterator")

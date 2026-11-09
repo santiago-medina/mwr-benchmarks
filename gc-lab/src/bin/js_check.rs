@@ -112,6 +112,12 @@ fn main() {
     if result.is_ok() {
         result = e.microtask_checkpoint(10_000).map(|_| ());
     }
+    // FinalizationRegistry cleanup runs as its own host task after the checkpoint.
+    while result.is_ok() && e.pending_finalization_cleanups() != 0 {
+        result = e
+            .run_finalization_cleanup()
+            .and_then(|_| e.microtask_checkpoint(10_000).map(|_| ()));
+    }
     let (done, error) = e.async_test_state();
     let harness_error = if result.is_err() {
         None

@@ -70,6 +70,15 @@ pub struct ExternalRoot {
 struct Record {
     payload: Vec<u8>,
     links: Vec<Id>,
+    /// Untraced targets (WeakRef, WeakSet keys, registry targets). See WEAK_REFS.md.
+    weak: Vec<Id>,
+    /// (key, value): the value is traced only while the holder and the key are live.
+    ephemerons: Vec<(Id, Id)>,
+}
+impl Record {
+    fn edge_count(&self) -> usize {
+        self.links.len() + self.weak.len() + 2 * self.ephemerons.len()
+    }
 }
 
 #[derive(Debug)]
@@ -150,7 +159,7 @@ impl Runtime {
             .values()
             .map(|r| {
                 Self::allocation_charge(r.payload.len()).unwrap()
-                    + r.links.len() * Self::edge_charge()
+                    + r.edge_count() * Self::edge_charge()
             })
             .sum()
     }
@@ -193,6 +202,8 @@ impl Runtime {
             Record {
                 payload: bytes,
                 links: vec![],
+                weak: vec![],
+                ephemerons: vec![],
             },
         );
         self.charged += charge;
@@ -221,6 +232,52 @@ impl Runtime {
         links.try_reserve(1).map_err(|_| Error::AllocationFailed)?;
         links.push(to);
         self.charged += Self::edge_charge();
+        Ok(())
+    }
+    /// Replace the weak targets and ephemerons of `id`. Not a safepoint: it either
+    /// succeeds or fails without mutation (budget). Dead targets are rejected.
+    pub fn set_weak(
+        &mut self,
+        id: Id,
+        weak: Vec<Id>,
+        ephemerons: Vec<(Id, Id)>,
+    ) -> Result<(), Error> {
+        self.value(id)?;
+        for t in weak
+            .iter()
+            .chain(ephemerons.iter().flat_map(|(k, v)| [k, v]))
+        {
+            self.value(*t)?;
+        }
+        let record = &self.records[&id];
+        let old = record.weak.len() + 2 * record.ephemerons.len();
+        let new = weak.len() + 2 * ephemerons.len();
+        if new > old && !self.fits((new - old) * Self::edge_charge()) {
+            return Err(Error::ByteLimit);
+        }
+        let record = self.records.get_mut(&id).unwrap();
+        record.weak = weak;
+        record.ephemerons = ephemerons;
+        self.charged = self.charged + new * Self::edge_charge() - old * Self::edge_charge();
+        Ok(())
+    }
+    /// Append one weak target (`value: None`) or ephemeron. Same contract as `set_weak`.
+    pub fn add_weak(&mut self, id: Id, key: Id, value: Option<Id>) -> Result<(), Error> {
+        self.value(id)?;
+        self.value(key)?;
+        if let Some(v) = value {
+            self.value(v)?;
+        }
+        let cost = if value.is_some() { 2 } else { 1 } * Self::edge_charge();
+        if !self.fits(cost) {
+            return Err(Error::ByteLimit);
+        }
+        let record = self.records.get_mut(&id).unwrap();
+        match value {
+            Some(v) => record.ephemerons.push((key, v)),
+            None => record.weak.push(key),
+        }
+        self.charged += cost;
         Ok(())
     }
     pub fn clear_edges(&mut self, id: Id) -> Result<(), Error> {
@@ -282,12 +339,26 @@ impl Runtime {
             .collect()
     }
     pub fn reachable(&self, seeds: &[Id]) -> Result<IdSet, Error> {
+        // Ephemerons indexed by key (WEAK_REFS.md): a value whose key is not marked yet
+        // waits in `waiting[key]` and is pushed when the key gets marked. Linear in edges.
         let mut pending = seeds.to_vec();
         let mut live = IdSet::default();
+        let mut waiting: IdMap<Vec<Id>> = IdMap::default();
         while let Some(id) = pending.pop() {
             self.value(id)?;
             if live.insert(id) {
-                pending.extend(self.records[&id].links.iter().copied());
+                let record = &self.records[&id];
+                pending.extend(record.links.iter().copied());
+                for &(key, value) in &record.ephemerons {
+                    if live.contains(&key) {
+                        pending.push(value);
+                    } else {
+                        waiting.entry(key).or_default().push(value);
+                    }
+                }
+                if let Some(values) = waiting.remove(&id) {
+                    pending.extend(values);
+                }
             }
         }
         Ok(live)
@@ -327,7 +398,13 @@ impl Runtime {
             let keep = live.contains(id);
             if !keep {
                 reclaimed += Self::allocation_charge(r.payload.len()).unwrap()
-                    + r.links.len() * Self::edge_charge();
+                    + r.edge_count() * Self::edge_charge();
+            } else if !r.weak.is_empty() || !r.ephemerons.is_empty() {
+                // Clear weak entries whose target/key died (identity numbers never revive).
+                let before = r.edge_count();
+                r.weak.retain(|t| live.contains(t));
+                r.ephemerons.retain(|(k, _)| live.contains(k));
+                reclaimed += (before - r.edge_count()) * Self::edge_charge();
             }
             keep
         });

@@ -234,6 +234,8 @@ impl Engine<'_> {
         if result.is_err() {
             self.cancel_microtasks();
         }
+        // HTML "perform a microtask checkpoint": ClearKeptObjects() after the queue drains.
+        self.clear_kept_objects();
         self.maybe_collect();
         result
     }

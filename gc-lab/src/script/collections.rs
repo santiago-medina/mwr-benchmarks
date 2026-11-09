@@ -9,21 +9,52 @@ type Result<T> = std::result::Result<T, ScriptError>;
 #[derive(Clone)]
 pub(super) struct Table {
     pub set: bool,
+    /// WeakMap/WeakSet (§24.3, §24.4): object keys are ephemerons, see WEAK_REFS.md.
+    pub weak: bool,
     pub entries: Vec<Option<(Value, Value)>>,
     index: HashMap<Value, usize>,
 }
 impl Table {
+    /// Strong edges. In a weak table only entries whose key can never die (symbols)
+    /// hold their value strongly.
     pub fn edges(&self) -> Vec<Id> {
         self.entries
             .iter()
             .flatten()
+            .filter(|(k, _)| !self.weak || k.id().is_none())
             .flat_map(|(k, v)| [k.id(), v.id()])
             .flatten()
             .collect()
     }
+    /// Weak targets and (key, value) ephemerons of a weak table.
+    pub fn weak_edges(&self, weak: &mut Vec<Id>, ephemerons: &mut Vec<(Id, Id)>) {
+        if !self.weak {
+            return;
+        }
+        for (k, v) in self.entries.iter().flatten() {
+            if let Some(k) = k.id() {
+                match v.id() {
+                    Some(v) if !self.set => ephemerons.push((k, v)),
+                    _ => weak.push(k),
+                }
+            }
+        }
+    }
+    /// Drop entries whose object key died in the last collection.
+    pub(super) fn scrub(&mut self, dead: impl Fn(Id) -> bool) {
+        for at in 0..self.entries.len() {
+            if self.entries[at]
+                .as_ref()
+                .is_some_and(|(k, _)| k.id().is_some_and(&dead))
+            {
+                self.remove_at(at);
+            }
+        }
+    }
     pub(super) fn new(set: bool) -> Self {
         Self {
             set,
+            weak: false,
             entries: vec![],
             index: HashMap::new(),
         }
@@ -320,18 +351,21 @@ impl Engine<'_> {
         let result = Value::Object(id);
         self.protect(&result)?;
         let mut data = self.data(id)?.clone();
-        data.collection = Some(Table::new(name == "Set"));
+        let is_map = name.ends_with("Map");
+        let mut table = Table::new(!is_map);
+        table.weak = name.starts_with("Weak");
+        data.collection = Some(table);
         self.replace_data(id, data)?;
         if matches!(source, Value::Null | Value::Undefined) {
             return Ok(result);
         }
-        let adder = self.get_member(result.clone(), if name == "Map" { "set" } else { "add" })?;
+        let adder = self.get_member(result.clone(), if is_map { "set" } else { "add" })?;
         self.protect(&adder)?;
         if !self.callable(&adder) {
             return self.throw_error("TypeError", "collection adder is not callable");
         }
         self.consume_iterable(source, |e, value| {
-            let args = if name == "Map" {
+            let args = if is_map {
                 if !matches!(value, Value::Object(_)) {
                     return e.throw_error("TypeError", "Map entry is not an object");
                 }
@@ -356,10 +390,12 @@ impl Engine<'_> {
         if name.ends_with(".species") {
             return Ok(receiver);
         }
-        if name == "Map" || name == "Set" {
-            return self.throw_error("TypeError", "collection constructor requires new");
+        if matches!(name, "Map" | "Set" | "WeakMap" | "WeakSet") {
+            return self.throw_error("TypeError", &format!("Constructor {name} requires 'new'"));
         }
-        let set = name.starts_with("Set.") || name.starts_with("%Set");
+        let weak = name.starts_with("Weak");
+        let set =
+            name.starts_with("Set.") || name.starts_with("%Set") || name.starts_with("WeakSet.");
         let Value::Object(id) = receiver.clone() else {
             return self.throw_error("TypeError", "invalid collection receiver");
         };
@@ -414,11 +450,35 @@ impl Engine<'_> {
             .data(id)
             .ok()
             .and_then(|d| d.collection.as_ref())
-            .filter(|t| t.set == set)
+            .filter(|t| t.set == set && t.weak == weak)
         else {
             return self.throw_error("TypeError", "incompatible collection receiver");
         };
         let op = name.rsplit('.').next().unwrap();
+        if weak {
+            // §24.3.3 / §24.4.3: keys that cannot be held weakly are never present; the
+            // inserting methods throw a TypeError for them (getOrInsertComputed before
+            // calling the callback).
+            let key = args.first().cloned().unwrap_or(Value::Undefined);
+            if !self.can_be_held_weakly(&key) {
+                return match op {
+                    "get" => Ok(Value::Undefined),
+                    "has" | "delete" => Ok(Value::Bool(false)),
+                    "getOrInsertComputed"
+                        if !self.callable(args.get(1).unwrap_or(&Value::Undefined)) =>
+                    {
+                        self.throw_error("TypeError", "callbackfn is not a function")
+                    }
+                    _ => self.throw_error("TypeError", "invalid value used as weak collection key"),
+                };
+            }
+            if !matches!(
+                op,
+                "get" | "has" | "delete" | "set" | "add" | "getOrInsert" | "getOrInsertComputed"
+            ) {
+                return Err(ScriptError::Unsupported("weak collection operation"));
+            }
+        }
         let key = args.first().cloned().unwrap_or(Value::Undefined);
         let at = table.find(&key);
         match op {
@@ -438,6 +498,11 @@ impl Engine<'_> {
                 } else {
                     args.get(1).cloned().unwrap_or(Value::Undefined)
                 };
+                if weak && at.is_none() && key.id().is_some() {
+                    // O(1) append: a new object key adds one weak entry and no strong edge.
+                    self.weak_append(id, key, value)?;
+                    return Ok(receiver);
+                }
                 let mut data = self.data(id)?.clone();
                 let table = data.collection.as_mut().unwrap();
                 table.write(key, value);

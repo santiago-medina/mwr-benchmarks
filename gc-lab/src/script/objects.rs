@@ -113,6 +113,7 @@ pub(super) struct Data {
     pub string_cursor: Option<super::strings::Cursor>,
     pub iterator: Option<super::arrays::IteratorState>,
     pub iter_slot: Option<super::iterator_helpers::IterSlot>,
+    pub weak: Option<super::weak::WeakSlot>,
     #[cfg(feature = "temporal")]
     pub temporal: Option<std::rc::Rc<super::temporal::Slot>>,
 }
@@ -137,6 +138,7 @@ impl Data {
             array: false,
             iterator: None,
             iter_slot: None,
+            weak: None,
             collection: None,
             collection_cursor: None,
             string_cursor: None,
@@ -171,6 +173,7 @@ impl Data {
             .chain(self.iterator.as_ref().and_then(|i| i.target))
             .chain(self.regexp_cursor.as_ref().map(|c| c.regexp))
             .chain(self.iter_slot.as_ref().into_iter().flat_map(|s| s.edges()))
+            .chain(self.weak.as_ref().into_iter().flat_map(|w| w.edges()))
             .chain(self.request.as_ref().into_iter().flat_map(|r| r.edges()))
             .chain(self.activation.as_ref().into_iter().flat_map(|a| a.edges()))
             .chain(self.generator.as_ref().into_iter().flat_map(|g| g.edges()))
@@ -290,12 +293,16 @@ impl Engine<'_> {
     }
     pub(super) fn replace_data(&mut self, id: Id, next: Data) -> Result<()> {
         let old = self.data(id)?.edges();
+        // Weak column first (WEAK_REFS.md); it fails without mutation.
+        self.sync_weak(id, &next)?;
         let mut added = vec![];
         for child in next.edges() {
             if let Err(error) = self.runtime.link(id, child) {
                 for a in added {
                     self.runtime.unlink(id, a)?;
                 }
+                let previous = self.data(id)?.clone();
+                self.sync_weak(id, &previous)?;
                 return Err(error.into());
             }
             added.push(child);

@@ -1072,6 +1072,10 @@ impl Engine<'_> {
                             | "Array"
                             | "Map"
                             | "Set"
+                            | "WeakMap"
+                            | "WeakSet"
+                            | "WeakRef"
+                            | "FinalizationRegistry"
                             | "Object"
                             | "Function"
                             | "AsyncFunction"
@@ -1162,7 +1166,10 @@ impl Engine<'_> {
                 if self.intrinsics.as_ref().unwrap().errors.contains_key(&name) {
                     return self.error_constructor(&name, args, Some(new_target));
                 }
-                if name == "Map" || name == "Set" {
+                if name == "WeakRef" || name == "FinalizationRegistry" {
+                    return self.construct_weak(&name, new_target, args);
+                }
+                if matches!(name.as_str(), "Map" | "Set" | "WeakMap" | "WeakSet") {
                     return self.construct_collection(
                         &name,
                         new_target,
