@@ -17,6 +17,8 @@ pub(super) enum Op {
     AsyncNext(usize, usize, usize, usize),
     IteratorStep(usize, usize, usize, usize),
     Loop(usize, usize),
+    /// A labelled statement: a handler that only stops `break label`.
+    Label(usize, String),
     EndLoop,
     CloneIteration(Vec<String>),
     CheckBase(usize),
@@ -145,6 +147,7 @@ pub(super) fn stmt_await(s: &Stmt) -> bool {
                 })
         }
         Stmt::While { test, body, .. } => expr_await(test) || stmt_await(body),
+        Stmt::Labeled(_, body) => stmt_await(body),
         Stmt::With(e, body) => expr_await(e) || stmt_await(body),
         Stmt::For {
             init,
@@ -575,6 +578,12 @@ impl Compiler {
                     self.emit(Op::Bind(pattern.clone(), value, kind == "var"));
                 }
             }
+            Stmt::Labeled(label, body) => {
+                let handler = self.emit(Op::Label(0, String::new()));
+                self.statement(body)?;
+                let exit = self.emit(Op::EndLoop);
+                self.ops[handler] = Op::Label(exit + 1, label.clone());
+            }
             Stmt::Switch(expression, cases) => {
                 let value = self.expression(expression)?;
                 let all = cases
@@ -909,7 +918,7 @@ enum Completion {
     Normal,
     Return(Value),
     Throw(Value),
-    Break,
+    Break(Option<String>),
     Continue,
 }
 #[derive(Clone, PartialEq)]
@@ -921,6 +930,7 @@ enum Phase {
 #[derive(Clone)]
 struct Handler {
     loop_to: Option<(usize, usize)>,
+    label: Option<String>,
     iterator: Option<usize>,
     catch: Option<usize>,
     finally: Option<usize>,
@@ -1106,6 +1116,15 @@ impl Engine<'_> {
             };
             frame.envs.truncate(h.depth);
             if let Some((stop, again)) = h.loop_to {
+                if let Some(label) = &h.label {
+                    let hit = matches!(&completion, Completion::Break(Some(l)) if l == label);
+                    frame.handlers.pop();
+                    if hit {
+                        frame.ip = stop;
+                        return Ok(false);
+                    }
+                    continue;
+                }
                 if matches!(completion, Completion::Continue) && again != usize::MAX {
                     frame.ip = again;
                     return Ok(false);
@@ -1128,7 +1147,7 @@ impl Engine<'_> {
                         Err(error) => return Err(error),
                     }
                 }
-                if matches!(completion, Completion::Break) {
+                if matches!(completion, Completion::Break(None)) {
                     frame.ip = stop;
                     return Ok(false);
                 }
@@ -1529,6 +1548,18 @@ impl Engine<'_> {
                         }
                         Op::Loop(stop, again) => frame.handlers.push(Handler {
                             loop_to: Some((stop, again)),
+                            label: None,
+                            iterator: None,
+                            catch: None,
+                            finally: None,
+                            end: stop,
+                            depth: frame.envs.len(),
+                            phase: Phase::Try,
+                            pending: Completion::Normal,
+                        }),
+                        Op::Label(stop, label) => frame.handlers.push(Handler {
+                            loop_to: Some((stop, usize::MAX)),
+                            label: Some(label),
                             iterator: None,
                             catch: None,
                             finally: None,
@@ -1750,6 +1781,7 @@ impl Engine<'_> {
                             finally,
                             end,
                         } => frame.handlers.push(Handler {
+                            label: None,
                             loop_to: None,
                             iterator: None,
                             catch,
@@ -1804,7 +1836,12 @@ impl Engine<'_> {
                         }
                         Op::Sync(s) => match e.statement(&s, env, true) {
                             Ok(Some(v)) => return e.return_value(id, &mut frame, v),
-                            Err(ScriptError::LoopBreak) => return Ok(Some(Completion::Break)),
+                            Err(ScriptError::LoopBreak) => {
+                                return Ok(Some(Completion::Break(None)))
+                            }
+                            Err(ScriptError::LabelBreak(label)) => {
+                                return Ok(Some(Completion::Break(Some(label))))
+                            }
                             Err(ScriptError::LoopContinue) => {
                                 return Ok(Some(Completion::Continue))
                             }

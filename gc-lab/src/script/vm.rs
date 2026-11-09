@@ -17,6 +17,8 @@ pub enum ScriptError {
     Unsupported(&'static str),
     LoopBreak,
     LoopContinue,
+    /// `break label` (also a desugared `continue label`), caught by `Stmt::Labeled`.
+    LabelBreak(String),
     Thrown(Exception),
 }
 impl ScriptError {
@@ -511,7 +513,7 @@ impl<'host> Engine<'host> {
             let mut names = vec![];
             parser::var_names(body, &mut names);
             object_bindings.extend(names);
-            for s in body {
+            for s in body.iter().map(parser::strip_labels) {
                 if let Stmt::Function(n, ..)
                 | Stmt::AsyncFunction(n, ..)
                 | Stmt::GeneratorFunction(n, ..) = s

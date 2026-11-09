@@ -241,7 +241,7 @@ impl Engine<'_> {
         Ok(Value::Object(id))
     }
     pub(super) fn hoist_functions(&mut self, body: &[Stmt], env: Id) -> Result<()> {
-        for s in body {
+        for s in body.iter().map(super::parser::strip_labels) {
             if let Stmt::Function(n, p, b)
             | Stmt::AsyncFunction(n, p, b)
             | Stmt::GeneratorFunction(n, p, b, _) = s
@@ -374,7 +374,14 @@ impl Engine<'_> {
                     self.initialize(local, n, v)?;
                 }
             }
-            Stmt::Break => return Err(ScriptError::LoopBreak),
+            Stmt::Break(None) => return Err(ScriptError::LoopBreak),
+            Stmt::Break(Some(label)) => return Err(ScriptError::LabelBreak(label.clone())),
+            Stmt::Labeled(label, body) => {
+                return match self.statement(body, env, can_return) {
+                    Err(ScriptError::LabelBreak(target)) if target == *label => Ok(None),
+                    other => other,
+                };
+            }
             Stmt::Continue => return Err(ScriptError::LoopContinue),
             Stmt::ForOf {
                 asynchronous: true, ..
@@ -586,6 +593,7 @@ impl Engine<'_> {
         match &pending {
             Ok(Some(v)) => self.protect(v)?,
             Err(ScriptError::Thrown(e)) => self.protect(&e.value)?,
+            Err(ScriptError::LabelBreak(_)) => {}
             Err(_) => return pending,
             _ => {}
         }

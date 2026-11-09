@@ -1,5 +1,3 @@
 [
-  "language/statements/for-of/arguments-mapped-aliasing.js",
-  "language/statements/for-of/cptn-decl-abrupt-empty.js",
-  "language/statements/for-of/cptn-expr-abrupt-empty.js"
+  "language/statements/for-of/arguments-mapped-aliasing.js"
 ]

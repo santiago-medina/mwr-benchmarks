@@ -181,8 +181,11 @@ pub enum Stmt {
     Throw(Expr),
     Block(Vec<Stmt>),
     If(Expr, Box<Stmt>, Option<Box<Stmt>>),
-    Break,
+    /// `break` or `break label`. `continue label` is desugared to a break of a
+    /// synthetic label (see `continue_label`) wrapped around the loop body.
+    Break(Option<String>),
     Continue,
+    Labeled(String, Box<Stmt>),
     ForIn {
         kind: String,
         binding: Pattern,
@@ -203,13 +206,23 @@ pub enum Stmt {
     },
 }
 /// Expand declaration lists without introducing a block or crossing a scope boundary.
+/// The statement under any `label:` prefixes.
+pub fn strip_labels(mut statement: &Stmt) -> &Stmt {
+    while let Stmt::Labeled(_, inner) = statement {
+        statement = inner;
+    }
+    statement
+}
+/// The synthetic label a `continue label` breaks to (it wraps the loop body).
+pub(super) fn continue_label(label: &str) -> String {
+    format!("\0continue {label}")
+}
 pub fn direct_statements(body: &[Stmt]) -> Vec<&Stmt> {
     let mut out = vec![];
     for statement in body {
-        if let Stmt::Declarations(items) = statement {
-            out.extend(direct_statements(items));
-        } else {
-            out.push(statement);
+        match strip_labels(statement) {
+            Stmt::Declarations(items) => out.extend(direct_statements(items)),
+            other => out.push(other),
         }
     }
     out
@@ -275,6 +288,8 @@ struct Parser<'a> {
     legacy_hit: Option<usize>,
     /// Sloppy duplicate simple parameters seen by the last `params()`.
     duplicates: bool,
+    /// Enclosing labels of the current function body: (name, labels a loop, continued).
+    labels: Vec<(String, bool, bool)>,
 }
 pub(super) fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
     tokenize_legacy(source).map(|(tokens, _)| tokens)
@@ -613,6 +628,7 @@ impl<'a> Parser<'a> {
             legacy,
             legacy_hit: None,
             duplicates: false,
+            labels: vec![],
         }
     }
     pub(super) fn legacy_check(&self) -> Result<(), SyntaxError> {
@@ -667,7 +683,9 @@ impl<'a> Parser<'a> {
         if self.current() == &Token::Punct('{') {
             self.prologue(self.cursor + 1)?;
         }
+        let labels = std::mem::take(&mut self.labels);
         let result = self.block();
+        self.labels = labels;
         let strict = std::mem::replace(&mut self.strict, saved);
         let mut body = result?;
         if !strict {
@@ -1164,7 +1182,9 @@ impl Parser<'_> {
                     let saved = (self.super_property, self.super_call);
                     self.super_property = true;
                     self.super_call = false;
+                    let labels = std::mem::take(&mut self.labels);
                     let body = self.block();
+                    self.labels = labels;
                     (self.super_property, self.super_call) = saved;
                     members.push(ClassMember {
                         is_static: true,
@@ -1417,17 +1437,126 @@ impl Parser<'_> {
         self.depth -= 1;
         r
     }
+    /// `Identifier :` at the start of a statement; consumes it and returns the label.
+    fn label_start(&mut self) -> Option<String> {
+        let (Token::Name(name) | Token::EscapedName(name)) = self.current() else {
+            return None;
+        };
+        if reserved(name)
+            || (self.strict
+                && matches!(
+                    name.as_str(),
+                    "yield"
+                        | "let"
+                        | "static"
+                        | "implements"
+                        | "interface"
+                        | "package"
+                        | "private"
+                        | "protected"
+                        | "public"
+                ))
+            || self.tokens.get(self.cursor + 1).map(|t| &t.0) != Some(&Token::Punct(':'))
+        {
+            return None;
+        }
+        let name = name.clone();
+        self.cursor += 2;
+        Some(name)
+    }
+    /// The optional label after `break` / `continue` (none across a line terminator).
+    fn jump_label(&mut self) -> Result<Option<String>, SyntaxError> {
+        if self.newline() || !matches!(self.current(), Token::Name(_) | Token::EscapedName(_)) {
+            return Ok(None);
+        }
+        self.name().map(Some)
+    }
+    /// A labelled statement. Labels of an iteration statement accept `continue`;
+    /// each continued label wraps the loop body in its synthetic break label.
+    fn labelled(&mut self, first: String) -> Result<Stmt, SyntaxError> {
+        let mut names = vec![first];
+        while let Some(next) = self.label_start() {
+            names.push(next);
+        }
+        for (i, name) in names.iter().enumerate() {
+            if names[..i].contains(name) || self.labels.iter().any(|(n, ..)| n == name) {
+                return Err(self.error("duplicate label"));
+            }
+        }
+        let is_loop =
+            matches!(self.current(), Token::Name(w) if w == "for" || w == "while" || w == "do");
+        if matches!(self.current(), Token::Name(w) if w == "function") {
+            let generator = matches!(self.tokens.get(self.cursor + 1).map(|t| &t.0), Some(Token::Op(o)) if o == "*");
+            if self.strict || generator {
+                return Err(self.error("labelled function declaration"));
+            }
+        }
+        if matches!(self.current(), Token::Name(w) if w == "class" || w == "const")
+            || (matches!(self.current(), Token::Name(w) if w == "let")
+                && matches!(
+                    self.tokens.get(self.cursor + 1).map(|t| &t.0),
+                    Some(Token::Punct('['))
+                ))
+        {
+            return Err(self.error("declaration in labelled statement"));
+        }
+        let mark = self.labels.len();
+        self.labels
+            .extend(names.iter().map(|name| (name.clone(), is_loop, false)));
+        let body = self.statement();
+        let labels: Vec<_> = self.labels.drain(mark..).collect();
+        let mut body = body?;
+        if let Stmt::While { body: inner, .. }
+        | Stmt::For { body: inner, .. }
+        | Stmt::ForOf { body: inner, .. }
+        | Stmt::ForIn { body: inner, .. } = &mut body
+        {
+            for (name, _, continued) in labels.iter().rev() {
+                if *continued {
+                    let statement = std::mem::replace(inner.as_mut(), Stmt::Empty);
+                    **inner = Stmt::Labeled(continue_label(name), Box::new(statement));
+                }
+            }
+        }
+        for name in names.into_iter().rev() {
+            body = Stmt::Labeled(name, Box::new(body));
+        }
+        Ok(body)
+    }
     fn statement_inner(&mut self) -> Result<Stmt, SyntaxError> {
         if self.current() == &Token::Punct('{') {
             return Ok(Stmt::Block(self.block()?));
         }
+        if let Some(label) = self.label_start() {
+            return self.labelled(label);
+        }
         if self.word("break") {
+            let label = self.jump_label()?;
+            if let Some(label) = &label {
+                if !self.labels.iter().any(|(name, ..)| name == label) {
+                    return Err(self.error("undefined break label"));
+                }
+            }
             self.semi()?;
-            return Ok(Stmt::Break);
+            return Ok(Stmt::Break(label));
         }
         if self.word("continue") {
+            let Some(label) = self.jump_label()? else {
+                self.semi()?;
+                return Ok(Stmt::Continue);
+            };
+            match self
+                .labels
+                .iter_mut()
+                .rev()
+                .find(|(name, ..)| *name == label)
+            {
+                Some((_, true, continued)) => *continued = true,
+                Some(_) => return Err(self.error("continue label is not a loop")),
+                None => return Err(self.error("undefined continue label")),
+            }
             self.semi()?;
-            return Ok(Stmt::Continue);
+            return Ok(Stmt::Break(Some(continue_label(&label))));
         }
         if self.punct(';') {
             return Ok(Stmt::Empty);
@@ -2658,7 +2787,9 @@ fn validate_loop(
                 work.push((a, depth));
                 work.push((b, depth));
             }
-            Stmt::Break => {
+            Stmt::Labeled(..) => unreachable!("labels were stripped"),
+            Stmt::Break(Some(_)) => {}
+            Stmt::Break(None) => {
                 if !in_loop && !in_switch {
                     return Err(err("break outside loop or switch"));
                 }
