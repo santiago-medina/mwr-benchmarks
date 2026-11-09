@@ -1,5 +1,6 @@
 //! Bounded grammar for strict scripts; unsupported forms are rejected explicitly.
 pub use super::patterns::{Pattern, PatternKey};
+use std::collections::HashSet;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyntaxError {
     pub offset: usize,
@@ -147,6 +148,9 @@ pub enum Property {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Stmt {
     Empty,
+    /// Marker: the enclosing script or function body is sloppy (non-strict) code.
+    Sloppy,
+    With(Expr, Box<Stmt>),
     Declarations(Vec<Stmt>),
     Bind {
         kind: String,
@@ -264,8 +268,22 @@ struct Parser<'a> {
     private_refs: Vec<Vec<String>>,
     super_property: bool,
     super_call: bool,
+    /// Strict mode code (directive prologue, class body, module, or inherited).
+    strict: bool,
+    /// Offsets of legacy octal/non-octal-decimal literals (rejected in strict code).
+    legacy: HashSet<usize>,
+    legacy_hit: Option<usize>,
+    /// Sloppy duplicate simple parameters seen by the last `params()`.
+    duplicates: bool,
 }
-fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
+pub(super) fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
+    tokenize_legacy(source).map(|(tokens, _)| tokens)
+}
+/// Tokens plus the offsets of legacy literals (`010`, `08`, `"\07"`): early errors in strict code.
+pub(super) fn tokenize_legacy(
+    source: &str,
+) -> Result<(Vec<(Token, usize)>, std::collections::HashSet<usize>), SyntaxError> {
+    let mut legacy = std::collections::HashSet::new();
     if source.len() > 8 << 20 {
         return Err(SyntaxError {
             offset: 0,
@@ -424,13 +442,25 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
                         return Err(error("invalid numeric separator"));
                     }
                 }
-                let clean = raw.replace('_', "");
+                let mut clean = raw.replace('_', "");
                 if radix == 10
                     && clean.len() > 1
                     && clean.starts_with('0')
                     && clean.as_bytes()[1].is_ascii_digit()
                 {
-                    return Err(error("legacy numeric literal in strict mode"));
+                    // Sloppy only: LegacyOctalIntegerLiteral or NonOctalDecimalIntegerLiteral.
+                    let integer = raw.split(['.', 'e', 'E']).next().unwrap();
+                    let octal = integer.bytes().all(|b| (b'0'..=b'7').contains(&b));
+                    if big || raw.contains('_') || octal && integer.len() != raw.len() {
+                        return Err(error("invalid legacy numeric literal"));
+                    }
+                    legacy.insert(offset);
+                    if octal {
+                        let value = integer[1..]
+                            .bytes()
+                            .fold(0f64, |n, b| n * 8.0 + (b - b'0') as f64);
+                        clean = value.to_string();
+                    }
                 }
                 if big || radix != 10 {
                     if big && radix == 10 && clean.contains(['.', 'e', 'E']) {
@@ -479,9 +509,15 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
                 } else {
                     raw
                 };
-                // Strict code: legacy octal and \8 \9 escapes are early errors, as in templates.
-                match super::template_lex::cook(raw) {
-                    Ok(Some(s)) => Token::String(s),
+                // Legacy octal and \8 \9 escapes: early errors in strict code (the parser checks).
+                let mut old = false;
+                match super::template_lex::cook_legacy(raw, &mut old) {
+                    Ok(Some(s)) => {
+                        if old {
+                            legacy.insert(offset);
+                        }
+                        Token::String(s)
+                    }
                     Ok(None) => return Err(error("invalid escape")),
                     Err(()) => return Err(error("surrogate strings unsupported")),
                 }
@@ -531,22 +567,102 @@ fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
         });
     }
     tokens.push((Token::End, source.len()));
+    let tokens = (tokens, legacy);
     Ok(tokens)
 }
 pub fn parse(source: &str) -> Result<Vec<Stmt>, SyntaxError> {
-    let tokens = tokenize(source)?;
-    let mut p = Parser {
-        tokens,
-        cursor: 0,
-        depth: 0,
-        source,
-        private_refs: vec![],
-        super_property: false,
-        super_call: false,
-    };
-    let body = p.statements(false)?;
+    let (tokens, legacy) = tokenize_legacy(source)?;
+    let mut p = Parser::new(tokens, legacy, source, false);
+    p.prologue(0)?;
+    let mut body = p.statements(false)?;
+    p.legacy_check()?;
+    if !p.strict {
+        body.insert(0, Stmt::Sloppy);
+    }
     validate(&body, &[], false, 0)?;
     Ok(body)
+}
+impl<'a> Parser<'a> {
+    pub(super) fn new(
+        tokens: Vec<(Token, usize)>,
+        legacy: HashSet<usize>,
+        source: &'a str,
+        strict: bool,
+    ) -> Self {
+        Parser {
+            tokens,
+            cursor: 0,
+            depth: 0,
+            source,
+            private_refs: vec![],
+            super_property: false,
+            super_call: false,
+            strict,
+            legacy,
+            legacy_hit: None,
+            duplicates: false,
+        }
+    }
+    pub(super) fn legacy_check(&self) -> Result<(), SyntaxError> {
+        match self.legacy_hit {
+            Some(offset) => Err(SyntaxError {
+                offset,
+                message: "legacy literal in strict mode",
+            }),
+            None => Ok(()),
+        }
+    }
+    /// Scans the directive prologue starting at token `start` (without consuming it);
+    /// a raw `"use strict"` directive makes the enclosing code strict.
+    fn prologue(&mut self, start: usize) -> Result<(), SyntaxError> {
+        let mut i = start;
+        let mut offsets = vec![];
+        while let (Token::String(text), offset) = &self.tokens[i] {
+            let next = &self.tokens[i + 1];
+            let terminated = matches!(next.0, Token::Punct(';') | Token::Punct('}') | Token::End)
+                || self.source[*offset..next.1].contains(['\n', '\r', '\u{2028}', '\u{2029}'])
+                    && !matches!(next.0, Token::Punct('.' | '(' | '[' | ',' | '?' | '`'))
+                    && !matches!(&next.0, Token::Op(_));
+            if !terminated {
+                break;
+            }
+            offsets.push(*offset);
+            let raw = &self.source[*offset..];
+            if text == "use strict"
+                && (raw.starts_with("\"use strict\"") || raw.starts_with("'use strict'"))
+            {
+                self.strict = true;
+            }
+            i += 1;
+            if self.tokens[i].0 == Token::Punct(';') {
+                i += 1;
+            }
+        }
+        if self.strict {
+            if let Some(offset) = offsets.into_iter().find(|o| self.legacy.contains(o)) {
+                return Err(SyntaxError {
+                    offset,
+                    message: "legacy literal in strict mode",
+                });
+            }
+        }
+        Ok(())
+    }
+    /// A function body block: its own directive prologue; a sloppy body starts with
+    /// the `Stmt::Sloppy` marker the runtime reads strictness from.
+    fn function_body(&mut self) -> Result<Vec<Stmt>, SyntaxError> {
+        let saved = self.strict;
+        if self.current() == &Token::Punct('{') {
+            self.prologue(self.cursor + 1)?;
+        }
+        let result = self.block();
+        let strict = std::mem::replace(&mut self.strict, saved);
+        let mut body = result?;
+        if !strict {
+            body.insert(0, Stmt::Sloppy);
+        }
+        Ok(body)
+    }
 }
 impl Parser<'_> {
     fn current(&self) -> &Token {
@@ -560,6 +676,12 @@ impl Parser<'_> {
     }
     fn take(&mut self) -> Token {
         let t = self.current().clone();
+        if self.strict
+            && self.legacy_hit.is_none()
+            && self.legacy.contains(&self.tokens[self.cursor].1)
+        {
+            self.legacy_hit = Some(self.tokens[self.cursor].1);
+        }
         self.cursor += 1;
         t
     }
@@ -902,7 +1024,18 @@ impl Parser<'_> {
         let saved = (self.super_property, self.super_call);
         self.super_property = super_property;
         self.super_call = super_call;
-        let result = self.params().and_then(|params| Ok((params, self.block()?)));
+        let sloppy_ordinary = !super_property && !super_call;
+        let result = self.params().and_then(|params| {
+            let duplicates = std::mem::take(&mut self.duplicates);
+            if duplicates && !sloppy_ordinary {
+                return Err(self.error("duplicate parameter"));
+            }
+            let body = self.function_body()?;
+            if duplicates && !matches!(body.first(), Some(Stmt::Sloppy)) {
+                return Err(self.error("duplicate parameter"));
+            }
+            Ok((params, body))
+        });
         (self.super_property, self.super_call) = saved;
         result
     }
@@ -927,6 +1060,12 @@ impl Parser<'_> {
         Ok(Expr::Member(Box::new(e), self.key()?))
     }
     fn class_tail(&mut self, name: Option<String>) -> Result<Class, SyntaxError> {
+        let saved = std::mem::replace(&mut self.strict, true);
+        let result = self.class_tail_strict(name);
+        self.strict = saved;
+        result
+    }
+    fn class_tail_strict(&mut self, name: Option<String>) -> Result<Class, SyntaxError> {
         let heritage = if self.word("extends") {
             let saved = (self.super_property, self.super_call);
             let base = self.primary()?;
@@ -1172,7 +1311,10 @@ impl Parser<'_> {
                     if names[..index].contains(name)
                         || params.iter().any(|p| p.binding.names().contains(name))
                     {
-                        return Err(self.error("duplicate parameter"));
+                        if self.strict || rest || !matches!(binding, Pattern::Name(_)) {
+                            return Err(self.error("duplicate parameter"));
+                        }
+                        self.duplicates = true;
                     }
                 }
                 let default = if self.op("=") {
@@ -1200,6 +1342,13 @@ impl Parser<'_> {
                 }
             }
         }
+        if self.duplicates
+            && params
+                .iter()
+                .any(|p| p.default.is_some() || p.rest || !matches!(p.binding, Pattern::Name(_)))
+        {
+            return Err(self.error("duplicate parameter"));
+        }
         Ok(params)
     }
     fn iteration_assignment_head(&mut self) -> Result<Option<(Pattern, bool)>, SyntaxError> {
@@ -1219,19 +1368,14 @@ impl Parser<'_> {
                     let enumeration = word == "in";
                     let mut tokens = self.tokens[start..index].to_vec();
                     tokens.push((Token::End, self.tokens[index].1));
-                    let mut head = Parser {
-                        tokens,
-                        cursor: 0,
-                        depth: self.depth,
-                        source: self.source,
-                        private_refs: if self.private_refs.is_empty() {
-                            vec![]
-                        } else {
-                            vec![vec![]]
-                        },
-                        super_property: self.super_property,
-                        super_call: self.super_call,
-                    };
+                    let mut head =
+                        Parser::new(tokens, self.legacy.clone(), self.source, self.strict);
+                    head.depth = self.depth;
+                    if !self.private_refs.is_empty() {
+                        head.private_refs = vec![vec![]];
+                    }
+                    head.super_property = self.super_property;
+                    head.super_call = self.super_call;
                     if let Ok(expression) = head.sequence() {
                         if head.current() == &Token::End {
                             if let Ok(pattern) = head.assignment_pattern(expression) {
@@ -1456,6 +1600,16 @@ impl Parser<'_> {
             } else {
                 Stmt::Function(n, p, body)
             });
+        }
+        if self.current() == &Token::Name("with".into()) {
+            if self.strict {
+                return Err(self.error("with in strict mode"));
+            }
+            self.take();
+            self.expect('(')?;
+            let object = self.sequence()?;
+            self.expect(')')?;
+            return Ok(Stmt::With(object, Box::new(self.statement()?)));
         }
         if self.word("if") {
             self.expect('(')?;
@@ -1826,7 +1980,7 @@ impl Parser<'_> {
             let e = self.unary();
             self.depth -= 1;
             let e = e?;
-            if op == "delete" && matches!(e, Expr::Name(_)) {
+            if op == "delete" && self.strict && matches!(e, Expr::Name(_)) {
                 return Err(self.error("delete binding in strict mode"));
             }
             if op == "delete"
@@ -1867,9 +2021,14 @@ impl Parser<'_> {
     }
     fn arrow_body(&mut self) -> Result<Vec<Stmt>, SyntaxError> {
         if self.current() == &Token::Punct('{') {
-            self.block()
+            self.function_body()
         } else {
-            Ok(vec![Stmt::Return(self.expression()?)])
+            let body = Stmt::Return(self.expression()?);
+            Ok(if self.strict {
+                vec![body]
+            } else {
+                vec![Stmt::Sloppy, body]
+            })
         }
     }
     fn template(&mut self, tag: Option<Expr>) -> Result<Expr, SyntaxError> {
@@ -1998,12 +2157,11 @@ impl Parser<'_> {
             }
             if self.is_arrow() {
                 let params = self.params()?;
+                if std::mem::take(&mut self.duplicates) {
+                    return Err(self.error("duplicate parameter"));
+                }
                 self.op("=>");
-                let body = if self.current() == &Token::Punct('{') {
-                    self.block()?
-                } else {
-                    vec![Stmt::Return(self.expression()?)]
-                };
+                let body = self.arrow_body()?;
                 return Ok(Expr::AsyncArrow { params, body });
             }
             self.cursor = save;
@@ -2036,12 +2194,11 @@ impl Parser<'_> {
         }
         if self.current() == &Token::Punct('(') && self.is_arrow() {
             let params = self.params()?;
+            if std::mem::take(&mut self.duplicates) {
+                return Err(self.error("duplicate parameter"));
+            }
             self.op("=>");
-            let body = if self.current() == &Token::Punct('{') {
-                self.block()?
-            } else {
-                vec![Stmt::Return(self.expression()?)]
-            };
+            let body = self.arrow_body()?;
             return Ok(Expr::Arrow { params, body });
         }
         if self.word("class") {
@@ -2519,7 +2676,20 @@ fn validate_loop(
                     in_generator,
                 )?;
             }
-            Stmt::Empty => {}
+            Stmt::Empty | Stmt::Sloppy => {}
+            Stmt::With(object, body) => {
+                work.push((object, depth));
+                validate_loop(
+                    std::slice::from_ref(body),
+                    &[],
+                    can_return,
+                    depth + 1,
+                    in_loop,
+                    in_async,
+                    in_switch,
+                    in_generator,
+                )?;
+            }
             Stmt::While { test, body, .. } => {
                 work.push((test, depth));
                 validate_loop(
@@ -2833,6 +3003,7 @@ pub(super) fn var_names(body: &[Stmt], out: &mut Vec<String>) {
                 }
             }
             Stmt::While { body, .. } => var_names(std::slice::from_ref(body), out),
+            Stmt::With(_, body) => var_names(std::slice::from_ref(body), out),
             Stmt::For { init, body, .. } => {
                 if let Some(init) = init {
                     var_names(std::slice::from_ref(init), out);

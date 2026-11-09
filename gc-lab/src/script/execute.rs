@@ -290,6 +290,15 @@ impl Engine<'_> {
         can_return: bool,
     ) -> Result<Option<Value>> {
         match s {
+            Stmt::Sloppy => {}
+            Stmt::With(object, body) => {
+                let object = self.eval(object, env)?;
+                self.protect(&object)?;
+                let object = self.object_coercible(object)?;
+                let scope = self.with_environment(env, object)?;
+                self.protect(&Value::Object(scope))?;
+                return self.statement(body, scope, can_return);
+            }
             Stmt::Declarations(items) => {
                 for item in items {
                     self.statement(item, env, can_return)?;
@@ -390,7 +399,8 @@ impl Engine<'_> {
                 self.protect(&a)?;
                 let b = self.eval(b, env)?;
                 self.protect(&b)?;
-                self.set_member(a, k, b)?;
+                let strict = self.env_strict(env);
+                self.assign_member(a, k.into(), b, strict)?;
             }
             Stmt::Block(b) => return self.scoped(b, env, can_return),
             Stmt::If(c, a, b) => {
@@ -1185,6 +1195,7 @@ impl Engine<'_> {
                         Some((r, key))
                     }
                 }
+                Expr::Name(name) => return Ok(Value::Bool(self.delete_binding(env, name)?)),
                 _ => {
                     self.eval(x, env)?;
                     None
@@ -1192,6 +1203,9 @@ impl Engine<'_> {
             };
             if let Some((Value::Object(id), k)) = target {
                 if !self.delete(id, &k)? {
+                    if !self.env_strict(env) {
+                        return Ok(Value::Bool(false));
+                    }
                     return self.throw_error("TypeError", "cannot delete property");
                 }
             }

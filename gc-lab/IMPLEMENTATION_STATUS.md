@@ -114,3 +114,9 @@ Own safe-Rust RegExp with no external crate (design: REGEXP.md). The pieces:
 Invalid literals are early SyntaxErrors.
 
 Full test262 (strict script variant): 28157/47708 pass (59.0%), up from 26538; no previously passing case lost. Most of the 1694 newly running cases that fail need Temporal (1343, not implemented). Another 372 are property-escape tests that hit the script execution step limit.
+
+### Sloppy mode and `with` (2026-11-09)
+
+Non-strict scripts (design: SLOPPY_MODE.md). Directive prologues set strictness per script and function; legacy octal literals and escapes are accepted only in sloppy code. Environments carry strictness, `with` object records and immutable bindings. Sloppy assignment creates globals, sloppy `delete` of identifiers works, and `this` is coerced for sloppy functions. In strict code an unresolvable name now throws before the right-hand side is evaluated (`Reference::Unresolvable`). The runner runs noStrict and raw cases as sloppy scripts (`--sloppy`).
+
+Full test262 (strict prefix, or sloppy for noStrict/raw): 29100/47708 pass (61.0%), up from 28157; no previously passing case lost. Mapped `arguments` objects (aliasing with parameters) are not implemented yet: the two gated cases that now run and need them are listed as known failures in the arrays and async profiles. eval is next.

@@ -145,6 +145,7 @@ pub(super) fn stmt_await(s: &Stmt) -> bool {
                 })
         }
         Stmt::While { test, body, .. } => expr_await(test) || stmt_await(body),
+        Stmt::With(e, body) => expr_await(e) || stmt_await(body),
         Stmt::For {
             init,
             test,
@@ -548,6 +549,12 @@ impl Compiler {
     }
     fn statement(&mut self, s: &Stmt) -> Result<()> {
         match s {
+            Stmt::Sloppy => {}
+            Stmt::With(..) => {
+                return Err(ScriptError::Unsupported(
+                    "with in generator or async function",
+                ))
+            }
             Stmt::Declarations(items) => {
                 for item in items {
                     self.statement(item)?;

@@ -41,12 +41,12 @@ def main():
         meta=meta.group(1); flags=items(field(meta,'flags')); includes=items(field(meta,'includes')); negative=field(meta,'negative')
         result=dict(path=path.relative_to(root).as_posix(),source_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
         reason=None
-        if any(f in flags for f in ('noStrict','module','raw')) or ('async' in flags and args.profile not in ('promises','async','full')): reason='unsupported execution flags: '+','.join(flags)
+        if 'module' in flags or ('async' in flags and args.profile not in ('promises','async','full')): reason='unsupported execution flags: '+','.join(flags)
         elif includes and args.profile!='full': reason='unsupported harness includes: '+','.join(includes)
         elif negative and not re.search(r'phase:\s*runtime',negative): reason='negative parse/resolution test outside runtime profile'
         if reason: return dict(result,status='unsupported',reason=reason,assertions=0)
         expected=re.search(r'type:\s*(\w+)',negative) if negative else None
-        command=[str(binary),str(path)] + ([expected.group(1)] if expected else []) + (['--async'] if 'async' in flags else []) + (['--include='+str(root.parent/'harness'/i) for i in includes] if args.profile=='full' else [])
+        command=[str(binary),str(path)] + ([expected.group(1)] if expected else []) + (['--async'] if 'async' in flags else []) + (['--sloppy'] if 'noStrict' in flags or 'raw' in flags else []) + (['--include='+str(root.parent/'harness'/i) for i in includes] if args.profile=='full' and 'raw' not in flags else [])
         try:
             r=subprocess.run(command,capture_output=True,text=True,timeout=10)
             data=json.loads(r.stdout)
@@ -64,7 +64,7 @@ def main():
     implementation=hashlib.sha256()
     for path in sorted((HERE.parent/'src').rglob('*.rs')):
         implementation.update(path.relative_to(HERE.parent).as_posix().encode()+b'\0'+path.read_bytes())
-    summary=dict(revision=REVISION,archive_sha256='01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb',implementation_sha256=implementation.hexdigest(),runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),new_failures=new_failures,variant='strict script only; standard strict prefix; original test body',profile=args.profile,scopes=scopes,total=len(results),counts=counts,assertions=sum(r['assertions'] for r in results),regressions=regressions,unsupported_reasons=dict(collections.Counter(r['reason'] for r in results if r['status']=='unsupported')),failures=[r for r in results if r['status']=='failed'])
+    summary=dict(revision=REVISION,archive_sha256='01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb',implementation_sha256=implementation.hexdigest(),runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),new_failures=new_failures,variant='scripts: strict prefix, or sloppy for noStrict/raw; original test body',profile=args.profile,scopes=scopes,total=len(results),counts=counts,assertions=sum(r['assertions'] for r in results),regressions=regressions,unsupported_reasons=dict(collections.Counter(r['reason'] for r in results if r['status']=='unsupported')),failures=[r for r in results if r['status']=='failed'])
     args.output.mkdir(parents=True,exist_ok=True)
     (args.output/'cases.json').write_text(json.dumps(results,indent=2)+'\n')
     (args.output/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')

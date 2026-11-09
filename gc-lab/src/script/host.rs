@@ -176,6 +176,38 @@ impl Engine<'_> {
             }
         }
     }
+    /// PutValue on a property reference: failures throw only in strict mode code.
+    pub(super) fn assign_member(
+        &mut self,
+        receiver: Value,
+        property: Key,
+        value: Value,
+        strict: bool,
+    ) -> Result<()> {
+        let private = matches!(&property, Key::Symbol(s) if self.private_symbols.contains(s));
+        match &receiver {
+            _ if private => self.set_member(receiver, property, value),
+            Value::Object(id) if !matches!(self.objects.get(id), Some(Object::Node { .. })) => {
+                let id = *id;
+                if !self.ordinary_set(id, &property, value, receiver)? && strict {
+                    return self.throw_error("TypeError", "assignment refused");
+                }
+                Ok(())
+            }
+            Value::Object(_) => self.set_member(receiver, property, value),
+            Value::Null | Value::Undefined => {
+                self.throw_error("TypeError", "cannot set property of null or undefined")
+            }
+            _ => {
+                // Primitive base: setters on the prototype chain still run.
+                let proto = self.primitive_prototype(&receiver)?;
+                if !self.ordinary_set(proto, &property, value, receiver)? && strict {
+                    return self.throw_error("TypeError", "assignment to primitive property");
+                }
+                Ok(())
+            }
+        }
+    }
     pub(super) fn set_member(
         &mut self,
         receiver: Value,

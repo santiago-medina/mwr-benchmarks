@@ -8,7 +8,10 @@ use crate::dual::Id;
 type Result<T> = std::result::Result<T, ScriptError>;
 pub(super) enum Reference {
     Binding(Id, String),
-    Property(Value, Key),
+    /// A strict-mode name that resolved nowhere before the right-hand side ran.
+    Unresolvable(String),
+    /// Base, key, and whether the reference is in strict mode code.
+    Property(Value, Key, bool),
     Super(Value, Option<Id>, Key),
 }
 pub(super) fn assignment_skips(op: &str, value: &Value) -> bool {
@@ -22,12 +25,15 @@ pub(super) fn assignment_skips(op: &str, value: &Value) -> bool {
 impl Engine<'_> {
     pub(super) fn eval_reference(&mut self, target: &Expr, env: Id) -> Result<Reference> {
         match target {
+            Expr::Name(name) if self.env_strict(env) && self.unresolvable(env, name)? => {
+                Ok(Reference::Unresolvable(name.clone()))
+            }
             Expr::Name(name) => Ok(Reference::Binding(env, name.clone())),
             Expr::Member(base, key) => {
                 let base = self.eval(base, env)?;
                 self.protect(&base)?;
                 let key = self.member_key(&base, Value::String(key.clone()))?;
-                Ok(Reference::Property(base, key))
+                Ok(Reference::Property(base, key, self.env_strict(env)))
             }
             Expr::Computed(base, key) => {
                 let base = self.eval(base, env)?;
@@ -35,7 +41,7 @@ impl Engine<'_> {
                 let key = self.eval(key, env)?;
                 self.protect(&key)?;
                 let key = self.member_key(&base, key)?;
-                Ok(Reference::Property(base, key))
+                Ok(Reference::Property(base, key, self.env_strict(env)))
             }
             Expr::SuperMember(_) | Expr::SuperComputed(_) => {
                 let (this, target, key) = self.super_key(target, env)?;
@@ -47,7 +53,10 @@ impl Engine<'_> {
     fn reference_get(&mut self, reference: &Reference) -> Result<Value> {
         match reference {
             Reference::Binding(env, name) => self.lookup(*env, name),
-            Reference::Property(base, key) => self.get_member(base.clone(), key),
+            Reference::Unresolvable(name) => {
+                self.throw_error("ReferenceError", &format!("{name} is not defined"))
+            }
+            Reference::Property(base, key, _) => self.get_member(base.clone(), key),
             Reference::Super(this, target, key) => self.super_get(this.clone(), *target, key),
         }
     }
@@ -55,7 +64,12 @@ impl Engine<'_> {
         self.protect(&value)?;
         match reference {
             Reference::Binding(env, name) => self.assign_binding(env, &name, value.clone())?,
-            Reference::Property(base, key) => self.set_member(base, key, value.clone())?,
+            Reference::Unresolvable(name) => {
+                return self.throw_error("ReferenceError", &format!("{name} is not defined"))
+            }
+            Reference::Property(base, key, strict) => {
+                self.assign_member(base, key, value.clone(), strict)?
+            }
             Reference::Super(this, target, key) => {
                 self.super_set(this, target, key, value.clone())?
             }

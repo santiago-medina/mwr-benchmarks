@@ -47,7 +47,7 @@ impl Engine<'_> {
         // Parse parameter text independently so it cannot inject statements into the body.
         let header = format!("{prefix} anonymous({parameters}\n) {{}}");
         let parsed = match parser::parse(&header) {
-            Ok(body) => body,
+            Ok(body) => strip_sloppy(body),
             Err(_) => {
                 return self.throw_error("SyntaxError", "invalid dynamic function parameters")
             }
@@ -60,7 +60,7 @@ impl Engine<'_> {
         }
         let source = format!("{prefix} anonymous({parameters}\n) {{\n{body}\n}}");
         let parsed = match parser::parse(&source) {
-            Ok(body) => body,
+            Ok(body) => strip_sloppy(body),
             Err(_) => return self.throw_error("SyntaxError", "invalid dynamic function body"),
         };
         let (params, body) = match parsed.as_slice() {
@@ -112,4 +112,10 @@ impl Engine<'_> {
         // Source availability is a host choice for pre-existing closures and native functions.
         Ok(Value::String("function () { [native code] }".into()))
     }
+}
+
+/// The script-level sloppy marker is not part of the synthesized function declaration.
+fn strip_sloppy(mut body: Vec<Stmt>) -> Vec<Stmt> {
+    body.retain(|s| !matches!(s, Stmt::Sloppy));
+    body
 }

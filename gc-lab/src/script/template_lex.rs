@@ -29,6 +29,14 @@ pub(super) fn segment(
     Err(error("unterminated template literal"))
 }
 pub(super) fn cook(raw: &str) -> Result<Option<String>, ()> {
+    cook_mode(raw, None)
+}
+/// String-literal cooking: legacy octal (`\07`) and `\8` `\9` escapes are accepted and
+/// reported through `legacy` (an early error only in strict code).
+pub(super) fn cook_legacy(raw: &str, legacy: &mut bool) -> Result<Option<String>, ()> {
+    cook_mode(raw, Some(legacy))
+}
+fn cook_mode(raw: &str, mut legacy: Option<&mut bool>) -> Result<Option<String>, ()> {
     let mut chars = raw.chars().peekable();
     let mut units = vec![];
     while let Some(ch) = chars.next() {
@@ -48,6 +56,25 @@ pub(super) fn cook(raw: &str) -> Result<Option<String>, ()> {
             'f' => '\u{c}',
             'v' => '\u{b}',
             '0' if !chars.peek().is_some_and(|ch| ch.is_ascii_digit()) => '\0',
+            '0'..='9' if legacy.is_some() => {
+                **legacy.as_mut().unwrap() = true;
+                if matches!(ch, '8' | '9') {
+                    ch
+                } else {
+                    let mut value = ch.to_digit(8).unwrap();
+                    let max = if value <= 3 { 2 } else { 1 };
+                    for _ in 0..max {
+                        match chars.peek().and_then(|c| c.to_digit(8)) {
+                            Some(d) => {
+                                value = value * 8 + d;
+                                chars.next();
+                            }
+                            None => break,
+                        }
+                    }
+                    char::from_u32(value).unwrap()
+                }
+            }
             '0'..='9' => return Ok(None),
             'x' | 'u' => {
                 let braced = ch == 'u' && chars.peek() == Some(&'{');

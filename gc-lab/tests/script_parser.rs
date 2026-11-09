@@ -1,4 +1,10 @@
-use gc_lab::script::parser::{parse, Expr, Param, Stmt};
+use gc_lab::script::parser::{Expr, Param, Stmt};
+/// Scripts are sloppy by default; drop the leading sloppy marker before inspecting the AST.
+fn parse(source: &str) -> Result<Vec<Stmt>, gc_lab::script::parser::SyntaxError> {
+    let mut ast = gc_lab::script::parser::parse(source)?;
+    ast.retain(|s| !matches!(s, Stmt::Sloppy));
+    Ok(ast)
+}
 
 #[test]
 fn parses_requested_program_without_recognizing_a_hardcoded_source_string() {
@@ -62,7 +68,7 @@ fn parses_objects_functions_numbers_and_asi() {
     for source in [
         "throw\n1",
         "const x={__proto__:null,__proto__:null};",
-        "delete x;",
+        "'use strict'; delete x;",
         "const x={get a(v){}};",
     ] {
         assert!(parse(source).is_err(), "{source}");

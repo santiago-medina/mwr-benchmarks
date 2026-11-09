@@ -3,7 +3,7 @@ fn check(source: &str) {
     for model in [Model::Stable, Model::Indirect] {
         let mut e = Engine::new(model, model).unwrap();
         e.enable_test_harness();
-        e.execute(source)
+        e.execute(&format!("'use strict';{source}"))
             .unwrap_or_else(|err| panic!("{err:?}\n{source}"));
         assert!(e.assertion_count() > 0);
         e.collect();

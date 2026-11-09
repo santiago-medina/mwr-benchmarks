@@ -35,6 +35,25 @@ impl Engine<'_> {
         }
         let parameters = self.new_environment(Some(parent), &declarations, false)?;
         self.protect(&Value::Object(parameters))?;
+        let sloppy = matches!(body.first(), Some(Stmt::Sloppy));
+        self.set_env_strict(parameters, !sloppy);
+        // Sloppy functions coerce `this`: nullish → global object, primitives → wrappers.
+        let receiver = match receiver {
+            Value::Undefined | Value::Null if sloppy => {
+                Value::Object(self.intrinsics.as_ref().unwrap().global)
+            }
+            Value::String(_)
+            | Value::Number(_)
+            | Value::Bool(_)
+            | Value::Symbol(_)
+            | Value::BigInt(_)
+                if sloppy =>
+            {
+                let boxed = self.box_value(receiver)?;
+                Value::Object(boxed)
+            }
+            receiver => receiver,
+        };
         if !matches!(kind, FunctionKind::Arrow | FunctionKind::AsyncArrow) {
             match pending {
                 Some((new_target, func)) => {

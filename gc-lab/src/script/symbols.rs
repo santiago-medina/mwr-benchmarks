@@ -9,6 +9,7 @@ type Result<T> = std::result::Result<T, ScriptError>;
 pub(super) const PRIMITIVE: u64 = 3;
 pub(super) const HAS_INSTANCE: u64 = 4;
 pub(super) const SPREADABLE: u64 = 5;
+pub(super) const UNSCOPABLES: u64 = 11;
 pub(super) const WELL_KNOWN: &[&str] = &[
     "iterator",
     "toStringTag",

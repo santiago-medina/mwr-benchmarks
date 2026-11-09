@@ -1,5 +1,5 @@
 //! Module syntax shares tokenization, expressions and strict validation with scripts.
-use super::{tokenize, validate_loop, Parser, Stmt, SyntaxError, Token};
+use super::{tokenize_legacy, validate_loop, Parser, Stmt, SyntaxError, Token};
 use std::collections::HashSet;
 #[derive(Clone, Debug)]
 pub struct Import {
@@ -53,15 +53,8 @@ fn pairs(p: &mut Parser<'_>, import: bool) -> Result<Vec<(String, String)>, Synt
     Ok(bindings)
 }
 pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
-    let mut p = Parser {
-        tokens: tokenize(source)?,
-        cursor: 0,
-        depth: 0,
-        source,
-        private_refs: vec![],
-        super_property: false,
-        super_call: false,
-    };
+    let (tokens, legacy) = tokenize_legacy(source)?;
+    let mut p = Parser::new(tokens, legacy, source, true);
     let mut module = Module {
         body: vec![],
         requests: vec![],
@@ -239,5 +232,6 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
             return Err(p.error("duplicate export"));
         }
     }
+    p.legacy_check()?;
     Ok(module)
 }

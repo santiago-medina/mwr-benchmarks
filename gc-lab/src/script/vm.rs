@@ -105,9 +105,16 @@ pub(super) enum Object {
         parent: Option<Id>,
         bindings: HashMap<String, Option<Value>>,
         mutable: HashSet<String>,
+        /// Lexically declared `const` names (assignment throws even in sloppy code;
+        /// other immutable bindings, such as a function expression's name, ignore it).
+        constants: HashSet<String>,
         function_scope: bool,
         object_bindings: HashSet<String>,
         aliases: HashMap<String, (Id, String)>,
+        /// Strict mode code (function and script environments read their body marker).
+        strict: bool,
+        /// Object environment record of a `with` statement.
+        with_object: Option<Id>,
     },
     Closure {
         kind: FunctionKind,
@@ -448,6 +455,7 @@ impl<'host> Engine<'host> {
     ) -> Result<Id> {
         let mut bindings = HashMap::new();
         let mut mutable = HashSet::new();
+        let mut constants = HashSet::new();
         for stmt in parser::direct_statements(body) {
             match stmt {
                 Stmt::Bind { kind, pattern, .. } if kind != "var" => {
@@ -455,6 +463,8 @@ impl<'host> Engine<'host> {
                         bindings.insert(name.clone(), None);
                         if kind == "let" {
                             mutable.insert(name);
+                        } else if kind == "const" {
+                            constants.insert(name);
                         }
                     }
                 }
@@ -463,6 +473,8 @@ impl<'host> Engine<'host> {
                     bindings.insert(n.clone(), None);
                     if matches!(stmt, Stmt::Let(..)) {
                         mutable.insert(n.clone());
+                    } else {
+                        constants.insert(n.clone());
                     }
                 }
                 Stmt::Function(n, ..)
@@ -502,6 +514,11 @@ impl<'host> Engine<'host> {
                 .entry("document".into())
                 .or_insert(Some(Value::Document));
         }
+        let strict = if function_scope {
+            !matches!(body.first(), Some(Stmt::Sloppy))
+        } else {
+            parent.is_none_or(|p| self.env_strict(p))
+        };
         let id = self.allocate(Domain::Js, -300)?;
         if let Some(p) = parent {
             self.runtime.link(id, p)?;
@@ -512,15 +529,129 @@ impl<'host> Engine<'host> {
                 parent,
                 bindings,
                 mutable,
+                constants,
                 function_scope,
                 object_bindings,
                 aliases: HashMap::new(),
+                strict,
+                with_object: None,
             },
         );
         Ok(id)
     }
+    pub(super) fn env_strict(&self, env: Id) -> bool {
+        !matches!(
+            self.objects.get(&env),
+            Some(Object::Environment { strict: false, .. })
+        )
+    }
+    pub(super) fn set_env_strict(&mut self, env: Id, value: bool) {
+        if let Some(Object::Environment { strict, .. }) = self.objects.get_mut(&env) {
+            *strict = value;
+        }
+    }
+    /// A `with` statement's object environment over `object`, child of `parent`.
+    pub(super) fn with_environment(&mut self, parent: Id, object: Id) -> Result<Id> {
+        let env = self.new_environment(Some(parent), &[], false)?;
+        self.runtime.link(env, object)?;
+        if let Some(Object::Environment { with_object, .. }) = self.objects.get_mut(&env) {
+            *with_object = Some(object);
+        }
+        Ok(env)
+    }
+    fn env_with_object(&self, env: Id) -> Option<Id> {
+        match self.objects.get(&env) {
+            Some(Object::Environment { with_object, .. }) => *with_object,
+            _ => None,
+        }
+    }
+    /// HasBinding of an object environment record (with @@unscopables).
+    pub(super) fn with_binding(&mut self, object: Id, name: &str) -> Result<bool> {
+        if !self.has(object, name)? {
+            return Ok(false);
+        }
+        let unscopables = self.get_member(
+            Value::Object(object),
+            super::objects::Key::Symbol(super::symbols::UNSCOPABLES),
+        )?;
+        if let Value::Object(u) = unscopables {
+            return Ok(!self.get_member(Value::Object(u), name)?.truthy());
+        }
+        Ok(true)
+    }
+    /// The `with` object that resolves `name` from `env`, if any (the call `this`).
+    pub(super) fn with_base(&mut self, mut env: Id, name: &str) -> Result<Option<Id>> {
+        loop {
+            if let Some(object) = self.env_with_object(env) {
+                if self.with_binding(object, name)? {
+                    return Ok(Some(object));
+                }
+            }
+            let Some(Object::Environment {
+                parent, bindings, ..
+            }) = self.objects.get(&env)
+            else {
+                return Ok(None);
+            };
+            if bindings.contains_key(name) {
+                return Ok(None);
+            }
+            match parent {
+                Some(p) => env = *p,
+                None => return Ok(None),
+            }
+        }
+    }
+    /// `delete name` (sloppy code only): object records delete, declarative ones refuse.
+    pub(super) fn delete_binding(&mut self, mut env: Id, name: &str) -> Result<bool> {
+        loop {
+            if let Some(object) = self.env_with_object(env) {
+                if self.with_binding(object, name)? {
+                    return self.delete(object, name);
+                }
+            }
+            let Some(Object::Environment {
+                parent,
+                bindings,
+                object_bindings,
+                aliases,
+                ..
+            }) = self.objects.get(&env)
+            else {
+                return Err(ScriptError::Runtime("invalid environment"));
+            };
+            if object_bindings.contains(name) {
+                let global = self.intrinsics.as_ref().unwrap().global;
+                return self.delete(global, name);
+            }
+            if bindings.contains_key(name) || aliases.contains_key(name) {
+                return Ok(false);
+            }
+            match parent {
+                Some(p) => env = *p,
+                None => break,
+            }
+        }
+        match self.global_property(name)? {
+            Some(global) => self.delete(global, name),
+            None => Ok(true),
+        }
+    }
+    /// The global object, if `name` is one of its properties (unresolved references).
+    fn global_property(&self, name: &str) -> Result<Option<Id>> {
+        let Some(i) = &self.intrinsics else {
+            return Ok(None);
+        };
+        let global = i.global;
+        Ok(self.has(global, name)?.then_some(global))
+    }
     pub(super) fn lookup(&mut self, mut env: Id, name: &str) -> Result<Value> {
         loop {
+            if let Some(object) = self.env_with_object(env) {
+                if self.with_binding(object, name)? {
+                    return self.get_member(Value::Object(object), name);
+                }
+            }
             if let Some(Object::Environment { aliases, .. }) = self.objects.get(&env) {
                 if let Some((target, name)) = aliases.get(name).cloned() {
                     return self.lookup(target, &name);
@@ -586,10 +717,14 @@ impl<'host> Engine<'host> {
                 | "FinalizationRegistry"
                 | "Uint8Array"
                 | "$262"
-        ) {
+        ) && self.global_property(name)?.is_none()
+        {
             return Err(ScriptError::Unsupported(
                 "standard intrinsic not implemented",
             ));
+        }
+        if let Some(global) = self.global_property(name)? {
+            return self.get_member(Value::Object(global), name);
         }
         self.throw_error("ReferenceError", &format!("{name} is not defined"))
     }
@@ -636,8 +771,45 @@ impl<'host> Engine<'host> {
         }
         self.initialize(env, name, value)
     }
-    pub(super) fn assign_binding(&mut self, mut env: Id, name: &str, value: Value) -> Result<()> {
+    /// ResolveBinding for strict assignment: true when `name` resolves nowhere, so
+    /// PutValue must throw even if the right-hand side creates the global property.
+    pub(super) fn unresolvable(&mut self, mut env: Id, name: &str) -> Result<bool> {
         loop {
+            if let Some(object) = self.env_with_object(env) {
+                if self.with_binding(object, name)? {
+                    return Ok(false);
+                }
+            }
+            let Some(Object::Environment {
+                parent,
+                bindings,
+                aliases,
+                object_bindings,
+                ..
+            }) = self.objects.get(&env)
+            else {
+                return Err(ScriptError::Runtime("invalid environment"));
+            };
+            if bindings.contains_key(name)
+                || aliases.contains_key(name)
+                || object_bindings.contains(name)
+            {
+                return Ok(false);
+            }
+            match parent {
+                Some(p) => env = *p,
+                None => return Ok(self.global_property(name)?.is_none()),
+            }
+        }
+    }
+    pub(super) fn assign_binding(&mut self, mut env: Id, name: &str, value: Value) -> Result<()> {
+        let strict = self.env_strict(env);
+        loop {
+            if let Some(object) = self.env_with_object(env) {
+                if self.with_binding(object, name)? {
+                    return self.assign_member(Value::Object(object), name.into(), value, strict);
+                }
+            }
             if matches!(self.objects.get(&env),Some(Object::Environment{aliases,..})if aliases.contains_key(name))
             {
                 return self.throw_error("TypeError", "assignment to imported binding");
@@ -662,6 +834,10 @@ impl<'host> Engine<'host> {
                         .throw_error("ReferenceError", "binding used before initialization");
                 }
                 if !mutable.contains(name) {
+                    let constant = matches!(self.objects.get(&env), Some(Object::Environment { constants, .. }) if constants.contains(name));
+                    if !strict && !constant {
+                        return Ok(());
+                    }
                     return self.throw_error("TypeError", "assignment to constant");
                 }
                 return self.initialize(env, name, value);
@@ -669,7 +845,25 @@ impl<'host> Engine<'host> {
             match parent {
                 Some(p) => env = *p,
                 None => {
-                    return self.throw_error("ReferenceError", &format!("{name} is not defined"))
+                    if let Some(global) = self.global_property(name)? {
+                        return self.assign_member(
+                            Value::Object(global),
+                            name.into(),
+                            value,
+                            strict,
+                        );
+                    }
+                    if !strict {
+                        // Sloppy mode: an unresolvable assignment creates a global property.
+                        let global = self.intrinsics.as_ref().unwrap().global;
+                        return self.assign_member(
+                            Value::Object(global),
+                            name.into(),
+                            value,
+                            false,
+                        );
+                    }
+                    return self.throw_error("ReferenceError", &format!("{name} is not defined"));
                 }
             }
         }

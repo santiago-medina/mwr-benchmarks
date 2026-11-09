@@ -189,6 +189,14 @@ impl Engine<'_> {
                 let function = self.super_get(this.clone(), target, &key)?;
                 Ok((this, function))
             }
+            Expr::Name(name) => {
+                // A call through a `with` object reference gets the object as `this`.
+                let receiver = match self.with_base(env, name)? {
+                    Some(object) => Value::Object(object),
+                    None => Value::Undefined,
+                };
+                Ok((receiver, self.eval(callee, env)?))
+            }
             _ => Ok((Value::Undefined, self.eval(callee, env)?)),
         }
     }

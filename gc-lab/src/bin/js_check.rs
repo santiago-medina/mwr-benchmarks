@@ -1,4 +1,4 @@
-//! One strict-script Test262 case per process; no source rewriting or helper stubs.
+//! One Test262 script case per process (strict unless `--sloppy`); no source rewriting or helper stubs.
 //! `--include=FILE` prepends an official harness include (as the reference runner does).
 use gc_lab::{
     script::{Engine, ScriptError},
@@ -27,6 +27,7 @@ fn main() {
         .expect("js_check CASE.js [expected runtime error]");
     let remaining: Vec<_> = args.collect();
     let asynchronous = remaining.iter().any(|s| s == "--async");
+    let sloppy = remaining.iter().any(|s| s == "--sloppy");
     let mut includes = String::new();
     for file in remaining
         .iter()
@@ -37,11 +38,12 @@ fn main() {
     }
     let negative = remaining
         .into_iter()
-        .find(|s| s != "--async" && !s.starts_with("--include="));
+        .find(|s| s != "--async" && s != "--sloppy" && !s.starts_with("--include="));
     let source = std::fs::read_to_string(path).expect("source");
     let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
     e.enable_test_harness();
-    let full = format!("\"use strict\";\n{includes}{source}");
+    let prefix = if sloppy { "" } else { "\"use strict\";\n" };
+    let full = format!("{prefix}{includes}{source}");
     let mut result = e.execute(&full);
     if let (Err(ScriptError::Syntax(s)), Ok(_)) =
         (&result, std::env::var("JS_CHECK_SYNTAX_CONTEXT"))
