@@ -86,8 +86,11 @@ fn main() {
     }
     let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
     e.enable_test_harness();
+    // The engine default (10k steps) is an embedding safety budget; conformance cases such as
+    // testTypedArray.js loops need far more. The runner's per-case timeout bounds runaway cases.
+    e.set_step_limit(50_000_000);
     let prefix = if sloppy { "" } else { "\"use strict\";\n" };
-    let full = format!("{prefix}{includes}{source}");
+    let full = format!("{prefix}{ASSERT_GLOBALS}{includes}{source}");
     let mut result = e.execute(&full);
     if let (Err(ScriptError::Syntax(s)), Ok(_)) =
         (&result, std::env::var("JS_CHECK_SYNTAX_CONTEXT"))
@@ -154,3 +157,19 @@ fn main() {
         _ => 1,
     });
 }
+
+/// The plain global helpers that test262's harness/assert.js defines next to `assert`
+/// (`assert` itself is native via `enable_test_harness`). Upstream moved `compareArray`
+/// and `isPrimitive` into assert.js, and harness files such as testTypedArray.js use them.
+const ASSERT_GLOBALS: &str = r#"function isNegativeZero(value) { return value === 0 && 1 / value === -Infinity; }
+function isPrimitive(value) { return !value || (typeof value !== 'object' && typeof value !== 'function'); }
+function compareArray(a, b) {
+  if (b.length !== a.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    var x = b[i], y = a[i];
+    if (x === y ? x === 0 && 1 / x !== 1 / y : x === x || y === y) return false;
+  }
+  return true;
+}
+compareArray.format = function (arrayLike) { return "[" + Array.prototype.map.call(arrayLike, String).join(", ") + "]"; };
+"#;

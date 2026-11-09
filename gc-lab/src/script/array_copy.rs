@@ -80,6 +80,7 @@ impl Engine<'_> {
     ) -> Result<Value> {
         let arg = |i| args.get(i).cloned().unwrap_or(Value::Undefined);
         let receiver = Value::Object(id);
+        let name = name.rsplit('.').next().unwrap();
         match name {
             "concat" => {
                 let out = self.array_species_create(id, 0)?;
