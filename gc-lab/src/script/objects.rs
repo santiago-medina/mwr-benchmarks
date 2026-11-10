@@ -399,7 +399,12 @@ impl Engine<'_> {
         }
         let id = self.allocate(Domain::Js, -500)?;
         self.objects.insert(id, Object::Ordinary(Data::new(None)));
-        self.replace_data(id, Data::new(prototype))?;
+        // The only edge of a fresh object is its prototype: link it and store the slot in
+        // place, without the clone-and-relink of `replace_data` (OBJECT_MODEL.md slice 1).
+        if let Some(prototype) = prototype {
+            self.runtime.link(id, prototype)?;
+            self.data_mut(id)?.prototype = Some(prototype);
+        }
         Ok(id)
     }
     /// [[GetOwnProperty]].

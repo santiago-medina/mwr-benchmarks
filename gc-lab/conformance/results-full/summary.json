@@ -1,7 +1,7 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "6b2bdd12d9454ce9fc01de288df6499978d83e6bed2b1ba871d9e18866253e08",
+  "implementation_sha256": "514308c654bbc9054f37442d4201d2fffa69f9870c434e39ce33dbf0eb656db3",
   "runner_sha256": "4713329b9c23dcf06bd6cb040661a46e05fc7f4ee3554e0f43a003570213de5f",
   "new_failures": [
     "built-ins/Array/prototype/indexOf/length-zero-returns-minus-one.js",
@@ -111,10 +111,6 @@
     "language/expressions/bitwise-and/order-of-evaluation.js",
     "language/expressions/bitwise-or/order-of-evaluation.js",
     "language/expressions/bitwise-xor/order-of-evaluation.js",
-    "language/expressions/call/tco-non-eval-function-dynamic.js",
-    "language/expressions/call/tco-non-eval-function.js",
-    "language/expressions/call/tco-non-eval-global.js",
-    "language/expressions/call/tco-non-eval-with.js",
     "language/expressions/compound-assignment/S11.13.2_A6.10_T1.js",
     "language/expressions/compound-assignment/S11.13.2_A6.11_T1.js",
     "language/expressions/compound-assignment/S11.13.2_A6.1_T1.js",
@@ -158,8 +154,8 @@
   "profile": "full",
   "retry_timeouts": {
     "workers": 2,
-    "timeouts": 10,
-    "passed": 5
+    "timeouts": 8,
+    "passed": 3
   },
   "scopes": [
     "built-ins",
@@ -167,11 +163,11 @@
   ],
   "total": 47708,
   "counts": {
-    "passed": 47222,
+    "passed": 47226,
     "unsupported": 337,
-    "failed": 149
+    "failed": 145
   },
-  "assertions": 1258073,
+  "assertions": 1258077,
   "regressions": [],
   "unsupported_reasons": {
     "ordinary reflection on host objects": 11,
@@ -1054,38 +1050,6 @@
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1313 })) })); expected None",
       "assertions": 9,
-      "cleanup": true
-    },
-    {
-      "path": "language/expressions/call/tco-non-eval-function-dynamic.js",
-      "source_sha256": "8d381595908fa414b6aaa027f3386bf922220738e1902b16037f08f836b1c803",
-      "status": "failed",
-      "reason": "Err(Runtime(\"call depth limit\")); expected None",
-      "assertions": 0,
-      "cleanup": true
-    },
-    {
-      "path": "language/expressions/call/tco-non-eval-function.js",
-      "source_sha256": "d87d82ebfe86486a7b96a1fec941feb15f6a106ee21014576d1c8e5829c66e4c",
-      "status": "failed",
-      "reason": "Err(Runtime(\"call depth limit\")); expected None",
-      "assertions": 0,
-      "cleanup": true
-    },
-    {
-      "path": "language/expressions/call/tco-non-eval-global.js",
-      "source_sha256": "f94189f89e34ede682bb5745abb28cb8dd75b60e1d5011037bfbc49b737d1cce",
-      "status": "failed",
-      "reason": "Err(Runtime(\"call depth limit\")); expected None",
-      "assertions": 0,
-      "cleanup": true
-    },
-    {
-      "path": "language/expressions/call/tco-non-eval-with.js",
-      "source_sha256": "d50ebf30dfa315ea5ba57fe555176a0ecbd393fe4515fcaf7ae52e8f256eebec",
-      "status": "failed",
-      "reason": "Err(Runtime(\"call depth limit\")); expected None",
-      "assertions": 0,
       "cleanup": true
     },
     {

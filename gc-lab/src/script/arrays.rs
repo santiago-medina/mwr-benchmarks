@@ -232,8 +232,18 @@ impl Engine<'_> {
         self.protect(&value)?;
         let id = self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;
         self.protect(&Value::Object(id))?;
-        self.put_data(id, "value", value)?;
-        self.put_data(id, "done", Value::Bool(done))?;
+        // CreateIterResultObject (§7.4.14): both CreateDataPropertyOrThrow steps target a
+        // fresh ordinary extensible object, so they cannot fail and are unobservable. Append
+        // the two properties in order directly (OBJECT_MODEL.md slice 1).
+        if let Some(child) = value.id() {
+            self.runtime.link(id, child)?;
+        }
+        let properties = &mut self.data_mut(id)?.properties;
+        properties.push((Key::from("value"), Property::data(value, true, true, true)));
+        properties.push((
+            Key::from("done"),
+            Property::data(Value::Bool(done), true, true, true),
+        ));
         Ok(Value::Object(id))
     }
     pub(super) fn array_species_create(&mut self, original: Id, len: u32) -> Result<Id> {
@@ -399,15 +409,14 @@ impl Engine<'_> {
                     self.typed_record(Value::Object(target))?;
                 }
                 let len = self.length_of(target)?;
-                let mut d = self.data(id)?.clone();
-                let next = d.iterator.as_mut().unwrap();
+                // Update [[ArrayLikeNextIndex]] / [[IteratedArrayLike]] in place; the target
+                // is the slot's only edge (OBJECT_MODEL.md slice 1).
                 if state.index >= len {
-                    next.target = None;
-                    self.replace_data(id, d)?;
+                    self.data_mut(id)?.iterator.as_mut().unwrap().target = None;
+                    self.runtime.unlink(id, target)?;
                     return self.iterator_result(Value::Undefined, true);
                 }
-                next.index = state.index + 1;
-                self.replace_data(id, d)?;
+                self.data_mut(id)?.iterator.as_mut().unwrap().index = state.index + 1;
                 let value = if state.kind == 0 {
                     Value::number(state.index as f64)
                 } else {
