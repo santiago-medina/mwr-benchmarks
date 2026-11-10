@@ -373,6 +373,15 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - pe-bench (10 fixed RegExp property-escape cases, run alone): tree 37.1 s, VM 10.3 s (3.6x).
 - Full run on the VM: 47223/47708 pass (99.0%), +27 against full38. Failed 148 (-27), unsupported 337. Gained 27 (17 property-escape timeouts, 9 logical-assignment cases, 1 other), lost 0. The full run took ~10 min instead of ~39. Five timeouts remain on both engines: TypedArray copyWithin coerced-values-*-detached (3) and decodeURI/decodeURIComponent S15.1.3.x_A2.5_T1 (2); top-level script code still runs on the tree-walker.
 
+### Register VM stage 3: templates, non-simple parameters, switch (checkpoint 34, 2026-11-10)
+
+- Coverage step 6, template literals: `TemplateConcat` performs one TemplateLiteral step (§13.2.8.6), and `TemplateObject` performs GetTemplateObject (§13.2.8.4) through the per-realm cache. A tagged template goes through the same EvaluateCall path as an ordinary call, so it keeps the member/`with` receiver and its tail-call marking.
+- Coverage step 7, non-simple parameters: the tree-walker's FunctionDeclarationInstantiation binds defaults, patterns and rest elements before the chunk runs, and the chunk copies the bound names. Parameters that a closure in an initializer mentions stay in the environment.
+- Coverage step 8, switch: §14.12.4 with one CaseBlock scope, StrictEq selectors in source order and the default clause last. An unlabeled `break` targets the switch. A lexical declared in one clause and mentioned in a later clause still falls back, because the VM checks TDZ at compile time.
+- Parser fix on both engines: `new tag`x`` binds the tagged template inside `new` (§13.3 MemberExpression TemplateLiteral). `tagged-template/constructor-invocation.js` now passes.
+- Over the 600 sampled cases, 99.3% of function bodies compile (97.3% at checkpoint 33). Remaining fallbacks: eval 18, captured block lexical 5, for-in/of destructuring 2, destructuring declaration 2, spread arguments 1, other 1.
+- Full run on the VM (full41): 47224/47708 pass (99.0%), +1 against full40, with 1 gained and 0 lost. On the 2,500-case equivalence sample, the only difference is the load timeout in `sliceToImmutable/argument-coercion.js`. The probes `vmprobe/{template,params,switch}.js` pass on both engines and under `--gc-stress`.
+
 ### Register VM stage 3: closures, the arguments object, for-in/of (checkpoint 33, 2026-11-10)
 
 - Coverage step 3, closures: function-level names that a nested function, class or accessor mentions live in the function environment, not in registers (`ast_scan::captured_names`). Closures are created through `Hatch`. Top-level function declarations are instantiated at entry (`Chunk::hoist`), and `InitName` initializes captured lexicals. A captured block-level lexical still falls back.

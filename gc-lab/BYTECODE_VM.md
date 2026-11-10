@@ -675,3 +675,58 @@ Gate results:
 - Fallback mix over the 600 sampled cases: **97.3 %** of bodies compiled (up from 96.1 %).
   Remaining reasons: `template` 40, `non-simple parameter` 33, `eval` 18, `switch` 16,
   `captured block lexical` 5, `for-in/of destructuring` 2, `destructuring declaration` 2.
+
+### Stage 3, coverage steps 6-8: templates, non-simple parameters, switch (2026-11-10)
+
+**Template literals (step 6).** There are two new instructions:
+- `TemplateConcat {dst, src, part}` is one TemplateLiteral step (§13.2.8.6):
+  `dst = dst + ToString(src) + names[part]`. It goes through `Engine::template_text`, so the
+  string limit is the same as on the tree-walker. The text is built in a temporary register,
+  because `dst` may be a binding that a later substitution reads. Each substitution is converted
+  before the next one is evaluated, so `operand(value, &[])` may return a binding register
+  directly.
+- `TemplateObject {dst, expr}` is GetTemplateObject (§13.2.8.4). It reuses the tree-walker's
+  per-realm `[[TemplateMap]]` cache (`template_object`). The site is the `Expr::Template` stored in
+  `Chunk::exprs`, so `Chunk` needs no new table.
+
+A tagged template is compiled by `call_with(tag, CallArgs::Template, ..)`. It is the same
+EvaluateCall path as a call: the receiver comes from the member or `with` base. The order is the
+callee first, then the template object, then the substitutions (§13.3.11.1). A tagged template in
+tail position is marked as a tail call, as on the tree-walker (§15.10.2). A cooked string that is
+undefined in an untagged template falls back to the tree-walker (the parser rejects it first).
+
+Parser fix found by the smoke run: `new tag`x`` parsed as `(new tag)`x``. The production
+MemberExpression : MemberExpression TemplateLiteral (§13.3) now binds inside `new_operator`.
+`tagged-template/constructor-invocation.js` now passes on both engines.
+
+**Non-simple parameters (step 7).** No new instructions. FunctionDeclarationInstantiation
+(`function_environment`, §10.2.11 steps 24-28) runs on the tree-walker before the chunk does. By
+then, defaults, patterns and rest elements are bound in the parameter environment, and a body
+`var` that redeclares a parameter is already copied into the separate var environment. The chunk
+copies every name bound by a parameter into its registers at entry. One extra rule: a name that a
+closure inside a parameter initializer mentions is environment-resident (`captured_names(params)`).
+That closure sees the parameter environment, so body writes must reach it.
+
+**Switch (step 8).**
+- The discriminant is evaluated in the outer scope.
+- The CaseBlock is one lexical scope (`enter_scope` over all clause bodies).
+- Each selector is compared in source order with `Binary StrictEq` and `JumpIfTrue`. A miss
+  jumps to the default clause, or to the end (CaseBlockEvaluation, §14.12.4).
+- `Control.switch` makes the statement the target of an unlabeled `break`, but not of `continue`.
+- `declared_in` now descends into clauses, so their `var`s get function registers.
+
+The VM resolves TDZ at compile time, and a jump straight into a later clause would bypass it.
+So a lexical declared in one clause and mentioned in a later clause falls back
+(`vm: switch lexical across clauses`). A dynamic TDZ check would remove that fallback.
+
+Probes: `vmprobe/template.js` (19 checks, strict mode), `params.js` (17) and `switch.js` (24).
+They pass on the tree-walker, on the VM and under `--gc-stress`. Gate results:
+- Template smoke directories (114 cases) give the same verdicts on both engines.
+- Function, arrow `dstr`, function-code and arguments-object (897 cases): 897 passed on both engines.
+- Switch, break and labeled (155 cases): the same on both engines.
+- The 2,500-case equivalence sample is identical, except the load-sensitive
+  `sliceToImmutable/argument-coercion.js` timeout.
+- The 600-case sample compiles **99.3 %** of bodies, up from 97.3 %. The template, non-simple
+  parameter and switch fallbacks are gone. Remaining reasons: `eval` 18, `captured block lexical`
+  5, `for-in/of destructuring` 2, `destructuring declaration` 2, `spread arguments` 1, other 1.
+- Full run on the VM (t262-full41): 47224/47708 (99.0 %), +1 (the `new` parser fix), lost 0.

@@ -154,6 +154,19 @@ pub(super) enum Insn {
         name: u32,
         tail: bool,
     },
+    /// GetTemplateObject (§13.2.8.4) of the tagged template `exprs[expr]` (cached per
+    /// realm and site).
+    TemplateObject {
+        dst: Reg,
+        expr: u32,
+    },
+    /// One TemplateLiteral step (§13.2.8.6): `dst` (a String) + ToString(`src`) + the
+    /// cooked text `names[part]`.
+    TemplateConcat {
+        dst: Reg,
+        src: Reg,
+        part: u32,
+    },
     /// The nullish check of a property reference (RequireObjectCoercible).
     CheckCoercible {
         obj: Reg,
@@ -367,6 +380,8 @@ struct Control {
     finally_depth: usize,
     /// A for-of loop's iterator register: leaving the loop by break or return closes it.
     iterator: Option<Reg>,
+    /// A switch statement: the target of an unlabeled `break`, not of `continue`.
+    switch: bool,
 }
 
 struct Compiler {
@@ -422,12 +437,11 @@ pub(super) fn compile(params: &[Param], body: &[Stmt]) -> CResult<Chunk> {
         captured: HashSet::new(),
     };
     let mut all = vec![];
-    for param in params {
-        let (Pattern::Name(name), None) = (&param.binding, &param.default) else {
-            return Err("vm: non-simple parameter");
-        };
-        all.push(name.clone());
-    }
+    // FunctionDeclarationInstantiation (§10.2.11 steps 24-28) runs on the tree-walker
+    // before the chunk: defaults, patterns and rest elements are already bound in the
+    // parameter environment, so the chunk only copies the bound names.
+    let param_names: Vec<String> = params.iter().flat_map(|p| p.binding.names()).collect();
+    all.extend(param_names.iter().cloned());
     let mut vars = vec![];
     declared_names(body, &mut vars, &mut all)?;
     all.sort();
@@ -445,6 +459,9 @@ pub(super) fn compile(params: &[Param], body: &[Stmt]) -> CResult<Chunk> {
         }
     }
     c.captured.extend(captured_names(&body, &all));
+    // A closure in a parameter initializer closes over the parameter environment: the
+    // body must read and write those parameters there.
+    c.captured.extend(captured_names(&params, &all));
     if uses_arguments {
         // FunctionDeclarationInstantiation (§10.2.11 steps 15-22) already bound
         // `arguments` in the environment. A sloppy function with simple parameters gets a
@@ -458,10 +475,7 @@ pub(super) fn compile(params: &[Param], body: &[Stmt]) -> CResult<Chunk> {
         }
     }
     let mut param_regs = vec![];
-    for param in params {
-        let Pattern::Name(name) = &param.binding else {
-            unreachable!("checked above")
-        };
+    for name in &param_names {
         if !c.function.contains_key(name) && !c.captured.contains(name) {
             let reg = c.alloc()?;
             c.function.insert(name.clone(), reg);
@@ -527,6 +541,11 @@ fn declared_in(statement: &Stmt, vars: &mut Vec<String>, all: &mut Vec<String>) 
             }
         }
         Stmt::While { body, .. } | Stmt::Labeled(_, body) => declared_in(body, vars, all)?,
+        Stmt::Switch(_, cases) => {
+            for (_, body) in cases {
+                declared_names(body, vars, all)?;
+            }
+        }
         Stmt::ForIn {
             kind,
             binding,
@@ -882,6 +901,7 @@ impl Compiler {
                     mark: self.next,
                     finally_depth: self.finally.len(),
                     iterator: None,
+                    switch: false,
                 });
                 self.statement(body)?;
                 let control = self.controls.pop().unwrap();
@@ -896,7 +916,7 @@ impl Compiler {
                     .iter()
                     .rposition(|c| match label {
                         Some(label) => c.label.as_deref() == Some(label),
-                        None => c.is_loop,
+                        None => c.is_loop || c.switch,
                     })
                     .ok_or("vm: break target")?;
                 if self.controls[index].finally_depth < self.finally.len() {
@@ -920,7 +940,7 @@ impl Compiler {
             }
             Stmt::Bind { .. } => return Err("vm: destructuring declaration"),
             Stmt::With(..) => return Err("vm: with"),
-            Stmt::Switch(..) => return Err("vm: switch"),
+            Stmt::Switch(value, cases) => self.switch_statement(value, cases)?,
             Stmt::ForIn {
                 kind,
                 binding,
@@ -1099,6 +1119,7 @@ impl Compiler {
             mark: self.next,
             finally_depth: self.finally.len(),
             iterator: (!enumeration).then_some(iter),
+            switch: false,
         });
         self.statement(body)
     }
@@ -1295,6 +1316,90 @@ impl Compiler {
     }
     /// Jump out of `controls[index]` (break, or continue of a loop), clearing the
     /// registers of the scopes left on the way.
+    /// SwitchStatement evaluation (§14.12.4): the discriminant is evaluated in the outer
+    /// scope, the CaseBlock is one lexical scope, and CaseBlockEvaluation compares each
+    /// clause selector in source order with IsStrictlyEqual, the default clause last.
+    fn switch_statement(
+        &mut self,
+        value: &Expr,
+        cases: &[(Option<Expr>, Vec<Stmt>)],
+    ) -> CResult<()> {
+        let discriminant = self.alloc()?;
+        self.expr(value, discriminant)?;
+        let all: Vec<Stmt> = cases
+            .iter()
+            .flat_map(|(_, body)| body.iter().cloned())
+            .collect();
+        let mark = self.enter_scope(&all, false)?;
+        // Lexical bindings are initialized when their declaration runs; the VM tracks
+        // TDZ at compile time, which a jump into a later clause would bypass.
+        let lexicals: Vec<String> = self.scopes.last().unwrap().keys().cloned().collect();
+        for name in &lexicals {
+            let needle = format!("{name:?}");
+            let declared = cases
+                .iter()
+                .position(|(_, body)| mentions(&[&body], &[needle.as_str()]))
+                .unwrap_or(cases.len());
+            if declared + 1 < cases.len()
+                && mentions(&[&&cases[declared + 1..]], &[needle.as_str()])
+            {
+                return Err("vm: switch lexical across clauses");
+            }
+        }
+        self.controls.push(Control {
+            label: None,
+            is_loop: false,
+            breaks: vec![],
+            continues: vec![],
+            mark: self.next,
+            finally_depth: self.finally.len(),
+            iterator: None,
+            switch: true,
+        });
+        let mut entries = vec![];
+        for (test, _) in cases {
+            let Some(test) = test else {
+                entries.push(None);
+                continue;
+            };
+            let scratch = self.next;
+            let selector = self.alloc()?;
+            self.expr(test, selector)?;
+            let cond = self.alloc()?;
+            self.emit(Insn::Binary {
+                dst: cond,
+                op: Op::StrictEq,
+                a: discriminant,
+                b: selector,
+            });
+            entries.push(Some(self.emit(Insn::JumpIfTrue { cond, to: 0 })));
+            self.emit(Insn::Clear {
+                from: scratch,
+                to: self.next,
+            });
+            self.next = scratch;
+        }
+        let no_match = self.emit(Insn::Jump { to: 0 });
+        let mut default = None;
+        for (index, (_, body)) in cases.iter().enumerate() {
+            let here = self.here();
+            match entries[index] {
+                Some(at) => self.patch(at, here),
+                None => default = Some(here),
+            }
+            for statement in body {
+                self.statement(statement)?;
+            }
+        }
+        let control = self.controls.pop().unwrap();
+        let end = self.here();
+        self.patch(no_match, default.unwrap_or(end));
+        for at in control.breaks {
+            self.patch(at, end);
+        }
+        self.leave_scope(mark);
+        Ok(())
+    }
     fn exit_to(&mut self, index: usize, is_continue: bool) {
         // The for-of loops left on the way close their iterators (§14.7.5.7 step 6.l),
         // innermost first; a continue keeps its own loop's iterator open.
@@ -1344,6 +1449,7 @@ impl Compiler {
             mark: self.next,
             finally_depth: self.finally.len(),
             iterator: None,
+            switch: false,
         });
         self.statement(body)
     }
@@ -1457,6 +1563,10 @@ impl Compiler {
         }
         match e {
             Expr::Call(f, args) => self.call(f, args, dst, true),
+            Expr::Template(t) if t.tag.is_some() => {
+                let tag = t.tag.as_deref().unwrap();
+                self.call_with(tag, CallArgs::Template(e, t), dst, true)
+            }
             Expr::Conditional(condition, yes, no) => {
                 let cond = self.alloc()?;
                 self.expr(condition, cond)?;
@@ -1671,7 +1781,27 @@ impl Compiler {
                 self.emit(Insn::Move { dst, src: obj });
             }
             Expr::Spread(_) => return Err("vm: spread"),
-            Expr::Template(_) => return Err("vm: template"),
+            Expr::Template(t) => match &t.tag {
+                Some(tag) => self.call_with(tag, CallArgs::Template(e, t), dst, false)?,
+                None => {
+                    // The text is built in a temporary: `dst` may be a binding a later
+                    // substitution reads. Each substitution is converted before the next
+                    // one is evaluated (§13.2.8.6, TemplateSpans).
+                    let cooked = |i: usize| t.parts[i].0.as_deref().ok_or("vm: template escape");
+                    let acc = self.alloc()?;
+                    self.constant(Value::String(cooked(0)?.to_string().into()), acc);
+                    for (i, value) in t.values.iter().enumerate() {
+                        let src = self.operand(value, &[])?;
+                        let part = self.name(cooked(i + 1)?);
+                        self.emit(Insn::TemplateConcat {
+                            dst: acc,
+                            src,
+                            part,
+                        });
+                    }
+                    self.emit(Insn::Move { dst, src: acc });
+                }
+            },
             Expr::Arrow { .. }
             | Expr::Function { .. }
             | Expr::AsyncFunction { .. }
@@ -1705,7 +1835,15 @@ impl Compiler {
         Ok((base, args.len() as u32))
     }
     fn call(&mut self, f: &Expr, args: &[Expr], dst: Reg, tail: bool) -> CResult<()> {
-        let later: Vec<&Expr> = args.iter().collect();
+        self.call_with(f, CallArgs::Plain(args), dst, tail)
+    }
+    /// EvaluateCall (§13.3.6.2); a tagged template's arguments are its template object
+    /// and its substitutions (§13.3.11.1, §13.2.8.3 ArgumentListEvaluation).
+    fn call_with(&mut self, f: &Expr, args: CallArgs, dst: Reg, tail: bool) -> CResult<()> {
+        let later: Vec<&Expr> = match args {
+            CallArgs::Plain(args) => args.iter().collect(),
+            CallArgs::Template(_, t) => t.values.iter().collect(),
+        };
         let (callee, this) = match f {
             Expr::Name(name) if self.resolve(name).is_none() => {
                 let callee = self.alloc()?;
@@ -1754,7 +1892,22 @@ impl Compiler {
             | Expr::SuperComputed(_) => return Err("vm: callee kind"),
             _ => (self.operand(f, &later)?, NO_REG),
         };
-        let (args, argc) = self.arguments(args)?;
+        let (args, argc) = match args {
+            CallArgs::Plain(args) => self.arguments(args)?,
+            CallArgs::Template(site, t) => {
+                let base = self.next;
+                for _ in 0..=t.values.len() {
+                    self.alloc()?;
+                }
+                let expr = self.exprs.len() as u32;
+                self.exprs.push(site.clone());
+                self.emit(Insn::TemplateObject { dst: base, expr });
+                for (i, value) in t.values.iter().enumerate() {
+                    self.expr(value, base + 1 + i as u32)?;
+                }
+                (base, t.values.len() as u32 + 1)
+            }
+        };
         self.emit(Insn::Call {
             dst,
             callee,
@@ -2068,6 +2221,13 @@ impl Compiler {
     }
 }
 
+#[derive(Clone, Copy)]
+enum CallArgs<'a> {
+    Plain(&'a [Expr]),
+    /// The `Expr::Template` and its record.
+    Template(&'a Expr, &'a super::templates::Template),
+}
+
 enum Target {
     Local(Binding),
     Free(Reg, u32),
@@ -2122,6 +2282,7 @@ fn reference_registers(
                 | Insn::Unary { .. }
                 | Insn::ToNumeric { .. }
                 | Insn::Step { .. }
+                | Insn::TemplateConcat { .. }
                 | Insn::PropKey { .. }
                 | Insn::TypeofName { .. }
                 | Insn::DeleteProp { .. }
@@ -2134,6 +2295,7 @@ fn reference_registers(
                 | Insn::ResolveName { dst, .. }
                 | Insn::GetRef { dst, .. }
                 | Insn::Hatch { dst, .. }
+                | Insn::TemplateObject { dst, .. }
                 | Insn::GetProp { dst, .. }
                 | Insn::GetElem { dst, .. }
                 | Insn::Call { dst, .. }

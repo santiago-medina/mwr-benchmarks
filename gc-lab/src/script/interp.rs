@@ -9,7 +9,7 @@
 //! `Runtime::vm_seeds`, which the collector reads as roots.
 use super::bytecode::{self, Chunk, Insn, Op, NO_REG};
 use super::objects::{Descriptor, Key};
-use super::parser::{Param, Stmt};
+use super::parser::{Expr, Param, Stmt};
 use super::references::Reference;
 use super::vm::{Engine, ScriptError, Value};
 use crate::dual::Id;
@@ -333,6 +333,21 @@ impl Engine<'_> {
                     let key = self.to_key(key)?;
                     let value = self.delete_value(base, obj, key, strict)?;
                     self.set_reg(base, dst, value);
+                }
+                Insn::TemplateObject { dst, expr } => {
+                    let Expr::Template(t) = &chunk.exprs[expr as usize] else {
+                        return Err(ScriptError::Runtime("vm: template site"));
+                    };
+                    let value = self.template_object(t, local)?;
+                    self.set_reg(base, dst, value);
+                }
+                Insn::TemplateConcat { dst, src, part } => {
+                    let Value::String(text) = self.reg(base, dst) else {
+                        return Err(ScriptError::Runtime("vm: template text"));
+                    };
+                    let value = self.reg(base, src);
+                    let text = self.template_text(text, value, &chunk.names[part as usize])?;
+                    self.set_reg(base, dst, Value::String(text));
                 }
                 Insn::Call {
                     dst,

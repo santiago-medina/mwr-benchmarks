@@ -1,7 +1,7 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "0742eea892ab4aab5a521786230b9c436632b88914eb2487c6c9c820aab0e2a8",
+  "implementation_sha256": "66a8a3f3f4c49335669eafd7959f6bd74dd4744ca83328f5c2106d0f99b165fd",
   "runner_sha256": "4713329b9c23dcf06bd6cb040661a46e05fc7f4ee3554e0f43a003570213de5f",
   "new_failures": [
     "built-ins/Array/prototype/indexOf/length-zero-returns-minus-one.js",
@@ -138,7 +138,6 @@
     "language/expressions/super/prop-expr-getsuperbase-before-topropertykey-putvalue-compound-assign.js",
     "language/expressions/super/prop-expr-getsuperbase-before-topropertykey-putvalue-increment.js",
     "language/expressions/super/prop-expr-getsuperbase-before-topropertykey-putvalue.js",
-    "language/expressions/tagged-template/constructor-invocation.js",
     "language/expressions/unsigned-right-shift/order-of-evaluation.js",
     "language/global-code/decl-lex-restricted-global.js",
     "language/statements/async-generator/return-undefined-implicit-and-explicit.js",
@@ -166,11 +165,11 @@
   ],
   "total": 47708,
   "counts": {
-    "passed": 47223,
+    "passed": 47224,
     "unsupported": 337,
-    "failed": 148
+    "failed": 147
   },
-  "assertions": 1258073,
+  "assertions": 1258077,
   "regressions": [],
   "unsupported_reasons": {
     "ordinary reflection on host objects": 11,
@@ -395,7 +394,7 @@
       "path": "built-ins/Function/prototype/toString/method-computed-property-name.js",
       "source_sha256": "f4a7b99eb83bcaceb28b952965a7d04137f7ae5004bdecd31fcba1ba1d115866",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"Conforms to NativeFunction Syntax: \\\"undefined\\\" ([ { a(){} }.a ](){ })\", value: Object(Js(Handle { heap: 2, index: 1325, serial: 3189 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"Conforms to NativeFunction Syntax: \\\"undefined\\\" ([ { a(){} }.a ](){ })\", value: Object(Js(Handle { heap: 2, index: 1266, serial: 2968 })) })); expected None",
       "assertions": 2,
       "cleanup": true
     },
@@ -827,7 +826,7 @@
       "path": "built-ins/TypedArrayConstructors/ctors/typedarray-arg/throw-type-error-before-custom-proto-access.js",
       "source_sha256": "a1578ce1471f7624485d289a5c019368017346a0e4498d93dc2285833e3821d1",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed (Testing with Float64Array and makePassthrough.)\", value: Object(Js(Handle { heap: 2, index: 1009, serial: 1612 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed (Testing with Float64Array and makePassthrough.)\", value: Object(Js(Handle { heap: 2, index: 991, serial: 1532 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -1268,14 +1267,6 @@
       "source_sha256": "2ab526b7c840926616d20b057e545121d01cadff822cce1dfa4eff374bb2ce19",
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 913, serial: 1073 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/expressions/tagged-template/constructor-invocation.js",
-      "source_sha256": "20674679a74ad8b99db655d9103e5418f37bf2f6fbcda36d7f14d3f0290f7a6b",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1040 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },

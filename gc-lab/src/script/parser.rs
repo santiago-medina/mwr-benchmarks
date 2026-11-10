@@ -2770,6 +2770,10 @@ impl Parser<'_> {
                 let k = self.sequence()?;
                 self.expect(']')?;
                 f = Expr::Computed(Box::new(f), Box::new(k));
+            } else if matches!(self.current(), Token::Template { start: true, .. }) {
+                // MemberExpression : MemberExpression TemplateLiteral (§13.3): the tagged
+                // call binds before `new`.
+                f = self.template(Some(f))?;
             } else {
                 break;
             }
