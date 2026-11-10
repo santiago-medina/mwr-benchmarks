@@ -280,3 +280,11 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - After the run: exact lone-surrogate handling in decodeURI/decodeURIComponent and parseInt/parseFloat (20 cases out of the 29 left).
 - Largest remaining buckets: runner timeouts 457 (roadmap B trigger), createRealm 181, test262 agents 109, import attributes 64 + 19 strict, ShadowRealm 57, await expression shape 46, "unsupported character" 44 + 26, call depth limit 34.
 - Next gap: roadmap B, the bytecode VM design note (resolved binding slots, dense elements, shapes).
+
+### Roadmap B stage 1: incidental interpreter costs (checkpoint 21, 2026-11-10)
+
+- Design note: BYTECODE_VM.md (staged plan: incidental costs, slot environments, register bytecode, shapes). Fixed benchmark set in `bench/vm/`.
+- Stage 1: `Rc` closure bodies (no AST clone per call), lazy `arguments` (§10.2.11 argumentsObjectNeeded), one shared `for (let ...)` environment when nothing can capture the bindings (§14.7.4.4). Both predicates are conservative AST scans (`ast_scan.rs`).
+- Callgrind: fib(16) 256.9 M → 114.8 M instructions (2.24x); 20k-iteration let loop 1,192 M → 870 M (1.37x).
+- Full run: 45919/47708 pass (96.3%), +22 vs checkpoint 20 (the decodeURI/parseInt fixes made after that run). Failed 1102 (-2), unsupported 687 (-20). Lost 0. Runner timeouts 455 (-2).
+- Next: stage 2, scope analysis with slot-indexed environments (BYTECODE_VM.md); the element store (44% of the loop) waits for stage 4.

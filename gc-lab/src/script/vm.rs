@@ -135,8 +135,11 @@ pub(super) enum Object {
         program: Option<std::sync::Arc<super::asynchronous::Program>>,
         data: Data,
         environment: Id,
-        params: Vec<parser::Param>,
-        body: Vec<Stmt>,
+        params: std::rc::Rc<Vec<parser::Param>>,
+        body: std::rc::Rc<Vec<Stmt>>,
+        /// False when the parameters and body can never observe `arguments`
+        /// (§10.2.11 step 15-18 argumentsObjectNeeded; see `arguments_needed`).
+        needs_arguments: bool,
     },
 }
 

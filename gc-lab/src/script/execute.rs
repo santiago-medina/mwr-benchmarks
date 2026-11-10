@@ -139,8 +139,9 @@ impl Engine<'_> {
             id,
             Object::Closure {
                 environment: env,
-                params: params.to_vec(),
-                body: body.to_vec(),
+                params: std::rc::Rc::new(params.to_vec()),
+                body: std::rc::Rc::new(body.to_vec()),
+                needs_arguments: arguments_needed(params, body),
                 kind,
                 program,
                 data: Data::new(None),
@@ -995,6 +996,39 @@ impl Engine<'_> {
             other => other,
         }
     }
+    /// Copy out only what a call needs: cloning the whole object copied its property
+    /// map on every call (BYTECODE_VM.md, stage 1). Kept out of line so its temporaries
+    /// stay off the recursive `invoke_inner` frame (debug builds do not share slots).
+    #[inline(never)]
+    fn callee(&self, id: Id) -> Option<Object> {
+        match self.objects.get(&id) {
+            Some(Object::Builtin { name, data }) => Some(Object::Builtin {
+                name: name.clone(),
+                data: Data {
+                    internal: data.internal.clone(),
+                    ..Data::new(None)
+                },
+            }),
+            Some(Object::Closure {
+                kind,
+                program,
+                environment,
+                params,
+                body,
+                needs_arguments,
+                ..
+            }) => Some(Object::Closure {
+                kind: *kind,
+                program: program.clone(),
+                environment: *environment,
+                params: params.clone(),
+                body: body.clone(),
+                needs_arguments: *needs_arguments,
+                data: Data::new(None),
+            }),
+            other => other.cloned(),
+        }
+    }
     fn invoke_inner(&mut self, f: Value, receiver: Value, args: Vec<Value>) -> Result<Value> {
         if let Value::Native { receiver, name } = f {
             return self.call_native(receiver, &name, args);
@@ -1002,7 +1036,8 @@ impl Engine<'_> {
         let Value::Object(id) = f else {
             return self.throw_error("TypeError", "value is not callable");
         };
-        match self.objects.get(&id).cloned() {
+        let callee = self.callee(id);
+        match callee {
             Some(Object::Proxy { .. }) => self.proxy_call(id, receiver, args),
             Some(Object::Builtin { name, data }) => {
                 if name == "%ProxyRevoke%" {
@@ -1700,4 +1735,17 @@ fn literal_method(p: &Literal) -> bool {
         ) => true,
         _ => false,
     }
+}
+
+/// Conservative argumentsObjectNeeded (§10.2.11 FunctionDeclarationInstantiation steps 15-18):
+/// the arguments object is unobservable unless the parameters or body name `arguments`
+/// (also through a nested arrow, `var arguments`, or the implicit derived constructor's
+/// `%forward`) or contain a direct `eval` that could name it. Scanning the derived `Debug`
+/// text covers every AST variant; any match (string literals included) keeps the eager
+/// object. The scope-analysis pass of BYTECODE_VM.md stage 2 replaces this.
+pub(super) fn arguments_needed(params: &[Param], body: &[Stmt]) -> bool {
+    super::ast_scan::mentions(
+        &[&params, &body],
+        &["\"arguments\"", "\"eval\"", "%forward"],
+    )
 }

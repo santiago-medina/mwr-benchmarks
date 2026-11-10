@@ -70,7 +70,14 @@ impl Engine<'_> {
             if kind != FunctionKind::DerivedConstructor {
                 self.initialize(parameters, "this", receiver)?;
             }
-            if !names.iter().any(|name| name == "arguments") {
+            // §10.2.11 steps 15-18: skip the object when it is unobservable.
+            let needed = match self.objects.get(&function) {
+                Some(super::vm::Object::Closure {
+                    needs_arguments, ..
+                }) => *needs_arguments,
+                _ => true,
+            };
+            if needed && !names.iter().any(|name| name == "arguments") {
                 // Sloppy functions with simple parameter lists get a mapped arguments
                 // object (CreateMappedArgumentsObject); the map is filled in below once
                 // the body environment exists.

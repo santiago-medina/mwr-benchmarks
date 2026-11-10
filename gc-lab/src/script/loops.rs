@@ -120,7 +120,18 @@ impl Engine<'_> {
         if let Some(init) = init {
             self.statement(init, local, can_return)?;
         }
-        let names = init.map(Stmt::iteration_names).unwrap_or_default();
+        let mut names = init.map(Stmt::iteration_names).unwrap_or_default();
+        // CreatePerIterationEnvironment (§14.7.4.4) copies are observable only through
+        // closures (or direct eval) that capture the bindings; without any, one shared
+        // environment behaves identically (BYTECODE_VM.md, stage 1).
+        if !names.is_empty()
+            && !super::ast_scan::mentions(
+                &[&init, &test, &update, &body],
+                super::ast_scan::CAPTURES,
+            )
+        {
+            names.clear();
+        }
         if !names.is_empty() {
             local = self.clone_iteration(local, &names)?;
         }
