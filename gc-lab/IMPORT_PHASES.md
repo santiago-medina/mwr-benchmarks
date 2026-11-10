@@ -29,7 +29,7 @@ The test262 `info:` blocks quote an older revision of the defer text, with **Ens
 - `import defer NameSpaceImport FromClause ;` is the only defer form. `import defer x from`, `import defer {a} from`, `import defer x, * as ns from` and `export defer …` are SyntaxErrors. `import defer from "x"` is a default import named `defer`.
 - `import.source ( AssignmentExpression ,opt )` and `import.defer ( AssignmentExpression ,opt )` become `Expr::ImportCall(specifier, phase)`. Without an argument, with a spread, under `new`, or with no call at all (`typeof import.source`), they are early SyntaxErrors. A second argument is import attributes, which stay Unsupported, as in `import(x, opts)`.
 - ParseModule: `import source x from "m"; export { x };` reclassifies the local export as an indirect ExportEntry with `[[ImportName]]` ~source~ (the same rule that already exists for `import * as ns; export { ns }`).
-- A WithClause (import attributes) on any form stays Unsupported. `import-attributes` remains in UNIMPLEMENTED_SYNTAX.
+- A WithClause (import attributes) is handled as for any import (JSON_MODULES.md).
 
 ## Semantics
 

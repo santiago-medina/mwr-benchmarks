@@ -42,11 +42,24 @@ fn load(case: &Path, request: &ModuleRequest) -> ModuleLoad {
         Referrer::Module { url, .. } => PathBuf::from(url),
         Referrer::Script { .. } | Referrer::Realm => case.to_path_buf(),
     };
+    // The HTML host's module type: the "type" attribute, "javascript" without one.
+    // Only JSON modules are implemented; `text` and `bytes` (import-text,
+    // import-bytes proposals) and other types stay unsupported, never a pass.
+    let module_type = match request.attributes.iter().find(|(k, _)| k == "type") {
+        None => "javascript",
+        Some((_, t)) if t == "json" => "json",
+        Some((_, t)) => {
+            return ModuleLoad::Error {
+                kind: "SyntaxError".into(),
+                message: format!("unsupported module type '{t}'"),
+            }
+        }
+    };
     let path = resolve(&base, &request.specifier);
     match std::fs::read_to_string(&path) {
         Ok(source) => ModuleLoad::Source {
             url: path.to_string_lossy().into_owned(),
-            module_type: "javascript".into(),
+            module_type: module_type.into(),
             source,
             host_defined: 0,
         },

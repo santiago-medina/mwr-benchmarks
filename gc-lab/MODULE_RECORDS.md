@@ -28,7 +28,7 @@ The rewrite follows these step by step, and each function cites its section:
 - 16.2.1.8 HostLoadImportedModule / FinishLoadingImportedModule, and the rule that the same (referrer, specifier) pair always yields the same record.
 - Early errors (16.2.1.1): duplicate exports, an exported name with no binding, `import.meta` outside modules, `await` as an identifier in modules, the ModuleExportName string rule (IsStringWellFormedUnicode).
 
-Static import attributes (`with { type: ... }`) are parsed only if they are implemented; until then `import-attributes` stays in UNIMPLEMENTED_SYNTAX. The same goes for `import-defer` and `source-phase-imports`. Under the project rule ("never accept syntax you don't implement"), `import defer` and `import source` stay SyntaxError/Unsupported.
+Static import attributes (`with { type: ... }`) are implemented (JSON_MODULES.md), and so are the import phases `import defer` and `import source` (IMPORT_PHASES.md).
 
 ## Host API (the engine↔embedder boundary)
 

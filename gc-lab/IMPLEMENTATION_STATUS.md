@@ -309,3 +309,10 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Callgrind: 20k-iteration loop 319.1 M → 294.4 M instructions (14.7k per iteration: the stage-2 kill line ≤ 15k is met), fib(16) 105.6 M → 103.4 M.
 - Full run: 46067/47708 pass (96.6%), +149. Lost 0. Runner timeouts 456 → 307 (the gains are slow cases now finishing under 10 s).
 - Next: stage 3 (register bytecode, with the slot-environment resolver first) waits on the literature check (collab #336) and a second opinion; meanwhile roadmap A buckets.
+
+### Import attributes and JSON modules (checkpoint 25, 2026-11-10)
+
+- WithClause on static imports and exports (§16.2.2, duplicate keys are early errors), `import(spec, options)` (§13.3.10.2 step 7), ModuleRequest Records keyed by specifier plus sorted attributes (§16.2.1.3), AllImportAttributesSupported with « "type" », and JSON modules (ParseJSONModule, a default-export synthetic record). Design: JSON_MODULES.md. `import-attributes` is out of UNIMPLEMENTED_SYNTAX.
+- Bucket: 89/100; the other 11 are import-text / import-bytes, Unsupported by design.
+- Full run: 46177/47708 pass (96.8%), +110. Failed 933 (-21), unsupported 598 (-89). Lost 90, all RegExp property-escapes/generated runner timeouts under load (load average ~9.6); each passes alone in 4.3 s on average, 7.3 s at most, so they are counted as load timeouts.
+- Next: realms (createRealm 181, ShadowRealm 64; needs a design note) or test262 agents (Atomics, 109).

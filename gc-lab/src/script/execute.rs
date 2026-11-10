@@ -708,10 +708,17 @@ impl Engine<'_> {
             Expr::Class(c) => self.eval_class(c, env, None),
             Expr::PrivateName(n) => self.lookup(env, n),
             Expr::NewTarget => self.lookup(env, "%newtarget"),
-            // §13.3.10.1 step 2: the specifier's evaluation throws; ToString rejects.
-            Expr::ImportCall(specifier, phase) => {
+            // EvaluateImportCall (§13.3.10.2) steps 2-3: the specifier and options
+            // expressions evaluate in order and their abrupt completions throw; the
+            // later steps reject the promise instead.
+            Expr::ImportCall(specifier, options, phase) => {
                 let specifier = self.eval(specifier, env)?;
-                self.import_call(env, specifier, *phase)
+                self.protect(&specifier)?;
+                let options = match options {
+                    Some(o) => self.eval(o, env)?,
+                    None => Value::Undefined,
+                };
+                self.import_call(env, specifier, options, *phase)
             }
             Expr::ImportMeta => self.import_meta(env),
             Expr::ClassInit(init) => self.eval_class_init(init, env),

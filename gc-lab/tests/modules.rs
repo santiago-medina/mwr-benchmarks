@@ -252,6 +252,61 @@ fn pull_host_errors_and_shared_requests() {
 }
 
 #[test]
+fn import_attributes_key_requests_and_json_modules_bind_default() {
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.execute_module(
+        "main",
+        "import a from './d.json' with {type:'json'};\
+         import {default as b} from './d.json' with {'type':\"json\"};\
+         import {s} from './d.json';\
+         if(a!==b||a.k[1]!==2||s!=='js')throw 0;globalThis.json=a;",
+        0,
+    )
+    .unwrap();
+    let r = e.take_module_requests();
+    // One request per (specifier, attributes): the JSON one and the plain one.
+    assert_eq!(r.len(), 2);
+    assert_eq!(
+        r[0].attributes,
+        vec![("type".to_string(), "json".to_string())]
+    );
+    assert!(r[1].attributes.is_empty());
+    let json = ModuleLoad::Source {
+        url: "d.json".into(),
+        module_type: "json".into(),
+        source: "{\"k\":[1,2]}".into(),
+        host_defined: 0,
+    };
+    e.finish_module_request(r[0].id, json).unwrap();
+    e.collect();
+    e.finish_module_request(r[1].id, javascript("d.json", "export const s='js';"))
+        .unwrap();
+    assert_eq!(e.module_status("main").unwrap(), ModuleStatus::Evaluated);
+    e.release_globals();
+    assert_eq!((e.live_objects(), e.live_roots()), (0, 0));
+    // Invalid JSON fails the load with a SyntaxError; an unknown key fails loading
+    // before the host is asked (AllImportAttributesSupported).
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.execute_module("main", "import './bad.json' with {type:'json'};", 0)
+        .unwrap();
+    let id = e.take_module_requests()[0].id;
+    let bad = ModuleLoad::Source {
+        url: "bad.json".into(),
+        module_type: "json".into(),
+        source: "{a:1}".into(),
+        host_defined: 0,
+    };
+    assert!(matches!(
+        e.finish_module_request(id, bad),
+        Err(ScriptError::Syntax(_))
+    ));
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    let err = e.execute_module("main", "import './x' with {nope:''};", 0);
+    assert!(matches!(err, Err(ScriptError::Thrown(ex)) if ex.name.as_deref()==Some("SyntaxError")));
+    assert!(e.take_module_requests().is_empty());
+}
+
+#[test]
 fn namespace_objects_follow_the_exotic_object_rules() {
     // §10.4.6: sorted keys, live values, TDZ ReferenceError, frozen shape, "Module" tag.
     let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();

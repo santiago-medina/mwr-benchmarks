@@ -103,11 +103,11 @@ fn expr_await(e: &Expr) -> bool {
         | Expr::AsyncFunction { .. }
         | Expr::AsyncArrow { .. } => false,
         Expr::Conditional(a, b, c) => expr_await(a) || expr_await(b) || expr_await(c),
+        Expr::ImportCall(a, b, _) => expr_await(a) || b.as_deref().is_some_and(expr_await),
         Expr::Member(a, _)
         | Expr::Unary(_, a)
         | Expr::Update(a, ..)
         | Expr::Spread(a)
-        | Expr::ImportCall(a, _)
         | Expr::SuperComputed(a)
         | Expr::OptionalChain(a)
         | Expr::Optional(a) => expr_await(a),
@@ -494,9 +494,13 @@ impl Compiler {
                 let value = self.expression(e)?;
                 self.eval(Expr::Unary(op.clone(), Box::new(read(value))))
             }
-            Expr::ImportCall(e, phase) => {
+            Expr::ImportCall(e, options, phase) => {
                 let value = self.expression(e)?;
-                self.eval(Expr::ImportCall(Box::new(read(value)), *phase))
+                let options = match options {
+                    Some(o) => Some(Box::new(read(self.expression(o)?))),
+                    None => None,
+                };
+                self.eval(Expr::ImportCall(Box::new(read(value)), options, *phase))
             }
             Expr::Conditional(condition, yes, no) => {
                 let condition = self.expression(condition)?;

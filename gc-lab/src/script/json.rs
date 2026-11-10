@@ -217,6 +217,29 @@ impl Reader<'_> {
 /// QuoteJSONString (§25.5.2.3) over the code points of `s` (§11.1.4 CodePointAt):
 /// a lone surrogate is written as a `\udxxx` escape (step 2.b), so the result is
 /// always well-formed.
+/// The JSON text grammar check of JSON.parse (§25.5.1 step 2), without
+/// materializing: ParseJSONModule's load-time SyntaxError (JSON_MODULES.md). An
+/// "unsupported" message (lone surrogates) stays Unsupported for the host.
+pub(super) fn json_validate(text: &str) -> std::result::Result<(), super::parser::SyntaxError> {
+    json_read(text)
+        .map(|_| ())
+        .map_err(|message| super::parser::SyntaxError { offset: 0, message })
+}
+/// The JSON text grammar (§25.5.1 step 2) over the whole input.
+fn json_read(text: &str) -> std::result::Result<Json, &'static str> {
+    let mut reader = Reader {
+        text: text.as_bytes(),
+        pos: 0,
+    };
+    reader.value(0).and_then(|v| {
+        reader.ws();
+        if reader.pos == reader.text.len() {
+            Ok(v)
+        } else {
+            Err("trailing JSON input")
+        }
+    })
+}
 fn quote_units(s: &super::js_string::JsString) -> String {
     let Some(text) = s.as_str() else {
         let mut out = String::from("\"");
@@ -342,23 +365,15 @@ impl Engine<'_> {
         }
         Ok(keys)
     }
+    /// %JSON.parse%(text) with no reviver.
+    pub(super) fn json_parse_text(&mut self, text: &str) -> Result<Value> {
+        self.json_builtin("JSON.parse", vec![Value::String(text.into())])
+    }
     pub(super) fn json_builtin(&mut self, name: &str, args: Vec<Value>) -> Result<Value> {
         let input = args.first().cloned().unwrap_or(Value::Undefined);
         if name == "JSON.parse" {
             let text = self.to_string(input)?;
-            let mut reader = Reader {
-                text: text.as_bytes(),
-                pos: 0,
-            };
-            let parsed = reader.value(0).and_then(|v| {
-                reader.ws();
-                if reader.pos == reader.text.len() {
-                    Ok(v)
-                } else {
-                    Err("trailing JSON input")
-                }
-            });
-            let node = match parsed {
+            let node = match json_read(&text) {
                 Ok(v) => v,
                 Err("unpaired surrogate storage unsupported") => {
                     return Err(ScriptError::Unsupported("JSON unpaired UTF-16 surrogate"))

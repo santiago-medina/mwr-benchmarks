@@ -15,9 +15,32 @@ pub enum ImportName {
     /// `import source x` (~source~, IMPORT_PHASES.md).
     Source,
 }
+/// A ModuleRequest Record's identity (§16.2.1.3): the specifier and its
+/// [[Attributes]], sorted by key so that ModuleRequestsEqual is `==`.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
+pub struct RequestKey {
+    pub specifier: String,
+    pub attributes: Vec<(String, String)>,
+}
+impl RequestKey {
+    pub fn new(specifier: impl Into<String>, mut attributes: Vec<(String, String)>) -> Self {
+        attributes.sort();
+        RequestKey {
+            specifier: specifier.into(),
+            attributes,
+        }
+    }
+    /// The value of the "type" attribute, if any.
+    pub fn module_type(&self) -> Option<&str> {
+        self.attributes
+            .iter()
+            .find(|(k, _)| k == "type")
+            .map(|(_, v)| v.as_str())
+    }
+}
 #[derive(Clone, Debug)]
 pub struct Import {
-    pub request: String,
+    pub request: RequestKey,
     pub import_name: ImportName,
     pub local: String,
 }
@@ -37,7 +60,7 @@ pub enum ExportImport {
 #[derive(Clone, Debug)]
 pub struct Export {
     pub export_name: Option<String>,
-    pub request: Option<String>,
+    pub request: Option<RequestKey>,
     pub import_name: Option<ExportImport>,
     pub local: Option<String>,
 }
@@ -45,8 +68,8 @@ pub struct Export {
 pub struct Module {
     pub body: Vec<Stmt>,
     /// [[RequestedModules]] in source order: ModuleRequest Records, deduplicated on
-    /// (specifier, phase).
-    pub requests: Vec<(String, ImportPhase)>,
+    /// (specifier, attributes, phase).
+    pub requests: Vec<(RequestKey, ImportPhase)>,
     pub imports: Vec<Import>,
     pub local_exports: Vec<Export>,
     pub indirect_exports: Vec<Export>,
@@ -56,9 +79,9 @@ impl Module {
     /// The distinct specifiers the host has to load, whatever their phase.
     pub fn dependencies(&self) -> Vec<&str> {
         let mut out: Vec<&str> = vec![];
-        for (s, _) in &self.requests {
-            if !out.contains(&s.as_str()) {
-                out.push(s);
+        for (r, _) in &self.requests {
+            if !out.contains(&r.specifier.as_str()) {
+                out.push(&r.specifier);
             }
         }
         out
@@ -88,28 +111,51 @@ fn export_name(p: &mut Parser<'_>) -> Result<ExportName, SyntaxError> {
         _ => Err(p.error("expected module export name")),
     }
 }
-fn specifier(p: &mut Parser<'_>) -> Result<String, SyntaxError> {
+/// ModuleSpecifier, then the optional WithClause (§16.2.2):
+/// `with { }` or `with { WithEntries ,opt }`, WithEntries being
+/// `AttributeKey : StringLiteral` pairs and AttributeKey an IdentifierName or a
+/// StringLiteral. No LineTerminator restriction applies before `with`.
+fn specifier(p: &mut Parser<'_>) -> Result<RequestKey, SyntaxError> {
     let s = match p.take() {
         Token::String(s) => s,
         // Host module resolution takes scalar text (HostLoadImportedModule).
         Token::Units(_) => return Err(p.error("surrogate strings unsupported")),
         _ => return Err(p.error("module requires string specifier")),
     };
-    // WithClause (import attributes) is not implemented: never accept it.
-    if p.current() == &Token::Name("with".into()) && !p.newline()
-        || p.current() == &Token::Name("assert".into()) && !p.newline()
-    {
-        return Err(p.error("unsupported import attributes"));
+    let mut attributes: Vec<(String, String)> = vec![];
+    if p.current() == &Token::Name("with".into()) {
+        p.take();
+        p.expect('{')?;
+        while !p.punct('}') {
+            let key = match p.take() {
+                Token::Name(k) | Token::EscapedName(k) | Token::String(k) => k,
+                Token::Units(_) => return Err(p.error("unsupported import attribute key")),
+                _ => return Err(p.error("expected import attribute key")),
+            };
+            if !p.punct(':') {
+                return Err(p.error("expected : after import attribute key"));
+            }
+            let value = match p.take() {
+                Token::String(v) => v,
+                Token::Units(_) => return Err(p.error("unsupported import attribute value")),
+                _ => return Err(p.error("import attribute value must be a string")),
+            };
+            // Early error (§16.2.2.1): WithClauseToAttributes has no duplicate keys.
+            if attributes.iter().any(|(k, _)| *k == key) {
+                return Err(p.error("duplicate import attribute key"));
+            }
+            attributes.push((key, value));
+            if p.punct('}') {
+                break;
+            }
+            p.expect(',')?;
+        }
     }
-    Ok(s)
+    Ok(RequestKey::new(s, attributes))
 }
-fn request(module: &mut Module, specifier: &str, phase: ImportPhase) {
-    if !module
-        .requests
-        .iter()
-        .any(|(r, p)| r == specifier && *p == phase)
-    {
-        module.requests.push((specifier.into(), phase));
+fn request(module: &mut Module, key: &RequestKey, phase: ImportPhase) {
+    if !module.requests.iter().any(|(r, p)| r == key && *p == phase) {
+        module.requests.push((key.clone(), phase));
     }
 }
 /// The ImportedBinding after `as` or a bare import specifier: a BindingIdentifier.

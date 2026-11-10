@@ -89,9 +89,9 @@ pub enum Expr {
     SuperCall(Vec<Expr>),
     NewTarget,
     ClassInit(Box<ClassInit>),
-    /// `import(specifier)` (§13.3.10), `import.source(specifier)` and
-    /// `import.defer(specifier)` (IMPORT_PHASES.md).
-    ImportCall(Box<Expr>, ImportPhase),
+    /// `import(specifier [, options])` (§13.3.10), `import.source(specifier)` and
+    /// `import.defer(specifier)` (IMPORT_PHASES.md; the phase forms take no options).
+    ImportCall(Box<Expr>, Option<Box<Expr>>, ImportPhase),
     /// `import.meta` (§13.3.12), module code only.
     ImportMeta,
     /// An OptionalExpression (§13.3.9): the boundary of an optional chain. A short-circuit
@@ -2690,8 +2690,9 @@ impl Parser<'_> {
             tag: tag.map(Box::new),
         })))
     }
-    /// The rest of an ImportCall after `(` (§13.3.10): `AssignmentExpression[+In] ,opt )`.
-    /// The two-argument form carries import attributes, which are not implemented.
+    /// The rest of an ImportCall after `(` (§13.3.10):
+    /// `AssignmentExpression[+In] ,opt )` or, for the evaluation phase only,
+    /// `AssignmentExpression[+In] , AssignmentExpression[+In] ,opt )`.
     fn import_call_rest(&mut self, phase: ImportPhase) -> Result<Expr, SyntaxError> {
         if self.current() == &Token::Punct(')') {
             return Err(self.error("import() requires a specifier"));
@@ -2700,14 +2701,23 @@ impl Parser<'_> {
             return Err(self.error("spread argument in import()"));
         }
         let specifier = self.assignment()?;
+        let mut options = None;
         if self.punct(',') {
             if !self.punct(')') {
-                return Err(self.error("unsupported import attributes"));
+                if phase != ImportPhase::Evaluation {
+                    return Err(self.error("import phase call takes one argument"));
+                }
+                if self.op("...") {
+                    return Err(self.error("spread argument in import()"));
+                }
+                options = Some(Box::new(self.assignment()?));
+                self.punct(',');
+                self.expect(')')?;
             }
         } else {
             self.expect(')')?;
         }
-        Ok(Expr::ImportCall(Box::new(specifier), phase))
+        Ok(Expr::ImportCall(Box::new(specifier), options, phase))
     }
     fn primary(&mut self) -> Result<Expr, SyntaxError> {
         if matches!(self.current(), Token::Template { start: true, .. }) {
@@ -3773,6 +3783,10 @@ fn validate_loop(
                 }
             }
             Expr::SuperComputed(a) => work.push((a, d + 1)),
+            Expr::ImportCall(a, b, _) => {
+                work.push((a, d + 1));
+                work.extend(b.iter().map(|e| (e.as_ref(), d + 1)));
+            }
             Expr::SuperCall(b) => work.extend(b.iter().map(|e| (e, d + 1))),
             Expr::Call(a, b) | Expr::New(a, b) => {
                 work.push((a, d + 1));
@@ -3782,7 +3796,6 @@ fn validate_loop(
             | Expr::Unary(_, a)
             | Expr::Update(a, ..)
             | Expr::Spread(a)
-            | Expr::ImportCall(a, _)
             | Expr::OptionalChain(a)
             | Expr::Optional(a) => work.push((a, d + 1)),
             Expr::Conditional(a, b, c) => {
@@ -3809,7 +3822,9 @@ fn validate_loop(
 
 #[path = "module_parser.rs"]
 mod module_syntax;
-pub use module_syntax::{parse_module, Export, ExportImport, Import, ImportName, Module};
+pub use module_syntax::{
+    parse_module, Export, ExportImport, Import, ImportName, Module, RequestKey,
+};
 
 /// ModuleRequest [[Phase]] (source phase imports / deferred evaluation proposals).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

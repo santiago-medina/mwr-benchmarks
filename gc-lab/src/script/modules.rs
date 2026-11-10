@@ -4,7 +4,7 @@
 //! host API (`take_module_requests` / `finish_module_request`).
 use super::{
     objects::{Descriptor, Key, Kind, Property},
-    parser::{self, ExportImport, ImportName, ImportPhase, Module, SyntaxError},
+    parser::{self, ExportImport, ImportName, ImportPhase, Module, RequestKey, SyntaxError},
     promises::{Capability, Internal, State},
     vm::{Engine, Object, ScriptError, Value},
 };
@@ -87,8 +87,12 @@ struct Record {
     url: String,
     host_defined: u64,
     syntax: Module,
-    /// [[LoadedModules]]: specifier → record.
-    loaded: HashMap<String, usize>,
+    /// [[LoadedModules]]: ModuleRequest (specifier and attributes) → record.
+    loaded: HashMap<RequestKey, usize>,
+    /// A JSON module (CreateDefaultExportSyntheticModule over ParseJSONModule): the
+    /// source text, validated at load and materialized into the "default" binding
+    /// when the environment is created (JSON_MODULES.md).
+    json: Option<String>,
     status: Status,
     /// [[EvaluationError]]; the value is also kept alive by a hidden env binding.
     error: Option<Value>,
@@ -123,7 +127,7 @@ struct Graph {
 /// A request in flight. `referrer` is None for a Script or Realm referrer.
 struct Pending {
     referrer: Option<usize>,
-    specifier: String,
+    key: RequestKey,
     graphs: Vec<(usize, bool)>,
     imports: Vec<usize>,
 }
@@ -187,9 +191,9 @@ pub(super) struct Registry {
     keys: HashMap<(String, String), usize>,
     graphs: Vec<Graph>,
     pending: HashMap<u64, Pending>,
-    inflight: HashMap<(Option<usize>, String), u64>,
+    inflight: HashMap<(Option<usize>, RequestKey), u64>,
     /// [[LoadedModules]] of Script and Realm referrers (one host-wide map).
-    script_loaded: HashMap<String, usize>,
+    script_loaded: HashMap<RequestKey, usize>,
     /// Per-realm prototypes of host module source objects, by class name.
     source_protos: HashMap<String, Id>,
     dynamic: Vec<Option<DynamicImport>>,
@@ -214,10 +218,10 @@ impl Registry {
             .copied()
             .ok_or(ScriptError::Runtime("unknown module"))
     }
-    fn dependency(&self, m: usize, specifier: &str) -> Result<usize> {
+    fn dependency(&self, m: usize, key: &RequestKey) -> Result<usize> {
         self.records[m]
             .loaded
-            .get(specifier)
+            .get(key)
             .copied()
             .ok_or(ScriptError::Runtime("module request not loaded"))
     }
@@ -235,7 +239,7 @@ impl Registry {
         }
         for e in &syntax.indirect_exports {
             if e.export_name.as_deref() == Some(name) {
-                let Ok(dep) = self.dependency(m, e.request.as_deref().unwrap_or_default()) else {
+                let Ok(dep) = self.dependency(m, &e.request.clone().unwrap_or_default()) else {
                     return Resolution::Null;
                 };
                 return match &e.import_name {
@@ -254,7 +258,7 @@ impl Registry {
         }
         let mut star: Option<(usize, Binding)> = None;
         for e in &syntax.star_exports {
-            let Ok(dep) = self.dependency(m, e.request.as_deref().unwrap_or_default()) else {
+            let Ok(dep) = self.dependency(m, &e.request.clone().unwrap_or_default()) else {
                 continue;
             };
             match self.resolve_export(dep, name, set) {
@@ -288,7 +292,7 @@ impl Registry {
             .filter_map(|e| e.export_name.clone())
             .collect();
         for e in &syntax.star_exports {
-            let Ok(dep) = self.dependency(m, e.request.as_deref().unwrap_or_default()) else {
+            let Ok(dep) = self.dependency(m, &e.request.clone().unwrap_or_default()) else {
                 continue;
             };
             for n in self.exported_names(dep, set) {
@@ -299,6 +303,15 @@ impl Registry {
         }
         names
     }
+}
+/// HostGetSupportedImportAttributes (§16.2.1.12.1): the HTML host's « "type" ».
+const SUPPORTED_IMPORT_ATTRIBUTES: &[&str] = &["type"];
+/// AllImportAttributesSupported (§16.2.1.12.2): the first key outside the list.
+fn unsupported_attribute(key: &RequestKey) -> Option<&str> {
+    key.attributes
+        .iter()
+        .map(|(k, _)| k.as_str())
+        .find(|k| !SUPPORTED_IMPORT_ATTRIBUTES.contains(k))
 }
 impl Failure {
     /// A load failure caused by syntax or a module type this engine does not implement:
@@ -424,9 +437,7 @@ impl Engine<'_> {
                 "unknown or settled module request {id}"
             )));
         };
-        self.modules
-            .inflight
-            .remove(&(p.referrer, p.specifier.clone()));
+        self.modules.inflight.remove(&(p.referrer, p.key.clone()));
         self.modules.outbox.retain(|r| r.id != id);
         let result = match load {
             ModuleLoad::Source {
@@ -454,14 +465,14 @@ impl Engine<'_> {
                 Some(r) => &mut self.modules.records[r].loaded,
                 None => &mut self.modules.script_loaded,
             };
-            match loaded.get(&p.specifier) {
+            match loaded.get(&p.key) {
                 Some(&prev) if prev != dep => {
                     return Err(ScriptError::Host(
                         "host loaded two modules for one request".into(),
                     ))
                 }
                 _ => {
-                    loaded.insert(p.specifier.clone(), dep);
+                    loaded.insert(p.key.clone(), dep);
                 }
             }
         }
@@ -490,7 +501,7 @@ impl Engine<'_> {
         if let Some(&i) = self.modules.keys.get(&key) {
             return Ok(i);
         }
-        if module_type != "javascript" {
+        if module_type != "javascript" && module_type != "json" {
             return Err(ScriptError::Unsupported("unsupported module type"));
         }
         if self.modules.records.len() >= MODULE_LIMIT {
@@ -499,6 +510,22 @@ impl Engine<'_> {
         self.modules.bytes += source.len();
         if self.modules.bytes > SOURCE_LIMIT {
             return Err(ScriptError::Runtime("module source limit"));
+        }
+        if module_type == "json" {
+            // ParseJSONModule step 1: Call(%JSON.parse%, undefined, « source »); a
+            // syntax error fails the load. CreateDefaultExportSyntheticModule: one
+            // "default" export and no requests.
+            super::json::json_validate(source).map_err(ScriptError::Syntax)?;
+            let mut syntax = parser::parse_module("").map_err(ScriptError::Syntax)?;
+            syntax.local_exports.push(parser::Export {
+                export_name: Some("default".into()),
+                request: None,
+                import_name: None,
+                local: Some("\0default".into()),
+            });
+            let i = self.module_record_from(url, key, syntax, host_defined)?;
+            self.modules.records[i].json = Some(source.to_string());
+            return Ok(i);
         }
         let syntax = parser::parse_module(source).map_err(ScriptError::Syntax)?;
         self.module_record_from(url, key, syntax, host_defined)
@@ -518,6 +545,7 @@ impl Engine<'_> {
             host_defined,
             syntax,
             loaded: HashMap::new(),
+            json: None,
             status: Status::New,
             error: None,
             dfs_index: 0,
@@ -578,22 +606,22 @@ impl Engine<'_> {
         {
             let requests = self.modules.records[m].syntax.requests.clone();
             self.modules.graphs[g].pending += requests.len();
-            for (specifier, phase) in requests {
+            for (key, phase) in requests {
                 // A source-phase request loads the module but not its requests.
                 let single = phase == ImportPhase::Source;
-                if let Some(&dep) = self.modules.records[m].loaded.get(&specifier) {
+                if let Some(attribute) = unsupported_attribute(&key) {
+                    // Step 2.c.i: AllImportAttributesSupported is false.
+                    let message = format!("Import attribute \"{attribute}\" is not supported");
+                    let failure = Failure::Error("SyntaxError".into(), message);
+                    self.continue_module_loading(g, single, Err(failure))?;
+                } else if let Some(&dep) = self.modules.records[m].loaded.get(&key) {
                     if single {
                         self.graph_request_done(g)?;
                     } else {
                         self.inner_module_loading(g, dep)?;
                     }
                 } else {
-                    self.host_load_imported_module(
-                        Some(m),
-                        specifier,
-                        phase,
-                        Waiter::Graph(g, single),
-                    );
+                    self.host_load_imported_module(Some(m), key, phase, Waiter::Graph(g, single));
                 }
                 if !self.modules.graphs[g].loading {
                     return Ok(());
@@ -623,17 +651,17 @@ impl Engine<'_> {
     fn host_load_imported_module(
         &mut self,
         m: Option<usize>,
-        specifier: String,
+        key: RequestKey,
         phase: ImportPhase,
         w: Waiter,
     ) {
         let r = &mut self.modules;
-        let id = match r.inflight.get(&(m, specifier.clone())) {
+        let id = match r.inflight.get(&(m, key.clone())) {
             Some(id) => *id,
             None => {
                 let id = r.next_request;
                 r.next_request += 1;
-                r.inflight.insert((m, specifier.clone()), id);
+                r.inflight.insert((m, key.clone()), id);
                 r.outbox.push(ModuleRequest {
                     id,
                     referrer: match m {
@@ -645,15 +673,15 @@ impl Engine<'_> {
                             host_defined: r.script_host_defined,
                         },
                     },
-                    specifier: specifier.clone(),
-                    attributes: vec![],
+                    specifier: key.specifier.clone(),
+                    attributes: key.attributes.clone(),
                     phase,
                 });
                 r.pending.insert(
                     id,
                     Pending {
                         referrer: m,
-                        specifier,
+                        key,
                         graphs: vec![],
                         imports: vec![],
                     },
@@ -688,7 +716,10 @@ impl Engine<'_> {
                         let reason = self.failure_value(&failure)?;
                         self.settle_load(slot, Err(reason))
                     }
-                    None => Err(failure.script_error(self)),
+                    // Unimplemented syntax or module types never become a catchable error.
+                    None => Err(failure
+                        .unsupported()
+                        .unwrap_or_else(|| failure.script_error(self))),
                 }
             }
         }
@@ -775,6 +806,13 @@ impl Engine<'_> {
         self.runtime.link(global, env)?;
         self.modules.records[m].env = Some(env);
         self.initialize(env, "this", Value::Undefined)?;
+        if let Some(source) = self.modules.records[m].json.clone() {
+            // The synthetic module's evaluation steps (SetSyntheticModuleExport of
+            // "default") run here: the record has no requests, so no code can observe
+            // the binding before evaluation.
+            let value = self.json_parse_text(&source)?;
+            return self.initialize(env, "\0default", value);
+        }
         self.hoist_functions(&body, env)
     }
     /// InitializeEnvironment (§16.2.1.7.4), import bindings part; the lexical and
@@ -784,7 +822,10 @@ impl Engine<'_> {
         let indirect: Vec<_> = syntax
             .indirect_exports
             .iter()
-            .map(|e| (e.request.clone().unwrap_or_default(), e.export_name.clone()))
+            .map(|e| {
+                let request = e.request.clone().unwrap_or_default();
+                (request.specifier, e.export_name.clone())
+            })
             .collect();
         let imports = syntax.imports.clone();
         for (request, name) in indirect {
@@ -804,13 +845,15 @@ impl Engine<'_> {
                 ImportName::Source => (dep, Binding::Source),
                 ImportName::Name(n) => match self.modules.resolve_export(dep, n, &mut vec![]) {
                     Resolution::Binding(t, b) => (t, b),
-                    Resolution::Null => return self.missing_export(&import.request, n),
-                    Resolution::Ambiguous => return self.ambiguous_export(&import.request, n),
+                    Resolution::Null => return self.missing_export(&import.request.specifier, n),
+                    Resolution::Ambiguous => {
+                        return self.ambiguous_export(&import.request.specifier, n)
+                    }
                 },
             };
             match binding {
                 Binding::Namespace | Binding::DeferredNamespace | Binding::Source => {
-                    let value = self.binding_value(target, &binding, &import.request)?;
+                    let value = self.binding_value(target, &binding, &import.request.specifier)?;
                     self.initialize(env, &import.local, value)?;
                 }
                 Binding::Name(name) => {
@@ -1454,11 +1497,13 @@ impl Engine<'_> {
         }
         None
     }
-    /// EvaluateImportCall (§13.3.10.1) from step 3, with the specifier evaluated.
+    /// EvaluateImportCall (§13.3.10.2) from step 4, with the specifier and options
+    /// evaluated (options is undefined without an options expression).
     pub(super) fn import_call(
         &mut self,
         env: Id,
         specifier: Value,
+        options: Value,
         phase: ImportPhase,
     ) -> Result<Value> {
         let referrer = self.active_module(env);
@@ -1474,6 +1519,16 @@ impl Engine<'_> {
                 }
                 Err(other) => return Err(other),
             };
+            // Steps 6-7: the import attributes.
+            let attributes = match e.import_call_attributes(options)? {
+                Ok(attributes) => attributes,
+                Err(reason) => {
+                    e.invoke(cap.reject.clone(), vec![reason])?;
+                    return Ok(cap.promise);
+                }
+            };
+            // Step 8: the ModuleRequest Record.
+            let key = RequestKey::new(specifier, attributes);
             let mut roots = vec![];
             for v in cap.values() {
                 if let Some(id) = v.id() {
@@ -1503,17 +1558,99 @@ impl Engine<'_> {
             // request this referrer already loaded is answered from [[LoadedModules]]
             // (the host must return the same module, §16.2.1.10).
             let cached = match referrer {
-                Some(m) => e.modules.records[m].loaded.get(&specifier).copied(),
-                None => e.modules.script_loaded.get(&specifier).copied(),
+                Some(m) => e.modules.records[m].loaded.get(&key).copied(),
+                None => e.modules.script_loaded.get(&key).copied(),
             };
             match cached {
                 Some(dep) => e.continue_dynamic_import(slot, Ok(dep))?,
-                None => {
-                    e.host_load_imported_module(referrer, specifier, phase, Waiter::Import(slot))
-                }
+                None => e.host_load_imported_module(referrer, key, phase, Waiter::Import(slot)),
             }
             Ok(cap.promise)
         })
+    }
+    /// EvaluateImportCall (§13.3.10.2) step 7: the attributes of `options`, or the
+    /// reason the promise rejects with (abrupt completions and TypeErrors).
+    fn import_call_attributes(
+        &mut self,
+        options: Value,
+    ) -> Result<std::result::Result<Vec<(String, String)>, Value>> {
+        let mut attributes = vec![];
+        // Step 7: options is undefined.
+        let Value::Object(options) = options else {
+            if matches!(options, Value::Undefined) {
+                return Ok(Ok(attributes));
+            }
+            // Step 7.a.
+            let reason = self.error_value(
+                "TypeError",
+                "The second argument of import() must be an object",
+            )?;
+            return Ok(Err(reason));
+        };
+        let caught = |r: Result<Value>| match r {
+            Ok(v) => Ok(Ok(v)),
+            Err(ScriptError::Thrown(ex)) => Ok(Err(ex.value)),
+            Err(other) => Err(other),
+        };
+        // Step 7.b: Get(options, "with").
+        let with = match caught(self.get_member(Value::Object(options), "with"))? {
+            Ok(v) => v,
+            Err(reason) => return Ok(Err(reason)),
+        };
+        self.protect(&with)?;
+        if !matches!(with, Value::Undefined) {
+            // Step 7.c.i.
+            let Value::Object(with) = with else {
+                let reason = self.error_value(
+                    "TypeError",
+                    "The 'with' option of import() must be an object",
+                )?;
+                return Ok(Err(reason));
+            };
+            // Step 7.c.ii: EnumerableOwnProperties(attributesObj, key+value).
+            let keys = match self.own_keys(with) {
+                Ok(keys) => keys,
+                Err(ScriptError::Thrown(ex)) => return Ok(Err(ex.value)),
+                Err(other) => return Err(other),
+            };
+            let mut entries = vec![];
+            for key in keys {
+                let Key::String(key) = key else {
+                    continue;
+                };
+                let own = match self.own(with, &key) {
+                    Ok(own) => own,
+                    Err(ScriptError::Thrown(ex)) => return Ok(Err(ex.value)),
+                    Err(other) => return Err(other),
+                };
+                if !own.is_some_and(|p| p.enumerable) {
+                    continue;
+                }
+                let value = match caught(self.get_member(Value::Object(with), &key))? {
+                    Ok(v) => v,
+                    Err(reason) => return Ok(Err(reason)),
+                };
+                self.protect(&value)?;
+                entries.push((key, value));
+            }
+            // Step 7.c.iii: every value is a String.
+            for (key, value) in entries {
+                let Value::String(value) = value else {
+                    let reason =
+                        self.error_value("TypeError", "Import attribute value must be a string")?;
+                    return Ok(Err(reason));
+                };
+                attributes.push((key.to_string(), value.to_string()));
+            }
+        }
+        // Step 7.d: AllImportAttributesSupported.
+        let probe = RequestKey::new("", attributes);
+        if let Some(attribute) = unsupported_attribute(&probe) {
+            let message = format!("Import attribute \"{attribute}\" is not supported");
+            let reason = self.error_value("TypeError", &message)?;
+            return Ok(Err(reason));
+        }
+        Ok(Ok(probe.attributes))
     }
     /// The value a failed load rejects with.
     fn failure_value(&mut self, failure: &Failure) -> Result<Value> {
