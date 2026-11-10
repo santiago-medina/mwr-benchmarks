@@ -477,6 +477,21 @@ struct Compiler {
 const MAX_REGISTERS: u32 = 4096;
 
 pub(super) fn compile(params: &[Param], body: &[Stmt]) -> CResult<Chunk> {
+    compile_body(params, body, false)
+}
+
+/// A Script body (§16.1.6 ScriptEvaluation) compiled for the global environment.
+/// GlobalDeclarationInstantiation (§16.1.7) runs before the chunk, in `new_environment`
+/// and the chunk's `hoist` list (the same `hoist_functions` the tree-walker uses), so
+/// every global `var`, function and top-level lexical name lives in the global
+/// environment (object record or declarative record) and is reached by name, never
+/// through a register. Only lexical names of nested blocks get registers
+/// (BYTECODE_VM.md, coverage step 13).
+pub(super) fn compile_script(body: &[Stmt]) -> CResult<Chunk> {
+    compile_body(&[], body, true)
+}
+
+fn compile_body(params: &[Param], body: &[Stmt], script: bool) -> CResult<Chunk> {
     // `%forward` is the derived default constructor's argument forwarding
     // (§15.7.14 ClassDefinitionEvaluation step 14.a: `super(...args)` over the argument
     // list). `arguments_needed` keeps the arguments object for such a body, so it is
@@ -538,6 +553,20 @@ pub(super) fn compile(params: &[Param], body: &[Stmt]) -> CResult<Chunk> {
     c.captured.extend(captured_names(&params, &all));
     if direct_eval {
         c.captured.extend(all.iter().cloned());
+    }
+    if script {
+        // Global bindings: every VarDeclaredName (at any depth) and every top-level
+        // LexicallyDeclaredName (§16.1.7 steps 1-2).
+        c.captured.extend(vars.iter().cloned());
+        for statement in parser::direct_statements(body) {
+            match statement {
+                Stmt::Let(name, _) | Stmt::Const(name, _) => {
+                    c.captured.insert(name.clone());
+                }
+                Stmt::Bind { pattern, .. } => c.captured.extend(pattern.names()),
+                _ => {}
+            }
+        }
     }
     if uses_arguments {
         // FunctionDeclarationInstantiation (§10.2.11 steps 15-22) already bound
@@ -2043,11 +2072,42 @@ impl Compiler {
     }
     /// NamedEvaluation (§8.4.5) of an initializer for `name`.
     fn named(&mut self, e: &Expr, dst: Reg, name: &str) -> CResult<()> {
-        if !self.touches_locals(e) && !literal(e) {
+        if !self.touches_locals(e) && e.anonymous_function() {
             self.hatch(e, dst, Some(name), false);
             return Ok(());
         }
         self.expr(e, dst)
+    }
+    /// Compile `e` natively when the compiler covers it; otherwise roll the partial code
+    /// back and report `false`, so the caller hatches it. Only for expressions that touch
+    /// no register binding (a hatch evaluates them against the environment). Before
+    /// coverage step 13 such expressions were always hatched, which sent nearly all of
+    /// top-level script code (where every name is global) back to the tree-walker.
+    fn native(&mut self, f: impl FnOnce(&mut Self) -> CResult<()>) -> bool {
+        let saved = (
+            self.code.len(),
+            self.consts.len(),
+            self.exprs.len(),
+            self.dead.len(),
+            self.handlers.len(),
+            self.layouts.len(),
+            self.next,
+            self.max,
+            self.non_tail,
+        );
+        if f(self).is_ok() {
+            return true;
+        }
+        self.code.truncate(saved.0);
+        self.consts.truncate(saved.1);
+        self.exprs.truncate(saved.2);
+        self.dead.truncate(saved.3);
+        self.handlers.truncate(saved.4);
+        self.layouts.truncate(saved.5);
+        self.next = saved.6;
+        self.max = saved.7;
+        self.non_tail = saved.8;
+        false
     }
     /// The `return` expression; calls in tail position (§15.10.2) are marked.
     fn tail(&mut self, e: &Expr, dst: Reg) -> CResult<()> {
@@ -2059,9 +2119,14 @@ impl Compiler {
             return self.expr(e, dst);
         }
         if !self.touches_locals(e) && !literal(e) {
-            self.hatch(e, dst, None, true);
+            if !self.native(|c| c.tail_native(e, dst)) {
+                self.hatch(e, dst, None, true);
+            }
             return Ok(());
         }
+        self.tail_native(e, dst)
+    }
+    fn tail_native(&mut self, e: &Expr, dst: Reg) -> CResult<()> {
         match e {
             Expr::Call(f, args) => self.call(f, args, dst, true),
             Expr::Template(t) if t.tag.is_some() => {
@@ -2162,9 +2227,14 @@ impl Compiler {
             _ => {}
         }
         if !self.touches_locals(e) {
-            self.hatch(e, dst, None, false);
+            if !self.native(|c| c.expr_native(e, dst)) {
+                self.hatch(e, dst, None, false);
+            }
             return Ok(());
         }
+        self.expr_native(e, dst)
+    }
+    fn expr_native(&mut self, e: &Expr, dst: Reg) -> CResult<()> {
         match e {
             Expr::Member(base, key) => {
                 let obj = self.operand(base, &[])?;
@@ -2374,9 +2444,11 @@ impl Compiler {
             if name == "eval" && self.resolve(name).is_none() {
                 // §13.3.6.1 steps 6.a-6.b: a call through the name `eval` is a direct eval
                 // when the callee is %eval%; the tree-walker decides and runs PerformEval
-                // with the function environment as the caller's. Never a tail call.
+                // with the function environment as the caller's. When the callee is not
+                // %eval%, step 9 is an ordinary EvaluateCall with tailPosition, so the
+                // hatch keeps `tail` (eval_tail defers only that case).
                 let call = Expr::Call(Box::new(f.clone()), args.to_vec());
-                self.hatch(&call, dst, None, false);
+                self.hatch(&call, dst, None, tail);
                 return Ok(());
             }
         }

@@ -1,7 +1,7 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "d93c515d8bcf9b51258f5b08be1584448d06b845b3302cb6f27448ff2dbcbdd3",
+  "implementation_sha256": "6b2bdd12d9454ce9fc01de288df6499978d83e6bed2b1ba871d9e18866253e08",
   "runner_sha256": "4713329b9c23dcf06bd6cb040661a46e05fc7f4ee3554e0f43a003570213de5f",
   "new_failures": [
     "built-ins/Array/prototype/indexOf/length-zero-returns-minus-one.js",
@@ -111,6 +111,10 @@
     "language/expressions/bitwise-and/order-of-evaluation.js",
     "language/expressions/bitwise-or/order-of-evaluation.js",
     "language/expressions/bitwise-xor/order-of-evaluation.js",
+    "language/expressions/call/tco-non-eval-function-dynamic.js",
+    "language/expressions/call/tco-non-eval-function.js",
+    "language/expressions/call/tco-non-eval-global.js",
+    "language/expressions/call/tco-non-eval-with.js",
     "language/expressions/compound-assignment/S11.13.2_A6.10_T1.js",
     "language/expressions/compound-assignment/S11.13.2_A6.11_T1.js",
     "language/expressions/compound-assignment/S11.13.2_A6.1_T1.js",
@@ -163,11 +167,11 @@
   ],
   "total": 47708,
   "counts": {
-    "passed": 47226,
+    "passed": 47222,
     "unsupported": 337,
-    "failed": 145
+    "failed": 149
   },
-  "assertions": 1258077,
+  "assertions": 1258073,
   "regressions": [],
   "unsupported_reasons": {
     "ordinary reflection on host objects": 11,
@@ -200,7 +204,7 @@
       "path": "built-ins/Array/prototype/indexOf/length-zero-returns-minus-one.js",
       "source_sha256": "7f901d4b489c3414b4b9703a69c366db69b8b566e84d05fbf2a2ff11ed1ba1e8",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"Length should be checked before ToInteger(fromIndex).\", value: Object(Js(Handle { heap: 2, index: 902, serial: 1044 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"Length should be checked before ToInteger(fromIndex).\", value: Object(Js(Handle { heap: 2, index: 902, serial: 1024 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -208,7 +212,7 @@
       "path": "built-ins/AsyncFromSyncIteratorPrototype/next/for-await-iterator-next-rejected-promise-close.js",
       "source_sha256": "03758d2aa7295cd1681c12a3832787b08595aa3cdc2347c9514cb47f79e58900",
       "status": "failed",
-      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 928, serial: 1215 })) })",
+      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 928, serial: 1203 })) })",
       "assertions": 2,
       "cleanup": true
     },
@@ -216,7 +220,7 @@
       "path": "built-ins/AsyncFromSyncIteratorPrototype/next/for-await-next-rejected-promise-close.js",
       "source_sha256": "35e89c5da2a4d3d1c5047f93bc8909aadfd3f9ae1e562714934954e0ced49e06",
       "status": "failed",
-      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 932, serial: 1225 })) })",
+      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 932, serial: 1208 })) })",
       "assertions": 2,
       "cleanup": true
     },
@@ -224,7 +228,7 @@
       "path": "built-ins/AsyncFromSyncIteratorPrototype/next/iterator-result-poisoned-wrapper.js",
       "source_sha256": "cfcfb4d6369093c7e868a5d8b1440440bb1b3c00253df4d2513bb2e05acee2f3",
       "status": "failed",
-      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 959, serial: 1580 })) })",
+      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 959, serial: 1559 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -232,7 +236,7 @@
       "path": "built-ins/AsyncFromSyncIteratorPrototype/next/next-result-poisoned-wrapper.js",
       "source_sha256": "f76f97518cde7c09c6ebb7997c8f205d5e1c936f94655348f1d0769439ef90df",
       "status": "failed",
-      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 963, serial: 1583 })) })",
+      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 963, serial: 1559 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -240,7 +244,7 @@
       "path": "built-ins/AsyncFromSyncIteratorPrototype/next/yield-iterator-next-rejected-promise-close.js",
       "source_sha256": "5ccd1fcef1e85e2b2358f3f09ad51555d05d1bca6340edd8143fa208dbc9cc15",
       "status": "failed",
-      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 955, serial: 1610 })) })",
+      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 955, serial: 1590 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -248,7 +252,7 @@
       "path": "built-ins/AsyncFromSyncIteratorPrototype/next/yield-next-rejected-promise-close.js",
       "source_sha256": "118f44391a7a6b0823e2db63b794f518e4fc989ffce70ddeb2d50772c541064c",
       "status": "failed",
-      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 960, serial: 1620 })) })",
+      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 960, serial: 1593 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -256,7 +260,7 @@
       "path": "built-ins/AsyncFromSyncIteratorPrototype/throw/iterator-result-rejected-promise-close.js",
       "source_sha256": "453cc72b9d50b4cc422dce751e86de9b35b346d7e2ca7df5b244053b9441a608",
       "status": "failed",
-      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 1044, serial: 1760 })) })",
+      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 1044, serial: 1731 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -264,7 +268,7 @@
       "path": "built-ins/AsyncFromSyncIteratorPrototype/throw/throw-result-poisoned-wrapper.js",
       "source_sha256": "84271692c8db1fd63ab60b90d9ae02b555251e88f7e0fc98aac279b90f3f3623",
       "status": "failed",
-      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 1037, serial: 1732 })) })",
+      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 1037, serial: 1705 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -272,7 +276,7 @@
       "path": "built-ins/AsyncFunction/AsyncFunction-is-subclass.js",
       "source_sha256": "8007dcefff45bfca251ae938d14dba82056bae9118e19f94223746652b37afe0",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 896, serial: 1016 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 896, serial: 1004 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -280,7 +284,7 @@
       "path": "built-ins/BigInt/is-a-constructor.js",
       "source_sha256": "6d689f5680805e2495018e6825111a358cee4b3bd5482b2be8274c398372206e",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 903, serial: 1031 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 903, serial: 1023 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -288,7 +292,7 @@
       "path": "built-ins/BigInt/prototype/toString/length.js",
       "source_sha256": "468a4136acefddea7f35af2a268cdebedec7f4139fa36ba3b69a1d8fd2722800",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 954, serial: 1341 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 954, serial: 1290 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -296,7 +300,7 @@
       "path": "built-ins/BigInt/prototype/toString/prototype-call.js",
       "source_sha256": "0592afd9cb790bb6fba1bf1302c1737ccc0457d1b6d2487450633c16b65d6df6",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1030 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1015 })) })); expected None",
       "assertions": 2,
       "cleanup": true
     },
@@ -304,7 +308,7 @@
       "path": "built-ins/Date/UTC/fp-evaluation-order.js",
       "source_sha256": "aed1e6ce51bb7b3c6ae503989be3d8654432b064ece38677d03aeb3eb9876c09",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 895, serial: 1005 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 895, serial: 997 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -312,7 +316,7 @@
       "path": "built-ins/Date/prototype/toTemporalInstant/length.js",
       "source_sha256": "3d82a54bbd80e4b9a4dd6ced9183a05c309ed4032a6cf00adc6646a86f14b117",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 935, serial: 1168 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 935, serial: 1120 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -320,7 +324,7 @@
       "path": "built-ins/Date/prototype/toTemporalInstant/name.js",
       "source_sha256": "d3a6a4e3949aa2948ca0176ade275172cbe73ef952618b77cc50cc690742c628",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 935, serial: 1168 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"null or undefined\", value: Object(Js(Handle { heap: 2, index: 935, serial: 1120 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -328,7 +332,7 @@
       "path": "built-ins/Date/prototype/toTemporalInstant/not-a-constructor.js",
       "source_sha256": "a296cc79724642101c2fd3d6b99022eb576b11668b7bdf42431b1520e59db860",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"isConstructor invoked with a non-function value\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1012 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"isConstructor invoked with a non-function value\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1003 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -336,7 +340,7 @@
       "path": "built-ins/Date/prototype/toTemporalInstant/prop-desc.js",
       "source_sha256": "3ce2cdd4f9c637855ac5a8137d91f8078f4e72f60e09c92608494de0f0ffbbb3",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 935, serial: 1181 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 935, serial: 1133 })) })); expected None",
       "assertions": 2,
       "cleanup": true
     },
@@ -344,7 +348,7 @@
       "path": "built-ins/Date/prototype/toTemporalInstant/this-value-invalid-date.js",
       "source_sha256": "a0d0fc1fb3fc15ddf2090ecf8ce410eaf5dd0a3305774fc52421216d59a8e791",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 901, serial: 1026 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 901, serial: 1016 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -352,7 +356,7 @@
       "path": "built-ins/Date/prototype/toTemporalInstant/this-value-non-date.js",
       "source_sha256": "84db93ce07e30fe285dabdd763319c42ece8c86c1ba8bb24b46646473f3a7cf1",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1017 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1009 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -360,7 +364,7 @@
       "path": "built-ins/Date/prototype/toTemporalInstant/this-value-non-object.js",
       "source_sha256": "19a7d90b699f2fc421d647a557e23e40827cf1f4e182dc540205e4101e66e463",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 895, serial: 1004 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 895, serial: 996 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -368,7 +372,7 @@
       "path": "built-ins/Date/prototype/toTemporalInstant/this-value-valid-date.js",
       "source_sha256": "33be791d8821b1c7a819e5db9d6ddc2f9524cbe7679efc4c7ad0cbbb20e62c7c",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"value is not callable\", value: Object(Js(Handle { heap: 2, index: 896, serial: 1005 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"value is not callable\", value: Object(Js(Handle { heap: 2, index: 896, serial: 997 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -376,7 +380,7 @@
       "path": "built-ins/Function/prototype/bind/instance-length-default-value.js",
       "source_sha256": "d80921512bc6b38a6d0c733a43eea2abbfa5759678f74c5aac7230ec934037c3",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 914, serial: 1204 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 914, serial: 1104 })) })); expected None",
       "assertions": 8,
       "cleanup": true
     },
@@ -384,7 +388,7 @@
       "path": "built-ins/Function/prototype/toString/S15.3.4.2_A11.js",
       "source_sha256": "2072d2a4fc9c764676ced362cc13a9e8ebcc1168d36711d1801e31a1f0e8ff35",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 895, serial: 1012 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 895, serial: 998 })) })); expected None",
       "assertions": 2,
       "cleanup": true
     },
@@ -392,7 +396,7 @@
       "path": "built-ins/Function/prototype/toString/method-computed-property-name.js",
       "source_sha256": "f4a7b99eb83bcaceb28b952965a7d04137f7ae5004bdecd31fcba1ba1d115866",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"Conforms to NativeFunction Syntax: \\\"undefined\\\" ([ { a(){} }.a ](){ })\", value: Object(Js(Handle { heap: 2, index: 1266, serial: 2968 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"Conforms to NativeFunction Syntax: \\\"undefined\\\" ([ { a(){} }.a ](){ })\", value: Object(Js(Handle { heap: 2, index: 1266, serial: 2927 })) })); expected None",
       "assertions": 2,
       "cleanup": true
     },
@@ -400,7 +404,7 @@
       "path": "built-ins/GeneratorPrototype/constructor.js",
       "source_sha256": "3393eef304fc3e2abf715a59c0c140fa264e68adfbb9bdb693ce06d41c40f639",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 946, serial: 1311 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 946, serial: 1252 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -408,7 +412,7 @@
       "path": "built-ins/Map/Symbol.species/length.js",
       "source_sha256": "2fd66847443106b1ee1cd469bbf3a65458c44d8281c9686ea3a44f93dc171318",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 955, serial: 1353 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 955, serial: 1298 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -416,7 +420,7 @@
       "path": "built-ins/Map/Symbol.species/symbol-species-name.js",
       "source_sha256": "5552db38ba1a9ecb8cdad2d2fd7921831026151d3e1676fc4ac058e82cf0e0b0",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 896, serial: 1015 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 896, serial: 1003 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -424,7 +428,7 @@
       "path": "built-ins/Object/assign/assign-length.js",
       "source_sha256": "a2969b2af317f28fabfcf4cbff24f16a5e33cff3f21fd20abe9d8af434bf6a21",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 954, serial: 1340 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 954, serial: 1290 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -432,7 +436,7 @@
       "path": "built-ins/Object/entries/tamper-with-global-object.js",
       "source_sha256": "4f0a9bd02c8733a08a30d313aff90d98a20c78a52c19976b22b0b86892ffdd31",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 901, serial: 1028 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 901, serial: 1014 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -440,7 +444,7 @@
       "path": "built-ins/Object/getOwnPropertyDescriptors/tamper-with-global-object.js",
       "source_sha256": "7f26dd5d6a7e8f58d4be4298f910ff01c8def8d5d295dd5938123486f3ba2b77",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1018 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1003 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -448,7 +452,7 @@
       "path": "built-ins/Object/prototype/toString/symbol-tag-array-builtin.js",
       "source_sha256": "0e8f8e0e6388fa727ccae3cde5f85052ddfc6a37fb911e9a5f075a6838733169",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 898, serial: 1062 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 898, serial: 1028 })) })); expected None",
       "assertions": 2,
       "cleanup": true
     },
@@ -456,7 +460,7 @@
       "path": "built-ins/Object/prototype/toString/symbol-tag-non-str-bigint.js",
       "source_sha256": "ceba2d3f4f4a9e1e8349496948382b990df9efbd442b2fa6543651d24a3236c1",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1032 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1011 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -464,7 +468,7 @@
       "path": "built-ins/Object/prototype/toString/symbol-tag-non-str-builtin.js",
       "source_sha256": "315a6475218ca742518c73f688742570dc5b62bdc25597b1e8af9ecdb3ebcee0",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 895, serial: 1014 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 895, serial: 1000 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -472,7 +476,7 @@
       "path": "built-ins/Object/values/tamper-with-global-object.js",
       "source_sha256": "f6ba4fe0aa65d7e7eccd05aa36bbe029e85dc6331387d9dbcf1da425dd146d03",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 901, serial: 1028 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 901, serial: 1014 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -480,7 +484,7 @@
       "path": "built-ins/Promise/all/capability-resolve-throws-no-close.js",
       "source_sha256": "eac369f30599620b7372127f745c8eb183efa84d51cdf4297e779225ae2b1601",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 929, serial: 1134 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 929, serial: 1112 })) })",
       "assertions": 2,
       "cleanup": true
     },
@@ -488,7 +492,7 @@
       "path": "built-ins/Promise/all/invoke-resolve-error-close.js",
       "source_sha256": "90e6f3f1805a706f3ebb6e66a61680b245621e54e5e76a3b9a578d06dc60773d",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 920, serial: 1090 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 920, serial: 1073 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -496,7 +500,7 @@
       "path": "built-ins/Promise/all/invoke-then-error-close.js",
       "source_sha256": "eade08cfcddf0208bb611bb564e54c47d3547f33db646acfa9a9059ca10c9bad",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 931, serial: 1144 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 931, serial: 1119 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -504,7 +508,7 @@
       "path": "built-ins/Promise/all/invoke-then-get-error-close.js",
       "source_sha256": "ada944764ac27d80562c6c092423128c133251a5b663e7a1a3c51f7aad57bc0d",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 931, serial: 1141 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 931, serial: 1116 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -512,7 +516,7 @@
       "path": "built-ins/Promise/all/iter-next-val-err-no-close.js",
       "source_sha256": "b66f51763db2bd496b6257381257cf91df22d168082a7825bde4b128c3161652",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1004 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 897, serial: 999 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -520,7 +524,7 @@
       "path": "built-ins/Promise/all/iter-step-err-no-close.js",
       "source_sha256": "e03d2bff4c51afe9955e6bc11638a6d445b7e9f850d99e239a8c9a3a9ebd2a76",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1004 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 897, serial: 999 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -528,7 +532,7 @@
       "path": "built-ins/Promise/allSettled/capability-resolve-throws-no-close.js",
       "source_sha256": "13b66e098486cd94cf36ed74711cb550c40d13db76bdeae99a489eedafafa27f",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 930, serial: 1134 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 930, serial: 1116 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -536,7 +540,7 @@
       "path": "built-ins/Promise/allSettled/invoke-then-error-close.js",
       "source_sha256": "1faad576c2086a8a12a66a78a2db72238d1d4cc71c63bfca36cc4ba79062cf75",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 930, serial: 1129 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 930, serial: 1112 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -544,7 +548,7 @@
       "path": "built-ins/Promise/allSettled/invoke-then-get-error-close.js",
       "source_sha256": "9dc072358c8a615ae746ea0c76b72ba6d82f38cff611e0875862ef4d8cc5da87",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 931, serial: 1139 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 931, serial: 1119 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -552,7 +556,7 @@
       "path": "built-ins/Promise/allSettled/iter-next-val-err-no-close.js",
       "source_sha256": "ffba8dedb9487c7678a09dcd78f03149358f45b02c9aac6efac81fce25964976",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1004 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 897, serial: 999 })) })",
       "assertions": 2,
       "cleanup": true
     },
@@ -560,7 +564,7 @@
       "path": "built-ins/Promise/allSettled/iter-step-err-no-close.js",
       "source_sha256": "bb4510ef15bd1113320d136604c277d94d60a4514a4faea0e879efaac0a46df4",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1004 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 897, serial: 999 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -568,7 +572,7 @@
       "path": "built-ins/Promise/race/invoke-then-error-close.js",
       "source_sha256": "1d9892ddd044543eb9c982e3e57171f86d2c88682ef832361cabb3c847bd110c",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 926, serial: 1120 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 926, serial: 1100 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -576,7 +580,7 @@
       "path": "built-ins/Promise/race/invoke-then-get-error-close.js",
       "source_sha256": "5310bd5f2702e488fbd0fdbf3683422fb8f9233704ebc057f2d90d4c84039355",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 927, serial: 1131 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 927, serial: 1106 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -584,7 +588,7 @@
       "path": "built-ins/Promise/race/iter-next-val-err-no-close.js",
       "source_sha256": "682fc7935313a939c1779d95486e93f13cf39d693ce6daa088e46a7ed78eafbf",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1004 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 897, serial: 999 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -592,7 +596,7 @@
       "path": "built-ins/Promise/race/iter-step-err-no-close.js",
       "source_sha256": "5299a0915eb9aafc6fab8591acb83a1e5f9d794f84eae1844dcff6f11e0adacf",
       "status": "failed",
-      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1004 })) })",
+      "reason": "Thrown(Exception { name: Some(\"Test262Error\"), message: \"\", value: Object(Js(Handle { heap: 2, index: 897, serial: 999 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -600,7 +604,7 @@
       "path": "built-ins/Promise/try/avoids-wrap-for-subclass.js",
       "source_sha256": "96c263037c9be38105ab34d20bef4a5cbf17c437d6258828483e3201cffa854c",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 923, serial: 1128 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 923, serial: 1111 })) })); expected None",
       "assertions": 2,
       "cleanup": true
     },
@@ -608,7 +612,7 @@
       "path": "built-ins/Promise/try/avoids-wrap.js",
       "source_sha256": "bbcb3cb7f9c20c7042e85b28a5c12d02f16d61e17d47cddbb401e12c31f37342",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 915, serial: 1083 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 915, serial: 1069 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -616,7 +620,7 @@
       "path": "built-ins/RegExp/named-groups/unicode-match.js",
       "source_sha256": "bb35cd56f0748fa6b2a3f3dcf6d66d962863ce0ef6e13cb9e54a491e36ca9fd5",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 1016, serial: 3116 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 1016, serial: 2871 })) })); expected None",
       "assertions": 30,
       "cleanup": true
     },
@@ -624,7 +628,7 @@
       "path": "built-ins/RegExp/prototype/Symbol.replace/coerce-global.js",
       "source_sha256": "6a86894c0a3e7a8ac9ea101ac6c93a9e660674fdfbd7c7c0f924023d92d1f336",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"print is not defined\", value: Object(Js(Handle { heap: 2, index: 895, serial: 996 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"print is not defined\", value: Object(Js(Handle { heap: 2, index: 895, serial: 993 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -632,7 +636,7 @@
       "path": "built-ins/Set/Symbol.species/length.js",
       "source_sha256": "bc326716fbecf91a3d77d12c553dc32f482a4813da2db0c12bd6e60db2baf488",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 955, serial: 1353 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 955, serial: 1298 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -640,7 +644,7 @@
       "path": "built-ins/Set/Symbol.species/symbol-species-name.js",
       "source_sha256": "d592c01cd1a61264b8f6d5ee0fe89db13b039cbda6bf70493a2bc829f00751ab",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 896, serial: 1015 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 896, serial: 1003 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -648,7 +652,7 @@
       "path": "built-ins/Set/prototype/intersection/converts-negative-zero.js",
       "source_sha256": "663ea357ae54194e36672532badab080d6b955136677175344fa2f6e07352e96",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 919, serial: 1139 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 919, serial: 1116 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -656,7 +660,7 @@
       "path": "built-ins/Set/prototype/symmetricDifference/converts-negative-zero.js",
       "source_sha256": "667503c54c000ca9fb7665a330e46d064b37dbeb42f2242057ba241c46ab354c",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 920, serial: 1143 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 920, serial: 1120 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -664,7 +668,7 @@
       "path": "built-ins/Set/prototype/union/converts-negative-zero.js",
       "source_sha256": "ec0a72256a7d393cf5c12c3b74c56a1e2fac2bf80934dca722474c028da395a9",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 918, serial: 1129 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 918, serial: 1106 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -672,7 +676,7 @@
       "path": "built-ins/String/prototype/match/cstm-matcher-on-bigint-primitive.js",
       "source_sha256": "e4655ab8abca63f765cc6e78c2daf672de85cb752dbb05b8d5512d6ca16b52ec",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1026 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1013 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -680,7 +684,7 @@
       "path": "built-ins/String/prototype/match/cstm-matcher-on-boolean-primitive.js",
       "source_sha256": "a5ad19dc8ea1c07a94a155432320a3c83d6d25f73aa17b2ef100fecc121f0885",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1026 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1013 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -688,7 +692,7 @@
       "path": "built-ins/String/prototype/match/cstm-matcher-on-number-primitive.js",
       "source_sha256": "12206e93ad42429c054063b92f0e290bb628781fc7f49924054d617fc31e6760",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1026 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1013 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -696,7 +700,7 @@
       "path": "built-ins/String/prototype/match/cstm-matcher-on-string-primitive.js",
       "source_sha256": "b3cd13354f0acec6305838e7d2c7f7ea4d777f1e1fe21e7e751fe2c89938b9dc",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1026 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1013 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -704,7 +708,7 @@
       "path": "built-ins/String/prototype/matchAll/cstm-matchall-on-bigint-primitive.js",
       "source_sha256": "96a48e61317a227e1c899fa33a8aba1e623e1b816e7fd9eda3c891c9c266132e",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1026 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1013 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -712,7 +716,7 @@
       "path": "built-ins/String/prototype/matchAll/cstm-matchall-on-number-primitive.js",
       "source_sha256": "3755c553685f05b0312a579bc0a74627a77c556af7bafbbde5383a60307d437a",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1026 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1013 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -720,7 +724,7 @@
       "path": "built-ins/String/prototype/matchAll/cstm-matchall-on-string-primitive.js",
       "source_sha256": "c4e0436bc2a415ddcd1e63682b52b20b51774d5b53b8cad8306685cf2c2ec7cb",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1026 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1013 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -728,7 +732,7 @@
       "path": "built-ins/String/prototype/search/cstm-search-on-bigint-primitive.js",
       "source_sha256": "e5ac0819bf8c7bd3a8d989694dc70d383728419c3ae756812723bdaec7dc6493",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1026 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1013 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -736,7 +740,7 @@
       "path": "built-ins/String/prototype/search/cstm-search-on-boolean-primitive.js",
       "source_sha256": "cbae2aea722e36b5ea93be76d80e5cca2c2158170c90b60d62adfe6be3da1d41",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1026 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1013 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -744,7 +748,7 @@
       "path": "built-ins/String/prototype/search/cstm-search-on-number-primitive.js",
       "source_sha256": "e7d894dd30502f2ab1f965f0d92f88e0143a55ace9e23b51da6e6bd3cf2ad448",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1026 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1013 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -752,7 +756,7 @@
       "path": "built-ins/String/prototype/search/cstm-search-on-string-primitive.js",
       "source_sha256": "6d7ded07a14a3846286bd37f8fc02e5b43a176f590dd4b32e5421d46f5941d1b",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1026 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"should not be called\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1013 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -760,7 +764,7 @@
       "path": "built-ins/String/symbol-wrapping.js",
       "source_sha256": "3364bed7a55fb8ecb12cbb8f7677a4a4cedbc1dddcfb9520c9d43ee73dd7cc43",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1020 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1011 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -768,7 +772,7 @@
       "path": "built-ins/Symbol/is-constructor.js",
       "source_sha256": "b37a7d944d431720eb365e60b542f467c1d8379398700b82c8f85b1f629d8dde",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 903, serial: 1028 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 903, serial: 1022 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -776,7 +780,7 @@
       "path": "built-ins/Symbol/species/builtin-getter-name.js",
       "source_sha256": "68386a34310603b7aec0f3db44771b836ad5c5abb55bc4fea1e3fe67e133d017",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 903, serial: 1048 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 903, serial: 1032 })) })); expected None",
       "assertions": 2,
       "cleanup": true
     },
@@ -784,7 +788,7 @@
       "path": "built-ins/TypedArray/prototype/byteLength/resizable-buffer-assorted.js",
       "source_sha256": "74a3225af806b17b8508cbdc6c5b3431b9da42ee3f4fed027f2968eb48c5e617",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 954, serial: 1242 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 954, serial: 1190 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -816,7 +820,7 @@
       "path": "built-ins/TypedArray/prototype/length/resizable-buffer-assorted.js",
       "source_sha256": "10fe697a22beb8786be7515102ad2b5c62b0d44745be5b3b1ccc2eb72ad0500d",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 954, serial: 1242 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 954, serial: 1190 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -824,7 +828,7 @@
       "path": "built-ins/TypedArrayConstructors/ctors/typedarray-arg/throw-type-error-before-custom-proto-access.js",
       "source_sha256": "a1578ce1471f7624485d289a5c019368017346a0e4498d93dc2285833e3821d1",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed (Testing with Float64Array and makePassthrough.)\", value: Object(Js(Handle { heap: 2, index: 991, serial: 1532 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed (Testing with Float64Array and makePassthrough.)\", value: Object(Js(Handle { heap: 2, index: 991, serial: 1422 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -848,7 +852,7 @@
       "path": "language/destructuring/binding/keyed-destructuring-property-reference-target-evaluation-order-with-bindings.js",
       "source_sha256": "4275cb382a19e0d2042e2e7da02f9e0203b5db4ec7367f77aae7626e8b3c65e4",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 918, serial: 1125 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 918, serial: 1119 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -856,7 +860,7 @@
       "path": "language/eval-code/direct/arrow-fn-body-cntns-arguments-func-decl-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
       "source_sha256": "0ffff8e2ef3adc4c98d6c8da624872c513636f6acbd49bce4943ba0d01fe0026",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 904, serial: 1045 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 904, serial: 1026 })) })); expected None",
       "assertions": 4,
       "cleanup": true
     },
@@ -864,7 +868,7 @@
       "path": "language/eval-code/direct/arrow-fn-body-cntns-arguments-func-decl-arrow-func-declare-arguments-assign.js",
       "source_sha256": "b4c5fc945ea60524c3e45986a7412bcf298b98eeb01348a8023b3a47f6b4c6a9",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 901, serial: 1030 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 901, serial: 1015 })) })); expected None",
       "assertions": 3,
       "cleanup": true
     },
@@ -872,7 +876,7 @@
       "path": "language/eval-code/direct/arrow-fn-body-cntns-arguments-lex-bind-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
       "source_sha256": "39f28f268b0c69aceb022bef74c2575daedc4781fef447a6702c688ef916e8b2",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 902, serial: 1039 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 902, serial: 1021 })) })); expected None",
       "assertions": 4,
       "cleanup": true
     },
@@ -880,7 +884,7 @@
       "path": "language/eval-code/direct/arrow-fn-body-cntns-arguments-lex-bind-arrow-func-declare-arguments-assign.js",
       "source_sha256": "177cb04c0178b869aff8374c4c1454455740fcffce0eda3ec8a24c8cf4713270",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1024 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1010 })) })); expected None",
       "assertions": 3,
       "cleanup": true
     },
@@ -888,7 +892,7 @@
       "path": "language/eval-code/direct/arrow-fn-body-cntns-arguments-var-bind-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
       "source_sha256": "53c63ee086de34c0273a5d797aca2ef6749361678a5003524a35c9635f9653e2",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 902, serial: 1039 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 902, serial: 1021 })) })); expected None",
       "assertions": 4,
       "cleanup": true
     },
@@ -896,7 +900,7 @@
       "path": "language/eval-code/direct/arrow-fn-body-cntns-arguments-var-bind-arrow-func-declare-arguments-assign.js",
       "source_sha256": "82ff133b39849ec8664517ebd8ccb6a5d18b709c8885902fba0a1800a2fd4346",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1024 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1010 })) })); expected None",
       "assertions": 3,
       "cleanup": true
     },
@@ -904,7 +908,7 @@
       "path": "language/eval-code/direct/arrow-fn-no-pre-existing-arguments-bindings-are-present-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
       "source_sha256": "808d0ddd24826a5f0071904d40ec3bdb870ecf7f57a265a8e1d689a741c3f007",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1028 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1014 })) })); expected None",
       "assertions": 3,
       "cleanup": true
     },
@@ -912,7 +916,7 @@
       "path": "language/eval-code/direct/arrow-fn-no-pre-existing-arguments-bindings-are-present-arrow-func-declare-arguments-assign.js",
       "source_sha256": "122dcbcc4bbca61c77a234d134fdb145259a77fc0d30e9e2d497614b10efb4a2",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1024 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1010 })) })); expected None",
       "assertions": 3,
       "cleanup": true
     },
@@ -920,7 +924,7 @@
       "path": "language/eval-code/direct/cptn-nrml-empty-for.js",
       "source_sha256": "c33556bc192a01cf0e06929b99d31de892a9e35137222c336dff4aff9fa47d62",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: eval(\\\"for(false;false;false);\\\") === undefined. Actual: false\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1006 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: eval(\\\"for(false;false;false);\\\") === undefined. Actual: false\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1003 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -928,7 +932,7 @@
       "path": "language/eval-code/indirect/cptn-nrml-empty-for.js",
       "source_sha256": "0560f59b0a6bdff39ec713c7188a560a55a7695adc198f03f792d6396824fb60",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1006 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1000 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -936,7 +940,7 @@
       "path": "language/expressions/assignment/S11.13.1_A6_T1.js",
       "source_sha256": "3237b19c38d727e37cb184fb0c760c8996622e4fd9e53c39ee8ae5305d03b4d6",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === undefined. Actual: 1\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1027 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === undefined. Actual: 1\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1022 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -944,7 +948,7 @@
       "path": "language/expressions/assignment/S11.13.1_A6_T2.js",
       "source_sha256": "469ebce92c821387a71da2e244ff90aa94a94740b32233691b3aacc2510142c9",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 1\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1027 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 1\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1022 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -952,7 +956,7 @@
       "path": "language/expressions/assignment/S11.13.1_A6_T3.js",
       "source_sha256": "9d8da34aa6fe0f24e9c5a4df1aedf1e7ac3de694a69f385fd0cf2ba7bbfbf1da",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: scope.x === 2. Actual: 1\", value: Object(Js(Handle { heap: 2, index: 901, serial: 1017 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: scope.x === 2. Actual: 1\", value: Object(Js(Handle { heap: 2, index: 901, serial: 1014 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -960,7 +964,7 @@
       "path": "language/expressions/assignment/destructuring/iterator-destructuring-property-reference-target-evaluation-order.js",
       "source_sha256": "7c1c0c18ff337cc30318cb7cb12dbd6d63e8bfb2cddea54ac77aed0cc65c2bbf",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 935, serial: 1177 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 935, serial: 1134 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -968,7 +972,7 @@
       "path": "language/expressions/assignment/destructuring/keyed-destructuring-property-reference-target-evaluation-order-with-bindings.js",
       "source_sha256": "71b83c3a9b80eda101a3e6f3b75b2168d7da7b5dfca6868e227d961f3d36601d",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 931, serial: 1200 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 931, serial: 1188 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -976,7 +980,7 @@
       "path": "language/expressions/assignment/destructuring/keyed-destructuring-property-reference-target-evaluation-order.js",
       "source_sha256": "cce2bf12e70f0ae3e97e97ba27f56c7ea24bdfc0c9a9598b8c63144060e742a3",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 933, serial: 1173 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 933, serial: 1126 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -984,7 +988,7 @@
       "path": "language/expressions/assignment/target-member-computed-reference-null.js",
       "source_sha256": "b646d15689282679c2ac1846df6a1da5ac695f7a2225cbceede58eecc5e41558",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 920, serial: 1086 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 920, serial: 1071 })) })); expected None",
       "assertions": 2,
       "cleanup": true
     },
@@ -992,7 +996,7 @@
       "path": "language/expressions/assignment/target-member-computed-reference-undefined.js",
       "source_sha256": "cf971b5b03ea2bb6bc59274564bcf1e9ee3fcbdc98ce75e0982abfe1e4a9a4d5",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 920, serial: 1086 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 920, serial: 1071 })) })); expected None",
       "assertions": 2,
       "cleanup": true
     },
@@ -1000,7 +1004,7 @@
       "path": "language/expressions/assignment/target-member-computed-reference.js",
       "source_sha256": "ca57bd69ceae22dad49e9b1f8461352003deed7635c338fa0d45b30ceea976ef",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 924, serial: 1102 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 924, serial: 1084 })) })); expected None",
       "assertions": 2,
       "cleanup": true
     },
@@ -1008,7 +1012,7 @@
       "path": "language/expressions/assignment/target-member-identifier-reference-null.js",
       "source_sha256": "ea88b520fe6948f1ccfb3d29933541519ca81aa24b4eb1ce9f5073f63e3cc84c",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1023 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1013 })) })); expected None",
       "assertions": 2,
       "cleanup": true
     },
@@ -1016,7 +1020,7 @@
       "path": "language/expressions/assignment/target-member-identifier-reference-undefined.js",
       "source_sha256": "5c7621a7c334acacf2fa52c7843e666d6076953b07f00f844ecf2d5a44d42810",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1023 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1013 })) })); expected None",
       "assertions": 2,
       "cleanup": true
     },
@@ -1024,7 +1028,7 @@
       "path": "language/expressions/assignment/target-super-computed-reference.js",
       "source_sha256": "f92f21ff24a525cf95b9fb1d4d7ac4876598c5cead666c10e34df7517f4cab93",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 956, serial: 1216 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 956, serial: 1192 })) })); expected None",
       "assertions": 2,
       "cleanup": true
     },
@@ -1032,7 +1036,7 @@
       "path": "language/expressions/bitwise-and/order-of-evaluation.js",
       "source_sha256": "a4338e163210e7d9e1a1aeeed4cd4b85957d2c4b3fc36dfe51aa0307e46d0a04",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1388 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1313 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -1040,7 +1044,7 @@
       "path": "language/expressions/bitwise-or/order-of-evaluation.js",
       "source_sha256": "5b053ab580e6c585fcda2873cfe25db91050cdfd6a1a946ce674f8e17a8a411e",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1388 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1313 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -1048,15 +1052,47 @@
       "path": "language/expressions/bitwise-xor/order-of-evaluation.js",
       "source_sha256": "23c468dcd6675dfdef29b75f54dfe1456176ac53dd6b9520934c5287379fc03c",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1388 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1313 })) })); expected None",
       "assertions": 9,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/call/tco-non-eval-function-dynamic.js",
+      "source_sha256": "8d381595908fa414b6aaa027f3386bf922220738e1902b16037f08f836b1c803",
+      "status": "failed",
+      "reason": "Err(Runtime(\"call depth limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/call/tco-non-eval-function.js",
+      "source_sha256": "d87d82ebfe86486a7b96a1fec941feb15f6a106ee21014576d1c8e5829c66e4c",
+      "status": "failed",
+      "reason": "Err(Runtime(\"call depth limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/call/tco-non-eval-global.js",
+      "source_sha256": "f94189f89e34ede682bb5745abb28cb8dd75b60e1d5011037bfbc49b737d1cce",
+      "status": "failed",
+      "reason": "Err(Runtime(\"call depth limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/call/tco-non-eval-with.js",
+      "source_sha256": "d50ebf30dfa315ea5ba57fe555176a0ecbd393fe4515fcaf7ae52e8f256eebec",
+      "status": "failed",
+      "reason": "Err(Runtime(\"call depth limit\")); expected None",
+      "assertions": 0,
       "cleanup": true
     },
     {
       "path": "language/expressions/compound-assignment/S11.13.2_A6.10_T1.js",
       "source_sha256": "663688921461b65df33e93fbe4c6af84324ed50487b0c2220deea12cf1513fe2",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 5\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1027 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 5\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1022 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1064,7 +1100,7 @@
       "path": "language/expressions/compound-assignment/S11.13.2_A6.11_T1.js",
       "source_sha256": "716d02217c839a73f8fae9f516a07401a37146e22715c53e8d17e69293bbc68b",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 5\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1027 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 5\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1022 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1072,7 +1108,7 @@
       "path": "language/expressions/compound-assignment/S11.13.2_A6.1_T1.js",
       "source_sha256": "a553b08e009170f0263cc1f88541adef2f78e15852e2961950ef9c57de777948",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 12\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1027 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 12\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1022 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1080,7 +1116,7 @@
       "path": "language/expressions/compound-assignment/S11.13.2_A6.2_T1.js",
       "source_sha256": "15e1a7f12297c0b524719fb4ba6fc5e78ae4d6b5e3c7825a06506864c9a06afa",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 5\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1027 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 5\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1022 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1088,7 +1124,7 @@
       "path": "language/expressions/compound-assignment/S11.13.2_A6.3_T1.js",
       "source_sha256": "632eb4b76bb421667c2301157d704d7cac4029d40a084050fc7deb7a59f5a053",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 3\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1027 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 3\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1022 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1096,7 +1132,7 @@
       "path": "language/expressions/compound-assignment/S11.13.2_A6.4_T1.js",
       "source_sha256": "a2bc57d8ce94b0880de3d88464ba904ebe5080ffa30cc1b3e3844917bbb1cc67",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 4\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1027 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 4\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1022 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1104,7 +1140,7 @@
       "path": "language/expressions/compound-assignment/S11.13.2_A6.5_T1.js",
       "source_sha256": "fbc32293d12565925bf001a235bc3f2f3f62cc733c14eb12bde9d9af60d11e05",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 4\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1027 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 4\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1022 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1112,7 +1148,7 @@
       "path": "language/expressions/compound-assignment/S11.13.2_A6.6_T1.js",
       "source_sha256": "8a827e48c5cacb17e9992be069f908b885c7c718d5a4300bd5dd323aba2e200a",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 8\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1027 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 8\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1022 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1120,7 +1156,7 @@
       "path": "language/expressions/compound-assignment/S11.13.2_A6.7_T1.js",
       "source_sha256": "50a317b028f229eaa99e01102e43f372939b6732cbf096c9719822626763d504",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 4\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1027 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 4\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1022 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1128,7 +1164,7 @@
       "path": "language/expressions/compound-assignment/S11.13.2_A6.8_T1.js",
       "source_sha256": "e4caed881462b4903e856c0f03b8c032c5c1d8f8000814ceaf24b3367ea4f743",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 4\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1027 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 4\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1022 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1136,7 +1172,7 @@
       "path": "language/expressions/compound-assignment/S11.13.2_A6.9_T1.js",
       "source_sha256": "0c8c65e0d65110166ea3705ff5fa1365a0d4025ca8b6784befe4cc84a045e889",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 1\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1027 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: innerX === 2. Actual: 1\", value: Object(Js(Handle { heap: 2, index: 906, serial: 1022 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1144,7 +1180,7 @@
       "path": "language/expressions/delete/11.4.1-4.a-8.js",
       "source_sha256": "38e999a441859526e51ef51b4e29115e8c74a4ddd0e669bf08d1bbce7b62c5b9",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 895, serial: 1000 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 895, serial: 995 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -1152,7 +1188,7 @@
       "path": "language/expressions/delete/member-identifier-reference-null.js",
       "source_sha256": "59759af7ecaa077b415716ee47689e2df02042fc35f801201b1fd36a98cfeebd",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1014 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1007 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -1160,7 +1196,7 @@
       "path": "language/expressions/delete/member-identifier-reference-undefined.js",
       "source_sha256": "03ff124899a1604c019257a7eeaebbf44d24807c13e75340ba847cdbd565e197",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1014 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1007 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -1168,7 +1204,7 @@
       "path": "language/expressions/division/order-of-evaluation.js",
       "source_sha256": "ef8bfdeeb0e183279cf763e28cba6dafdb55346bdaf51e1e85bf908b3a3e0ec0",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1388 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1313 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -1176,7 +1212,7 @@
       "path": "language/expressions/exponentiation/order-of-evaluation.js",
       "source_sha256": "9595ddd31db79f11f168762688233e8df5ed19f0dbef9d99bd57dc8792f4e8cf",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1388 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1313 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -1184,7 +1220,7 @@
       "path": "language/expressions/left-shift/order-of-evaluation.js",
       "source_sha256": "a336882cf8cc8934524d1304d2195463bff27e7a836415cd18614f0c8cbf55b5",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1388 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1313 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -1192,7 +1228,7 @@
       "path": "language/expressions/modulus/order-of-evaluation.js",
       "source_sha256": "4996f57f9af2e24b2cef34c0b9343bf7189e55d070bff29bc7c8480408d251a8",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1388 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1313 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -1200,7 +1236,7 @@
       "path": "language/expressions/multiplication/order-of-evaluation.js",
       "source_sha256": "b0a915fdbdcb06857ce1a58dfa6c5591ecb03de9cbd258cc3d8879110912c372",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1388 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1313 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -1208,7 +1244,7 @@
       "path": "language/expressions/right-shift/order-of-evaluation.js",
       "source_sha256": "078769cea1f55a1ac207767540048db39635a5af2d6a048563c8eb9390fca092",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1388 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1313 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -1216,7 +1252,7 @@
       "path": "language/expressions/subtraction/order-of-evaluation.js",
       "source_sha256": "cd7da6d6b5a97bd25816d9ae7125401dd51910ce1ab25da2d5a488a3808505cc",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1388 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1313 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -1224,7 +1260,7 @@
       "path": "language/expressions/super/prop-expr-getsuperbase-before-topropertykey-getvalue.js",
       "source_sha256": "948eb977696ff974467c3d77343d4faafda9b0fc7b4ebf08c5dabefbde437ab7",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 907, serial: 1059 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 907, serial: 1044 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -1232,7 +1268,7 @@
       "path": "language/expressions/super/prop-expr-getsuperbase-before-topropertykey-putvalue-compound-assign.js",
       "source_sha256": "6eb42126df222d91b5fc5653defad0fe4768f439c211b44bec8b1dbb0591bb21",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 907, serial: 1059 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 907, serial: 1044 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -1240,7 +1276,7 @@
       "path": "language/expressions/super/prop-expr-getsuperbase-before-topropertykey-putvalue-increment.js",
       "source_sha256": "b36bdab2418846719f04b694cdeec77fe91e441e690a84998c8c5ec32ca5360a",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 907, serial: 1059 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 907, serial: 1044 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -1248,7 +1284,7 @@
       "path": "language/expressions/super/prop-expr-getsuperbase-before-topropertykey-putvalue.js",
       "source_sha256": "2ab526b7c840926616d20b057e545121d01cadff822cce1dfa4eff374bb2ce19",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 913, serial: 1073 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 913, serial: 1060 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -1256,7 +1292,7 @@
       "path": "language/expressions/unsigned-right-shift/order-of-evaluation.js",
       "source_sha256": "aa433258256daf2b344b32b531f0cb933cb62f0bc24e082abf711a2a206c71c4",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1388 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 997, serial: 1313 })) })); expected None",
       "assertions": 9,
       "cleanup": true
     },
@@ -1272,7 +1308,7 @@
       "path": "language/statements/async-generator/return-undefined-implicit-and-explicit.js",
       "source_sha256": "c098706621623114a96578462d96a39fb399f3c255a6dd7873195c03b2f72ba6",
       "status": "failed",
-      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 979, serial: 1753 })) })",
+      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 979, serial: 1674 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -1280,7 +1316,7 @@
       "path": "language/statements/async-generator/yield-star-return-then-getter-ticks.js",
       "source_sha256": "27b5aa61c3c5ca4283cd92c75b9a70cbdc0c19d6dba80c74630253432519958f",
       "status": "failed",
-      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 908, serial: 1518 })) })",
+      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 908, serial: 1461 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -1288,7 +1324,7 @@
       "path": "language/statements/class/subclass/builtin-objects/Symbol/new-symbol-with-super-throws.js",
       "source_sha256": "586c24dc18bef934630684a475a03c76469abd319484a63a01c0f9a8074b12d6",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"class heritage not a constructor\", value: Object(Js(Handle { heap: 2, index: 896, serial: 998 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"class heritage not a constructor\", value: Object(Js(Handle { heap: 2, index: 896, serial: 996 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1296,7 +1332,7 @@
       "path": "language/statements/class/subclass/builtin-objects/Symbol/symbol-valid-as-extends-value.js",
       "source_sha256": "020081e78b883da0ab0196ffb08333fdf8e0b205d42c4c86a8d647b7152afefb",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"class heritage not a constructor\", value: Object(Js(Handle { heap: 2, index: 896, serial: 998 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"class heritage not a constructor\", value: Object(Js(Handle { heap: 2, index: 896, serial: 996 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1304,7 +1340,7 @@
       "path": "language/statements/for/cptn-expr-expr-iter.js",
       "source_sha256": "c6e07e6143f6c3dfcc6bce436e065b33e80b6cf0d4e5006aeb441064cd557f75",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1005 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1000 })) })); expected None",
       "assertions": 1,
       "cleanup": true
     },
@@ -1312,7 +1348,7 @@
       "path": "language/statements/for-await-of/async-from-sync-iterator-continuation-abrupt-completion-get-constructor.js",
       "source_sha256": "49ccb5d55b9f56e807319b2dea1720239a8639e5be8cbcf2195f41d1a769eb9d",
       "status": "failed",
-      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 946, serial: 1393 })) })",
+      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 946, serial: 1349 })) })",
       "assertions": 1,
       "cleanup": true
     },
@@ -1320,7 +1356,7 @@
       "path": "language/statements/try/completion-values.js",
       "source_sha256": "9ca9d0d7af85e5a300682c22ab258cf6339df9a2b0e537ea336dccdd1a64ae2a",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 901, serial: 1030 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 901, serial: 1019 })) })); expected None",
       "assertions": 3,
       "cleanup": true
     },
@@ -1336,7 +1372,7 @@
       "path": "language/types/number/S8.5_A10_T2.js",
       "source_sha256": "3eebe4e2fde43f1398a3818f4073f425b668f9a960429969e94bec4186d038b4",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"assignment refused\", value: Object(Js(Handle { heap: 2, index: 895, serial: 995 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"assignment refused\", value: Object(Js(Handle { heap: 2, index: 895, serial: 993 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1344,7 +1380,7 @@
       "path": "language/types/number/S8.5_A4_T2.js",
       "source_sha256": "da3f3da2e08943bd772bcd955e8a37af3cd3cfd35c2bdc9c4a12dc515045695b",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"assignment refused\", value: Object(Js(Handle { heap: 2, index: 895, serial: 995 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"assignment refused\", value: Object(Js(Handle { heap: 2, index: 895, serial: 993 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     },
@@ -1352,7 +1388,7 @@
       "path": "language/types/undefined/S8.1_A3_T2.js",
       "source_sha256": "4ae4d37ef2473f26a3af2363cb7a6aee9767d8b7cccf9e64de83f381d3870712",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"assignment refused\", value: Object(Js(Handle { heap: 2, index: 895, serial: 995 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"assignment refused\", value: Object(Js(Handle { heap: 2, index: 895, serial: 993 })) })); expected None",
       "assertions": 0,
       "cleanup": true
     }

@@ -32,6 +32,10 @@ pub struct VmStats {
     pub calls: u64,
     pub fallbacks: HashMap<&'static str, usize>,
     pub max_registers: u32,
+    /// Script bodies compiled (BYTECODE_VM.md, coverage step 13), and the reasons the
+    /// rest stayed on the tree-walker.
+    pub scripts: usize,
+    pub script_fallbacks: HashMap<&'static str, usize>,
 }
 
 /// Register-file limit across nested VM frames.
@@ -87,6 +91,33 @@ impl Engine<'_> {
             .cache
             .insert(key, (Rc::downgrade(body), chunk.clone()));
         chunk
+    }
+
+    /// The chunk for a Script body (§16.1.6), or `None` to run it on the tree-walker.
+    /// Scripts run once, so the chunk is not cached.
+    pub(super) fn vm_script_chunk(&mut self, body: &[Stmt]) -> Option<Rc<Chunk>> {
+        if self.bytecode.mode != EngineMode::Vm {
+            return None;
+        }
+        match bytecode::compile_script(body) {
+            Ok(chunk) => {
+                self.bytecode.stats.compiled += 1;
+                self.bytecode.stats.scripts += 1;
+                let max = &mut self.bytecode.stats.max_registers;
+                *max = (*max).max(chunk.registers);
+                Some(Rc::new(chunk))
+            }
+            Err(reason) => {
+                *self.bytecode.stats.fallbacks.entry(reason).or_default() += 1;
+                *self
+                    .bytecode
+                    .stats
+                    .script_fallbacks
+                    .entry(reason)
+                    .or_default() += 1;
+                None
+            }
+        }
     }
 
     /// Run a compiled body in its function environment `local` (already instantiated by

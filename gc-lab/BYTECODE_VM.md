@@ -878,3 +878,48 @@ arguments include a spread builds the argument list as an array (`ArrayPush` per
 list back from the array, so an iterator that throws midway leaves no partial call.
 Over the 600 sampled cases, 100.0% of function bodies compile; the remaining fallbacks are one
 `with` statement and one unsupported expression kind.
+
+### Stage 3, coverage step 13: top-level script code (2026-11-10)
+
+Until this step only function bodies ran on the VM. A Script (§16.1.6 ScriptEvaluation) always ran
+on the tree-walker, and most test262 cases are top-level code.
+
+- **Entry**: `Engine::execute` compiles the program with `bytecode::compile_script` and runs it
+  with `run_chunk(chunk, global)`. A script the compiler rejects stays on the tree-walker, so
+  nothing is ever evaluated as something close. The chunk is not cached, because a script runs once.
+- **GlobalDeclarationInstantiation (§16.1.7)** is not duplicated. `new_environment(None, program,
+  true)` already creates the global bindings: var and function names on the object record, and
+  top-level lexicals uninitialized on the declarative part. The chunk's `hoist` list instantiates
+  the top-level functions through the same `hoist_functions` the tree-walker uses. Every global
+  name (each VarDeclaredName at any depth and each top-level LexicallyDeclaredName) is
+  environment-resident, so it is reached by name (`GetName`, `ResolveName`/`SetRef`) and never
+  through a register. TDZ, const assignment and global-object properties therefore keep their
+  run-time checks. Only the lexical names of nested blocks get registers.
+- **Hatch policy change (functions too)**: an expression that touches no register binding used to
+  be hatched to the tree-walker unconditionally. At top level that is every expression, so the
+  first build ran 99% of script code on the tree-walker (callgrind on `decode_tiny.js`: 458 M
+  instructions on the tree, 452 M on the VM). `Compiler::native` now compiles such an expression
+  natively first. If the compiler rejects some construct, the partial code is rolled back (code,
+  constants, expressions, registers, handlers) and the expression is hatched as before. Anonymous
+  function definitions in `named` still hatch with their name (NamedEvaluation, §8.4.5). The
+  result is 424 M (-7%) with no tree-walker evaluation left in the profile.
+- **Script completion value**: unused. `execute` returns `()`, and eval code keeps its own path.
+- `js_check --vm-stats` prints a second line, `vm-script: scripts=N fallbacks=[...]`, which
+  `vmstats.sh` aggregates.
+
+Target cases (the five shared timeouts, wall time, release, idle machine):
+
+| case | tree | VM, step 13 |
+|---|---|---|
+| decodeURI S15.1.3.1_A2.5_T1 | 11.5 s, step limit | 14.9 s, **passes** (over the 10 s budget) |
+| decodeURIComponent S15.1.3.2_A2.5_T1 | 12.7 s, step limit | 14.3 s, **passes** (over the 10 s budget) |
+| copyWithin coerced-values-*-detached x3 | 10.8-13.6 s | 10.1-12.4 s |
+
+The step-limit failures are gone because the VM ticks on back edges and calls, not once per
+statement. In both buckets, the remaining time belongs to the object model, not to the
+evaluator. For decodeURI, global `var` reads and writes are property operations on the global
+object (`lookup_with_base` 18%, `reference_set` 12%), and each call builds a hash-map
+environment (`function_environment` 18%, `new_environment` 13%). For copyWithin, the
+harness's `makeArrayLike` and `copyIntoArrayBuffer` element loops run inside VM-compiled
+functions and spend their time in generic element get/set. Both buckets now need the stage 4
+note: dense elements and global/property caches.

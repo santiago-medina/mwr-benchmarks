@@ -553,6 +553,9 @@ impl<'host> Engine<'host> {
         self.global = Some(self.runtime.root(global)?);
         let result = self.frame(|e| {
             e.bootstrap(global)?;
+            if let Some(chunk) = e.vm_script_chunk(&program) {
+                return e.run_chunk(&chunk, global).map(|_| ());
+            }
             e.block(&program, global, false).map(|_| ())
         });
         if result.is_err() {

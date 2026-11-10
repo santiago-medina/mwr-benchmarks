@@ -373,6 +373,13 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - pe-bench (10 fixed RegExp property-escape cases, run alone): tree 37.1 s, VM 10.3 s (3.6x).
 - Full run on the VM: 47223/47708 pass (99.0%), +27 against full38. Failed 148 (-27), unsupported 337. Gained 27 (17 property-escape timeouts, 9 logical-assignment cases, 1 other), lost 0. The full run took ~10 min instead of ~39. Five timeouts remain on both engines: TypedArray copyWithin coerced-values-*-detached (3) and decodeURI/decodeURIComponent S15.1.3.x_A2.5_T1 (2); top-level script code still runs on the tree-walker.
 
+### Register VM stage 3: top-level script code (checkpoint 38, 2026-11-10)
+
+- Coverage step 13: top-level script code runs on the VM (ScriptEvaluation, §16.1.6). GlobalDeclarationInstantiation (§16.1.7) stays the tree-walker's, and the script's var, lexical and function names are environment-resident. An expression that touches no register binding now compiles natively first and is hatched only when native compilation fails (`Compiler::native` rolls back). On `vm-bench/decode_tiny.js` this takes 458M to 424M instructions (callgrind).
+- Over the 600 sampled cases, 530 scripts compile with 5 script fallbacks (`with` 3, function declaration in a block 1, `using` 1). Function bodies compile at 99.9%.
+- Fix: a call through the name `eval` in tail position whose callee is not %eval% is an ordinary tail call (§13.3.6.1 step 9). The hatch now keeps the tail flag, and `tco-non-eval-{function,function-dynamic,global,with}.js` pass again.
+- Full run on the VM (full45, before that fix): 47222/47708. Gained 0, lost 4 (the tco-non-eval cases above, fixed and smoke-checked afterwards), so the expected count is 47226 (99.0%), unchanged. The five shared timeouts remain. decodeURI/decodeURIComponent S15.1.3.x_A2.5_T1 no longer hit the step limit and pass in 14-15 s alone, still over the 10 s runner timeout. The copyWithin cases are bound by the object model (see BYTECODE_VM.md, coverage step 13): stage 4.
+
 ### Register VM stage 3: destructuring and spread (checkpoint 37, 2026-11-10)
 
 - Coverage step 12, destructuring: declarations (`var`/`let`/`const`), for-in/of heads, assignment patterns and catch parameters compile through BindingInitialization (§8.6.2), IteratorBindingInitialization (§8.6.3) and DestructuringAssignmentEvaluation (§13.15.5). New instructions are `IterStep`, `IterRest` and `ObjectRest` (CopyDataProperties, §7.3.25). Iterator close on abrupt completion goes through a handler over the element range. TDZ stays static, per name in pattern order.
