@@ -400,6 +400,8 @@ pub(super) struct Chunk {
     /// in the closure's [[Environment]], with the arguments written straight into
     /// `params` (in parameter order). See `elidable`.
     pub(super) elide: bool,
+    /// OBJECT_MODEL.md slice 3: per-name slot hints into the global object's properties.
+    pub(super) hints: Vec<std::cell::Cell<u32>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -609,9 +611,11 @@ fn compile_body(params: &[Param], body: &[Stmt], script: bool) -> CResult<Chunk>
     c.emit(Insn::ReturnUndefined);
     let elide = !script && elidable(params, body, &param_names, &c, direct_eval, uses_arguments);
     let (code, handlers) = finish(c.code, &c.consts, &param_regs, &c.dead, c.handlers);
+    let hints = vec![std::cell::Cell::new(super::global_names::UNTRIED); c.names.len()];
     Ok(Chunk {
         code,
         consts: c.consts,
+        hints,
         names: c.names,
         exprs: c.exprs,
         registers: c.max,

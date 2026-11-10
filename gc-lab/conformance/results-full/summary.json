@@ -1,7 +1,7 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "19b0078ca65d542e3f59ff5fde83436aba96a13abfb940ba7c49b0a115ced12e",
+  "implementation_sha256": "485bfd0b3792ffd1e12e052cd907e2c67121936b92bdcc2a33bf04117265d8ae",
   "runner_sha256": "4713329b9c23dcf06bd6cb040661a46e05fc7f4ee3554e0f43a003570213de5f",
   "new_failures": [
     "built-ins/Array/prototype/indexOf/length-zero-returns-minus-one.js",

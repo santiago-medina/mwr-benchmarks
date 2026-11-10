@@ -307,3 +307,47 @@ On decode_tiny, 4162 of 4163 VM calls are elided (`--vm-stats` prints `elided=`)
 together take decode_tiny from 423.4 M to 339.2 M (-19.9%). The kill line asks slices 1-3 for
 -30%, which leaves slice 3 (global-name cache) to find about 10 more points. Probe:
 `vmprobe/elide.js` (tree, vm, gc-stress).
+
+### Slice 3 (part a): global-name slot hints
+
+What was implemented differs from the epoch design above, and the difference makes it narrower
+and safer. `Chunk::hints` holds one `Cell<u32>` per chunk name: the index of the name's entry in
+the global object's `PropertyMap` (`global_names.rs`). The environment walk of §9.1.2.1 still runs
+on every access. The hint replaces only the final global object record step (HasBinding,
+GetBindingValue, SetMutableBinding), and only for an ordinary global object with an own data
+property. Every use validates the hint by key (`PropertyMap::named_at`). A delete, an accessor
+redefinition or a reindex therefore makes the check fail, and the slow path runs. No epoch is
+needed, and nothing has to bump one. Shadowing by `with`, an eval `var` or a later script's
+`let` is found by the walk before the hint is consulted. Accessors and read-only properties
+mark the hint `FAILED` and stay slow. The sites that use hints are `GetName`, `GetCallee`,
+`TypeofName`, `ResolveName` and the `GetRef`/`SetRef` binding cases.
+
+The interned keys (`JsAtom`, `Key::Index`) are deferred. With the hint, the per-access
+`String` allocation of the global lookup is gone (the key compare is a short `memcmp`). The
+remaining costs are now the walk itself (`scan_level` 6.2%) and the Debug-based `ast_scan::mentions`
+compile-time scans (about 8%; see below).
+
+Callgrind, same setup as slice 2:
+
+| benchmark | before (slice 2) | after | delta |
+|---|---:|---:|---:|
+| decode_tiny | 339.2 M | 271.4 M | -20.0% |
+
+Slices 1-3 together take decode_tiny from 423.4 M to 271.4 M (-35.9%), which meets the -30% kill
+line. Slice 4 can go ahead without revising the note.
+
+The probe is `vmprobe/globals.js` (tree, vm, gc-stress). It covers all the probes the note
+requires: a `with` object that gains or loses the name mid-loop, a toggled `@@unscopables`,
+an eval `var` after the inner closure ran, `delete globalThis.x`, accessor and read-only
+redefinition, a later-script `let`, an object inserted into the global's prototype chain,
+and a churn loop.
+
+The probe also found a slice 2 bug, fixed here. An elided strict function in a sloppy script
+read its strictness for an assignment from the closure environment. A write to a read-only
+global therefore failed silently instead of throwing a TypeError. `assign_binding_hinted` now
+takes the strictness of the assigning code (§6.2.5.6 PutValue, the Reference's [[Strict]]).
+
+The next cheap win, found in this profile, is `ast_scan::mentions`. It scans the AST by
+formatting it with `Debug` and searching the text: about 22 M instructions (about 8%) on
+decode_tiny, all compile-time. A structural walker would remove it, and on real pages this
+cost scales with script size.

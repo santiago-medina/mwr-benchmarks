@@ -909,10 +909,15 @@ impl<'host> Engine<'host> {
             None => Level::End,
         })
     }
-    pub(super) fn lookup_with_base(
+    pub(super) fn lookup_with_base(&mut self, env: Id, name: &str) -> Result<(Value, Option<Id>)> {
+        self.lookup_hinted(env, name, None)
+    }
+    /// `lookup_with_base` with a global-name slot hint (OBJECT_MODEL.md slice 3).
+    pub(super) fn lookup_hinted(
         &mut self,
         mut env: Id,
         name: &str,
+        hint: Option<&std::cell::Cell<u32>>,
     ) -> Result<(Value, Option<Id>)> {
         loop {
             let level = match self.scan_level(env, name, false)? {
@@ -939,6 +944,9 @@ impl<'host> Engine<'host> {
                 Level::With(_) => unreachable!(),
                 Level::Alias(target, name) => return self.lookup_with_base(target, &name),
                 Level::Global => {
+                    if let Some(v) = self.global_hint_get(name, hint) {
+                        return Ok((v, None));
+                    }
                     let global = self.intrinsics.as_ref().unwrap().global;
                     return self
                         .get_member(Value::Object(global), name)
@@ -951,6 +959,9 @@ impl<'host> Engine<'host> {
                 Level::Parent(p) => env = p,
                 Level::End => break,
             }
+        }
+        if let Some(v) = self.global_hint_get(name, hint) {
+            return Ok((v, None));
         }
         if matches!(
             name,
@@ -1051,11 +1062,15 @@ impl<'host> Engine<'host> {
     /// Environment Record base), or whether some record has it. `name` resolves
     /// nowhere only when the global object lacks it too; that is computed only when
     /// `strict` asks (sloppy PutValue creates the global property).
-    pub(super) fn resolve_name(
+    pub(super) fn resolve_name(&mut self, env: Id, name: &str, strict: bool) -> Result<Resolved> {
+        self.resolve_name_hinted(env, name, strict, None)
+    }
+    pub(super) fn resolve_name_hinted(
         &mut self,
         mut env: Id,
         name: &str,
         strict: bool,
+        hint: Option<&std::cell::Cell<u32>>,
     ) -> Result<Resolved> {
         loop {
             if let Some(object) = self.env_with_object(env) {
@@ -1082,15 +1097,32 @@ impl<'host> Engine<'host> {
             let parent = *parent;
             match parent {
                 Some(p) => env = p,
-                None if strict && self.global_property(name)?.is_none() => {
+                None if strict
+                    && !self.global_hint_has(name, hint)
+                    && self.global_property(name)?.is_none() =>
+                {
                     return Ok(Resolved::Unresolvable);
                 }
                 None => return Ok(Resolved::Found),
             }
         }
     }
-    pub(super) fn assign_binding(&mut self, mut env: Id, name: &str, value: Value) -> Result<()> {
+    pub(super) fn assign_binding(&mut self, env: Id, name: &str, value: Value) -> Result<()> {
         let strict = self.env_strict(env);
+        self.assign_binding_hinted(env, name, value, None, strict)
+    }
+    /// SetMutableBinding through the scope chain, with the strictness of the code that
+    /// makes the assignment (§6.2.5.6 PutValue step 3.d / 5: the Reference's [[Strict]]).
+    /// An elided call (OBJECT_MODEL.md slice 2) runs a strict body in a possibly sloppy
+    /// closure environment, so the environment's own strictness is not the reference's.
+    pub(super) fn assign_binding_hinted(
+        &mut self,
+        mut env: Id,
+        name: &str,
+        value: Value,
+        hint: Option<&std::cell::Cell<u32>>,
+        strict: bool,
+    ) -> Result<()> {
         loop {
             if let Some(object) = self.env_with_object(env) {
                 if self.with_binding(object, name)? {
@@ -1117,6 +1149,9 @@ impl<'host> Engine<'host> {
             };
             if matches!(self.objects.get(&env),Some(Object::Environment{object_bindings,..})if object_bindings.contains(name))
             {
+                if self.global_hint_set(name, hint, &value)? {
+                    return Ok(());
+                }
                 let id = self.intrinsics.as_ref().unwrap().global;
                 return self.set_member(Value::Object(id), name, value);
             }
@@ -1137,6 +1172,9 @@ impl<'host> Engine<'host> {
             match parent {
                 Some(p) => env = *p,
                 None => {
+                    if self.global_hint_set(name, hint, &value)? {
+                        return Ok(());
+                    }
                     if let Some(global) = self.global_property(name)? {
                         return self.assign_member(
                             Value::Object(global),

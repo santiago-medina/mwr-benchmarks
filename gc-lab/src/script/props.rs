@@ -163,6 +163,24 @@ impl PropertyMap {
                 .position(|e| e.as_ref().is_some_and(|(k, _)| k == key)),
         }
     }
+    /// OBJECT_MODEL.md slice 3: the entry at `at` when its key is the string `name` (a
+    /// slot hint is validated by key on every use, so a stale hint only costs a miss).
+    pub(super) fn named_at(&self, at: usize, name: &str) -> Option<&Property> {
+        match self.entries.get(at)? {
+            Some((Key::String(k), p)) if k == name => Some(p),
+            _ => None,
+        }
+    }
+    pub(super) fn named_at_mut(&mut self, at: usize, name: &str) -> Option<&mut Property> {
+        match self.entries.get_mut(at)? {
+            Some((Key::String(k), p)) if k == name => Some(p),
+            _ => None,
+        }
+    }
+    /// The entry index of `key`, for a slot hint.
+    pub(super) fn index_of(&self, key: &Key) -> Option<usize> {
+        self.position(key)
+    }
     pub(super) fn get(&self, key: &Key) -> Option<&Property> {
         let at = self.position(key)?;
         self.entries[at].as_ref().map(|(_, p)| p)

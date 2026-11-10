@@ -309,18 +309,23 @@ impl Engine<'_> {
                     return self.throw_error("TypeError", "assignment to constant")
                 }
                 Insn::GetName { dst, name } => {
-                    let value = self.lookup(*env, &chunk.names[name as usize])?;
+                    let n = name as usize;
+                    let (value, _) =
+                        self.lookup_hinted(*env, &chunk.names[n], Some(&chunk.hints[n]))?;
                     self.set_reg(base, dst, value);
                 }
                 Insn::GetCallee { dst, this, name } => {
+                    let n = name as usize;
                     let (value, object) =
-                        self.lookup_with_base(*env, &chunk.names[name as usize])?;
+                        self.lookup_hinted(*env, &chunk.names[n], Some(&chunk.hints[n]))?;
                     self.set_reg(base, dst, value);
                     let receiver = object.map(Value::Object).unwrap_or(Value::Undefined);
                     self.set_reg(base, this, receiver);
                 }
                 Insn::TypeofName { dst, name } => {
-                    let value = match self.lookup(*env, &chunk.names[name as usize]) {
+                    let n = name as usize;
+                    let found = self.lookup_hinted(*env, &chunk.names[n], Some(&chunk.hints[n]));
+                    let value = match found.map(|(v, _)| v) {
                         Err(ScriptError::Thrown(ex))
                             if ex.name.as_deref() == Some("ReferenceError")
                                 && ex.message.ends_with(" is not defined") =>
@@ -334,12 +339,16 @@ impl Engine<'_> {
                     self.set_reg(base, dst, value);
                 }
                 Insn::ResolveName { dst, name } => {
-                    let encoded =
-                        match self.resolve_name(*env, &chunk.names[name as usize], strict)? {
-                            super::vm::Resolved::With(object) => Value::Object(object),
-                            super::vm::Resolved::Found => Value::Bool(true),
-                            super::vm::Resolved::Unresolvable => Value::Bool(false),
-                        };
+                    let encoded = match self.resolve_name_hinted(
+                        *env,
+                        &chunk.names[name as usize],
+                        strict,
+                        Some(&chunk.hints[name as usize]),
+                    )? {
+                        super::vm::Resolved::With(object) => Value::Object(object),
+                        super::vm::Resolved::Found => Value::Bool(true),
+                        super::vm::Resolved::Unresolvable => Value::Bool(false),
+                    };
                     self.set_reg(base, dst, encoded);
                 }
                 Insn::GetRef {
@@ -348,8 +357,14 @@ impl Engine<'_> {
                     name,
                 } => {
                     let encoded = self.reg(base, reference);
-                    let r = self.reference_of(&encoded, &chunk.names[name as usize], *env, strict);
-                    let value = self.reference_get(&r)?;
+                    let n = name as usize;
+                    let r = self.reference_of(&encoded, &chunk.names[n], *env, strict);
+                    let value = match r {
+                        Reference::Binding(env, name) => {
+                            self.lookup_hinted(env, name, Some(&chunk.hints[n]))?.0
+                        }
+                        r => self.reference_get(&r)?,
+                    };
                     self.set_reg(base, dst, value);
                 }
                 Insn::SetRef {
@@ -358,9 +373,19 @@ impl Engine<'_> {
                     src,
                 } => {
                     let encoded = self.reg(base, reference);
-                    let r = self.reference_of(&encoded, &chunk.names[name as usize], *env, strict);
+                    let n = name as usize;
+                    let r = self.reference_of(&encoded, &chunk.names[n], *env, strict);
                     let value = self.reg(base, src);
-                    self.reference_set(r, value)?;
+                    match r {
+                        Reference::Binding(env, name) => {
+                            self.protect(&value)?;
+                            let hint = Some(&chunk.hints[n]);
+                            self.assign_binding_hinted(env, name, value, hint, strict)?;
+                        }
+                        r => {
+                            self.reference_set(r, value)?;
+                        }
+                    }
                 }
                 Insn::Hatch {
                     dst,

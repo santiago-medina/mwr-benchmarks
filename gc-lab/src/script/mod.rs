@@ -32,6 +32,7 @@ pub use parser::ImportPhase;
 mod bytecode;
 mod collections;
 mod disposal;
+mod global_names;
 mod interp;
 mod shadow_realms;
 mod tail_calls;
