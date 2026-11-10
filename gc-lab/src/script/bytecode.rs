@@ -412,11 +412,17 @@ struct Compiler {
 const MAX_REGISTERS: u32 = 4096;
 
 pub(super) fn compile(params: &[Param], body: &[Stmt]) -> CResult<Chunk> {
-    // A direct eval can declare or read any binding by name, and `%forward` is the
-    // derived default constructor's argument forwarding: both stay on the tree-walker.
-    if mentions(&[&params, &body], &["\"eval\"", "%forward"]) {
-        return Err("vm: eval");
+    // `%forward` is the derived default constructor's argument forwarding: it stays on
+    // the tree-walker.
+    if mentions(&[&params, &body], &["%forward"]) {
+        return Err("vm: %forward");
     }
+    // A direct eval (§19.2.1.1 PerformEval) reads and writes any binding by name, and a
+    // sloppy one adds `var`s to the function's variable environment
+    // (§19.2.1.3 EvalDeclarationInstantiation). Every binding of such a body is then
+    // environment-resident and the eval call itself runs through a hatch against the
+    // function environment (BYTECODE_VM.md, stage 3 coverage step 9).
+    let direct_eval = mentions(&[&params, &body], &["Name(\"eval\")"]);
     let uses_arguments = super::execute::arguments_needed(params, body);
     let mut c = Compiler {
         code: vec![],
@@ -462,6 +468,9 @@ pub(super) fn compile(params: &[Param], body: &[Stmt]) -> CResult<Chunk> {
     // A closure in a parameter initializer closes over the parameter environment: the
     // body must read and write those parameters there.
     c.captured.extend(captured_names(&params, &all));
+    if direct_eval {
+        c.captured.extend(all.iter().cloned());
+    }
     if uses_arguments {
         // FunctionDeclarationInstantiation (§10.2.11 steps 15-22) already bound
         // `arguments` in the environment. A sloppy function with simple parameters gets a
@@ -1844,6 +1853,16 @@ impl Compiler {
             CallArgs::Plain(args) => args.iter().collect(),
             CallArgs::Template(_, t) => t.values.iter().collect(),
         };
+        if let (Expr::Name(name), CallArgs::Plain(args)) = (f, &args) {
+            if name == "eval" && self.resolve(name).is_none() {
+                // §13.3.6.1 steps 6.a-6.b: a call through the name `eval` is a direct eval
+                // when the callee is %eval%; the tree-walker decides and runs PerformEval
+                // with the function environment as the caller's. Never a tail call.
+                let call = Expr::Call(Box::new(f.clone()), args.to_vec());
+                self.hatch(&call, dst, None, false);
+                return Ok(());
+            }
+        }
         let (callee, this) = match f {
             Expr::Name(name) if self.resolve(name).is_none() => {
                 let callee = self.alloc()?;
@@ -1936,6 +1955,17 @@ impl Compiler {
                 });
                 self.emit(Insn::DeleteElem { dst, obj, key });
             }
+            ("delete", Expr::Name(name)) if self.resolve(name).is_none() => {
+                // §13.5.1.2: deleting an environment binding (a sloppy eval's `var`, a
+                // global property); the tree-walker's DeleteBinding against `local`.
+                let e = Expr::Unary(op.to_string(), Box::new(x.clone()));
+                self.hatch(&e, dst, None, false);
+            }
+            // A register-resident binding is a declarative binding created non-deletable
+            // (only eval-created ones are deletable, and such bodies keep none in
+            // registers): DeleteBinding returns false (§9.1.1.1.7). Strict code cannot
+            // reach this (early error, §13.5.1.1).
+            ("delete", Expr::Name(_)) => self.constant(Value::Bool(false), dst),
             ("delete", _) => return Err("vm: delete operand"),
             ("typeof", Expr::Name(name)) if self.resolve(name).is_none() => {
                 let name = self.name(name);

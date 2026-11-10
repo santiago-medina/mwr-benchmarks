@@ -1,7 +1,7 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "66a8a3f3f4c49335669eafd7959f6bd74dd4744ca83328f5c2106d0f99b165fd",
+  "implementation_sha256": "bb2767fe70791d94a6799c35f8c77c1fc653f508d284ac8809be5058049d65a6",
   "runner_sha256": "4713329b9c23dcf06bd6cb040661a46e05fc7f4ee3554e0f43a003570213de5f",
   "new_failures": [
     "built-ins/Array/prototype/indexOf/length-zero-returns-minus-one.js",
@@ -95,8 +95,6 @@
     "language/eval-code/direct/arrow-fn-no-pre-existing-arguments-bindings-are-present-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
     "language/eval-code/direct/arrow-fn-no-pre-existing-arguments-bindings-are-present-arrow-func-declare-arguments-assign.js",
     "language/eval-code/direct/cptn-nrml-empty-for.js",
-    "language/eval-code/direct/var-env-func-init-local-new-delete.js",
-    "language/eval-code/direct/var-env-var-init-local-new-delete.js",
     "language/eval-code/indirect/cptn-nrml-empty-for.js",
     "language/expressions/assignment/S11.13.1_A6_T1.js",
     "language/expressions/assignment/S11.13.1_A6_T2.js",
@@ -156,8 +154,8 @@
   "profile": "full",
   "retry_timeouts": {
     "workers": 2,
-    "timeouts": 11,
-    "passed": 6
+    "timeouts": 8,
+    "passed": 3
   },
   "scopes": [
     "built-ins",
@@ -165,9 +163,9 @@
   ],
   "total": 47708,
   "counts": {
-    "passed": 47224,
+    "passed": 47226,
     "unsupported": 337,
-    "failed": 147
+    "failed": 145
   },
   "assertions": 1258077,
   "regressions": [],
@@ -924,22 +922,6 @@
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"#1: eval(\\\"for(false;false;false);\\\") === undefined. Actual: false\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1006 })) })); expected None",
       "assertions": 0,
-      "cleanup": true
-    },
-    {
-      "path": "language/eval-code/direct/var-env-func-init-local-new-delete.js",
-      "source_sha256": "7323dcde9dbd0e76927a8d14256d154fd566aceb39681475e8f8255e01c61112",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 909, serial: 1059 })) })); expected None",
-      "assertions": 3,
-      "cleanup": true
-    },
-    {
-      "path": "language/eval-code/direct/var-env-var-init-local-new-delete.js",
-      "source_sha256": "3b93c4b28506a169ee9bdc9c99ae6a0e0f1a398a737ff7bd8c9a3616cb60e11f",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 905, serial: 1039 })) })); expected None",
-      "assertions": 2,
       "cleanup": true
     },
     {

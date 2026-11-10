@@ -730,3 +730,44 @@ They pass on the tree-walker, on the VM and under `--gc-stress`. Gate results:
   parameter and switch fallbacks are gone. Remaining reasons: `eval` 18, `captured block lexical`
   5, `for-in/of destructuring` 2, `destructuring declaration` 2, `spread arguments` 1, other 1.
 - Full run on the VM (t262-full41): 47224/47708 (99.0 %), +1 (the `new` parser fix), lost 0.
+
+### Stage 3, coverage step 9: direct eval in functions (2026-11-10)
+
+A direct eval (§19.2.1.1 PerformEval) can read and write any binding of the calling function by name. A
+sloppy one can also add `var` and function bindings to the function's variable environment
+(§19.2.1.3 EvalDeclarationInstantiation). Those bindings shadow outer names for the rest of the call.
+There are no new instructions. The compiler handles such bodies as follows:
+- A body whose parameters or statements mention the name `eval` (`Name("eval")` in the AST; a string
+  `"eval"` does not count) makes **every** declared name environment-resident. Reads, writes and
+  `typeof` of free names already go through `GetName`/`ResolveName` against the function environment
+  at run time, so a binding that eval adds is found by the next lookup. Nothing is resolved at
+  compile time.
+- A call through the plain name `eval` compiles to a `Hatch` of the whole call expression. The
+  tree-walker then applies §13.3.6.1 steps 6.a-6.b: it is a direct eval only when the callee is
+  %eval%, and PerformEval uses the function environment as the caller's. A local binding named
+  `eval`, `(0, eval)(…)` and `var e = eval` remain ordinary or indirect calls. A direct eval is
+  never marked as a tail call.
+- `delete name` of a free name is hatched (DeleteBinding, §9.1.1.1.7, against `local`). A
+  register-resident binding is never deletable, so it compiles to the constant `false`. Strict code
+  cannot reach that case (early error, §13.5.1.1).
+- A block-level lexical in such a body is environment-resident, so it still falls back
+  (`vm: captured block lexical`, the next step). Only the derived default constructor's `%forward`
+  is still rejected for the whole body (`vm: %forward`, formerly reported as `vm: eval`).
+
+Spec fix found by the probe (both engines): a `var` or function that a sloppy eval created in a
+function environment could not be deleted. EvalDeclarationInstantiation creates them with
+CreateMutableBinding(N, **true**) (§19.2.1.3 steps 17.b.i.4 and 17.d.i.4). Environment records now
+keep a `deletable` set, and `delete_binding` removes those bindings and returns true. Bindings that
+already existed are not affected.
+
+Gate (`c35_gate.sh`): `vmprobe/eval.js` (31 checks) passes on the tree-walker, on the VM and under
+`--gc-stress`. The checks cover reads and writes of parameters, `var` and `let`; eval `var`
+shadowing a global; strict callers and strict eval code; eval-declared functions; `delete`; `this`,
+`arguments` (mapped), `new.target`; the completion value; indirect and shadowed eval; eval in a
+closure, a loop, a tail position and a parameter default; TDZ; and eval `var` vs a `let` conflict.
+The eval-code, `built-ins/eval` and `expressions/delete` directories (426 cases) give the same
+verdicts on both engines: 413 passed. The 13 failures were already failing in t262-full41. The
+2,500-case equivalence sample is identical on both engines (`passed=2236`, previously 2235). The
+600-case sample now compiles **99.5 %** of bodies. Remaining reasons: `%forward` 10,
+`captured block lexical` 5, `for-in/of destructuring` 2, `destructuring declaration` 2,
+`spread arguments` 1, `with` 1, other 1.

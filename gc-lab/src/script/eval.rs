@@ -316,12 +316,16 @@ impl Engine<'_> {
     }
     fn add_var_binding(&mut self, env: Id, name: &str) {
         if let Some(Object::Environment {
-            bindings, mutable, ..
+            bindings,
+            mutable,
+            deletable,
+            ..
         }) = self.objects.get_mut(&env)
         {
             if !bindings.contains_key(name) {
                 bindings.insert(name.to_string(), Some(Value::Undefined));
                 mutable.insert(name.to_string());
+                deletable.insert(name.to_string());
             }
         }
     }

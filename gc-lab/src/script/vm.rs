@@ -148,6 +148,9 @@ pub(super) enum Object {
         with_object: Option<Id>,
         /// `let`/`const`/class names (a sloppy eval `var` may not redeclare them).
         lexical: NameSet,
+        /// Bindings created with CreateMutableBinding(N, true): a sloppy eval's `var`
+        /// and function names (§19.2.1.3 steps 17.b.i.4 and 17.d.i.4), which `delete` removes.
+        deletable: NameSet,
     },
     Closure {
         kind: FunctionKind,
@@ -699,6 +702,7 @@ impl<'host> Engine<'host> {
                 strict,
                 with_object: None,
                 lexical,
+                deletable: NameSet::default(),
             },
         );
         Ok(id)
@@ -734,6 +738,7 @@ impl<'host> Engine<'host> {
                 strict,
                 with_object: None,
                 lexical,
+                deletable: NameSet::default(),
             },
         );
         Ok(id)
@@ -794,6 +799,7 @@ impl<'host> Engine<'host> {
                 bindings,
                 object_bindings,
                 aliases,
+                deletable,
                 ..
             }) = self.objects.get(&env)
             else {
@@ -804,7 +810,22 @@ impl<'host> Engine<'host> {
                 return self.delete(global, name);
             }
             if bindings.contains_key(name) || aliases.contains_key(name) {
-                return Ok(false);
+                // §9.1.1.1.7 DeleteBinding: only a binding created deletable is removed.
+                if !deletable.contains(name) {
+                    return Ok(false);
+                }
+                if let Some(Object::Environment {
+                    bindings,
+                    mutable,
+                    deletable,
+                    ..
+                }) = self.objects.get_mut(&env)
+                {
+                    bindings.remove(name);
+                    mutable.remove(name);
+                    deletable.remove(name);
+                }
+                return Ok(true);
             }
             match parent {
                 Some(p) => env = *p,
