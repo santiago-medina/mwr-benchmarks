@@ -395,6 +395,11 @@ pub(super) struct Chunk {
     pub(super) hoist: Vec<Stmt>,
     /// Block environment layouts of `PushEnv`/`CopyEnv`: (name index, constant).
     pub(super) layouts: Vec<Vec<(u32, bool)>>,
+    /// OBJECT_MODEL.md slice 2: the call needs no environment record of its own, so the
+    /// caller skips FunctionDeclarationInstantiation's records (§10.2.11) and the body runs
+    /// in the closure's [[Environment]], with the arguments written straight into
+    /// `params` (in parameter order). See `elidable`.
+    pub(super) elide: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -602,6 +607,7 @@ fn compile_body(params: &[Param], body: &[Stmt], script: bool) -> CResult<Chunk>
         .collect();
     c.block_body(body, true)?;
     c.emit(Insn::ReturnUndefined);
+    let elide = !script && elidable(params, body, &param_names, &c, direct_eval, uses_arguments);
     let (code, handlers) = finish(c.code, &c.consts, &param_regs, &c.dead, c.handlers);
     Ok(Chunk {
         code,
@@ -613,7 +619,59 @@ fn compile_body(params: &[Param], body: &[Stmt], script: bool) -> CResult<Chunk>
         handlers,
         hoist,
         layouts: c.layouts,
+        elide,
     })
+}
+
+/// Whether a compiled function body can run without its own environment records
+/// (OBJECT_MODEL.md slice 2). FunctionDeclarationInstantiation (§10.2.11) creates them,
+/// but a record is unobservable when no code resolves a name in it: every parameter and
+/// declared name is register-resident, and nothing reads the function's `this`,
+/// `new.target`, `super`, `arguments` or HomeObject through the environment chain.
+/// Narrow rule (literature check #376): no hatch (it evaluates against the frame's
+/// environment), no direct eval, no `arguments`, no `with`, no nested function or class
+/// (their [[Environment]] would be the parent and an arrow reads `this` through it), no
+/// block environments, no hoisted declarations, and a simple parameter list without
+/// duplicates (no separate parameter scope, §10.2.11 step 28; arguments map 1:1 onto
+/// `params`).
+fn elidable(
+    params: &[Param],
+    body: &[Stmt],
+    param_names: &[String],
+    c: &Compiler,
+    direct_eval: bool,
+    uses_arguments: bool,
+) -> bool {
+    let simple = params
+        .iter()
+        .all(|p| !p.rest && p.default.is_none() && matches!(p.binding, parser::Pattern::Name(_)));
+    let unique = {
+        let mut seen = HashSet::new();
+        param_names.iter().all(|n| seen.insert(n))
+    };
+    simple
+        && unique
+        && !direct_eval
+        && !uses_arguments
+        && c.captured.is_empty()
+        && c.layouts.is_empty()
+        && !c.code.iter().any(|i| matches!(i, Insn::Hatch { .. }))
+        && !mentions(
+            &[&params, &body],
+            &[
+                "This",
+                "NewTarget",
+                "Super",
+                "Arrow",
+                "Function",
+                "Class",
+                "With(",
+                "ImportMeta",
+                "ImportCall",
+                "Name(\"arguments\")",
+                "Name(\"eval\")",
+            ],
+        )
 }
 
 /// `var` names (hoisted to the function) and every declared name, through nested

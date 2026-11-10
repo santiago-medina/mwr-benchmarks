@@ -342,8 +342,8 @@ fn main() {
         let mut fallbacks: Vec<_> = stats.fallbacks.iter().collect();
         fallbacks.sort_by(|a, b| b.1.cmp(a.1));
         eprintln!(
-            "vm: compiled={} calls={} max_registers={} fallbacks={fallbacks:?}",
-            stats.compiled, stats.calls, stats.max_registers
+            "vm: compiled={} calls={} elided={} max_registers={} fallbacks={fallbacks:?}",
+            stats.compiled, stats.calls, stats.elided, stats.max_registers
         );
         let mut script_fallbacks: Vec<_> = stats.script_fallbacks.iter().collect();
         script_fallbacks.sort_by(|a, b| b.1.cmp(a.1));

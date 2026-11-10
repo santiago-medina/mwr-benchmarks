@@ -1231,6 +1231,12 @@ impl Engine<'_> {
                 if class && self.pending_construct.is_none() {
                     return self.throw_error("TypeError", "class constructor requires new");
                 }
+                let chunk = self.vm_chunk(&params, &body);
+                if let Some(chunk) = chunk.as_ref().filter(|c| c.elide) {
+                    if let Some(result) = self.call_elided(chunk, kind, environment, &body, &args) {
+                        return result;
+                    }
+                }
                 let local = self.function_environment(
                     id,
                     environment,
@@ -1246,7 +1252,7 @@ impl Engine<'_> {
                 self.tail_ok = kind != FunctionKind::DerivedConstructor
                     && !matches!(body.first(), Some(Stmt::Sloppy));
                 // Stage 3 of BYTECODE_VM.md: a compiled body runs on the register VM.
-                let result = match self.vm_chunk(&params, &body) {
+                let result = match chunk {
                     Some(chunk) => self.run_chunk(&chunk, local),
                     None => self.block(&body, local, true),
                 };
@@ -1268,6 +1274,35 @@ impl Engine<'_> {
             }
             _ => self.throw_error("TypeError", "value is not callable"),
         }
+    }
+    /// OBJECT_MODEL.md slice 2: run an elidable chunk without the function's own records.
+    /// Nothing in the body resolves a name in them, so they are not created; the
+    /// [[Construct]] marker is still consumed (as in `function_environment`) and the
+    /// receiver is unobservable. `None`: this kind keeps the ordinary path. Kept out of
+    /// `invoke_inner` so the recursive call path's stack frame does not grow.
+    #[inline(never)]
+    fn call_elided(
+        &mut self,
+        chunk: &super::bytecode::Chunk,
+        kind: FunctionKind,
+        environment: Id,
+        body: &[Stmt],
+        args: &[Value],
+    ) -> Option<Result<Value>> {
+        if !matches!(
+            kind,
+            FunctionKind::Ordinary | FunctionKind::Arrow | FunctionKind::Method
+        ) {
+            return None;
+        }
+        if kind == FunctionKind::Ordinary {
+            self.pending_construct = None;
+        }
+        let strict = !matches!(body.first(), Some(Stmt::Sloppy));
+        self.tail_ok = strict;
+        let result = self.run_chunk_elided(chunk, environment, args, strict);
+        self.tail_ok = false;
+        Some(result.map(|r| r.unwrap_or(Value::Undefined)))
     }
     pub(super) fn constructible(&self, value: &Value) -> bool {
         let Value::Object(id) = value else {

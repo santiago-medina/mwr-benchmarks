@@ -30,6 +30,8 @@ pub enum EngineMode {
 pub struct VmStats {
     pub compiled: usize,
     pub calls: u64,
+    /// Calls that ran without their own environment records (OBJECT_MODEL.md slice 2).
+    pub elided: u64,
     pub fallbacks: HashMap<&'static str, usize>,
     pub max_registers: u32,
     /// Script bodies compiled (BYTECODE_VM.md, coverage step 13), and the reasons the
@@ -139,6 +141,38 @@ impl Engine<'_> {
         result
     }
 
+    /// Run an elidable chunk (`Chunk::elide`, OBJECT_MODEL.md slice 2) in the closure's
+    /// [[Environment]] `parent`: no function environment records, and the arguments go
+    /// straight into the parameter registers (missing ones stay undefined).
+    pub(super) fn run_chunk_elided(
+        &mut self,
+        chunk: &Chunk,
+        parent: Id,
+        args: &[Value],
+        strict: bool,
+    ) -> Result<Option<Value>> {
+        let base = self.bytecode.regs.len();
+        let top = base + chunk.registers as usize;
+        if top > MAX_STACK {
+            return Err(ScriptError::Runtime("vm register stack limit"));
+        }
+        self.bytecode.stats.calls += 1;
+        self.bytecode.stats.elided += 1;
+        self.bytecode.regs.resize(top, Value::Undefined);
+        self.runtime.vm_seeds().resize(top, None);
+        let mark = self.roots_mark();
+        for ((_, reg), value) in chunk.params.iter().zip(args) {
+            self.set_reg(base, *reg, value.clone());
+        }
+        let result = self
+            .protect(&Value::Object(parent))
+            .and_then(|_| self.execute_body(chunk, parent, base, strict));
+        self.release_roots(mark);
+        self.bytecode.regs.truncate(base);
+        self.runtime.vm_seeds().truncate(base);
+        result
+    }
+
     fn set_reg(&mut self, base: usize, reg: u32, value: Value) {
         let slot = base + reg as usize;
         self.runtime.vm_seeds()[slot] = value.id();
@@ -172,6 +206,15 @@ impl Engine<'_> {
             self.set_reg(base, *reg, value);
         }
         let strict = self.env_strict(local);
+        self.execute_body(chunk, local, base, strict)
+    }
+    fn execute_body(
+        &mut self,
+        chunk: &Chunk,
+        local: Id,
+        base: usize,
+        strict: bool,
+    ) -> Result<Option<Value>> {
         let loop_mark = self.roots_mark();
         let mut pc = 0usize;
         // The current environment: `local`, or a block environment held in a register

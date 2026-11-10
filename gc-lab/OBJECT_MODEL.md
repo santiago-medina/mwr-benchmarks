@@ -280,3 +280,30 @@ limit): copyWithin coerced-values-start-detached 9.4 s, coerced-values-end-detac
 11.0 s; decodeURI / decodeURIComponent S15.1.3.x_A2.5_T1 16.8 s each. What remains in
 copywithin_small: `ordinary_get` 30.8%, `consume_iterator` 32%, `put_data`/`define` ~12%,
 `array_define` and `append_array` ~10% each. Those are slice 3 and 4 territory.
+
+### Slice 2: environment elision for compiled calls
+
+`bytecode::compile` sets `Chunk::elide` (`elidable` in bytecode.rs) under the narrow rule above.
+The rule: a simple parameter list with no duplicates; no direct eval; no `arguments`; no captured
+names; no hoisted declarations; no block environments; no `Insn::Hatch`. The body must also not
+mention `this`, `new.target`, `super`, `with`, `import.meta`/`import()`, nested functions,
+arrows or classes. `invoke_inner` then skips `function_environment` for Ordinary, Arrow and
+Method kinds. It still consumes the [[Construct]] marker. `run_chunk_elided` runs the chunk in
+the closure's [[Environment]] and writes the arguments straight into the parameter registers.
+Strictness comes from the body (`Stmt::Sloppy`), not from the environment, so a strict function
+in a sloppy script still throws on an unresolvable write. The receiver is never read, so the
+sloppy `this` coercion (§10.2.1.2) is skipped. That coercion is unobservable: ToObject of a
+primitive has no side effects. Tail calls keep the §15.10.1 rule: strict bodies only.
+
+Callgrind instructions, release `js_check`, `MWR_ENGINE=vm`, decode_tiny with
+`decimalToHexString.js` included, as in the baseline (`scratch/prof_s4.sh`, fixed to pass the
+include):
+
+| benchmark | before (slice 1) | after | delta |
+|---|---:|---:|---:|
+| decode_tiny | 421.9 M | 339.2 M | -19.6% |
+
+On decode_tiny, 4162 of 4163 VM calls are elided (`--vm-stats` prints `elided=`). Slices 1+2
+together take decode_tiny from 423.4 M to 339.2 M (-19.9%). The kill line asks slices 1-3 for
+-30%, which leaves slice 3 (global-name cache) to find about 10 more points. Probe:
+`vmprobe/elide.js` (tree, vm, gc-stress).

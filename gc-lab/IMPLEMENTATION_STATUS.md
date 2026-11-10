@@ -373,6 +373,12 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - pe-bench (10 fixed RegExp property-escape cases, run alone): tree 37.1 s, VM 10.3 s (3.6x).
 - Full run on the VM: 47223/47708 pass (99.0%), +27 against full38. Failed 148 (-27), unsupported 337. Gained 27 (17 property-escape timeouts, 9 logical-assignment cases, 1 other), lost 0. The full run took ~10 min instead of ~39. Five timeouts remain on both engines: TypedArray copyWithin coerced-values-*-detached (3) and decodeURI/decodeURIComponent S15.1.3.x_A2.5_T1 (2); top-level script code still runs on the tree-walker.
 
+### Object model slice 2: environment elision for compiled calls (checkpoint 40, 2026-11-10)
+
+- Slice 2 of `OBJECT_MODEL.md`: a compiled function body whose parameters are simple and unique, that captures nothing, uses no `arguments`, direct eval, `this`, `new.target`, `super`, nested functions, classes or `with`, and has no hatched expression, runs without a function environment record of its own (FunctionDeclarationInstantiation, §10.2.11, has no observable effect for it). Parameters live only in registers and free names resolve through the closure's environment. Strictness comes from the body. The sloppy `this` coercion (OrdinaryCallBindThis, §10.2.1.2) is skipped because `this` is never read. Tail calls (§15.10.1) keep working in strict elided bodies.
+- Callgrind: `vm-bench/decode_tiny.js` 421.9M to 339.2M instructions (-19.6%), 4162 of 4163 calls elided. Slices 1+2 together: -19.9%; slice 3 (global-name cache, interned keys) has to bring the rest of the 30% kill line.
+- Full run on the VM (full47): 47226/47708 (99.0%), +0, lost 0. Gate: cargo test 187/0; vmprobes (new `elide.js`) tree/vm/gc-stress; 1650 cases from arguments-object, call, return, eval-code, function-code and function declarations/expressions identical on both engines; the 2500-case equivalence is identical. The five shared timeouts remain (decodeURI S15.1.3.1_A2.5_T1 now 17.7 s alone with no limit).
+
 ### Object model slice 1: in-place slots, cheap object creation (checkpoint 39, 2026-11-10)
 
 - Stage 4 design note: `OBJECT_MODEL.md` (dense elements, shapes, global/property caches, cheaper function environments). Five slices in order, with migration gates and kill lines. The literature check (Literature Review #82, request #376) adopted the order with corrections to the global-cache epoch rule and its scope, which the note records.
