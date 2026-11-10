@@ -829,3 +829,52 @@ directories give 1002/1007 on both engines, and the 2,500-case equivalence sampl
 (`passed=2236`). The 600-case sample now compiles **99.8 %** of bodies. Remaining reasons:
 `for-in/of destructuring` 2, `destructuring declaration` 2, `spread arguments` 1,
 `expression kind` 1, `with` 1.
+
+### Stage 3, coverage step 12: destructuring (2026-11-10)
+
+Destructuring patterns compile in the register VM. Before this step a body that held one was
+rejected and the whole call ran on the tree-walker. That covered declarations, for-in/of heads,
+catch parameters and destructuring assignments that touch the body's own bindings. One compiler
+routine, `bind_pattern`, now handles every pattern, in three modes:
+- `Lexical`: `let`/`const`, for-in/of `let`/`const` heads and catch parameters. It runs
+  InitializeBinding: a `Move` into the register, or `InitName` for an environment-resident name.
+- `Var`: `var` declarations and heads. It runs PutValue through `store_name`.
+- `Assign`: destructuring assignment (§13.15.5) and for-in/of assignment heads. Its targets are
+  names, `a.b` or `a[k]`.
+
+The leaf reference is evaluated before the value is fetched (§8.6.3 SingleNameBinding step 1,
+§13.15.5.5-6 step 1). A free name gets its `ResolveName` there. A member target gets its base
+and key in fresh registers, because a later default or element may reassign a local they mention.
+
+Patterns map to instructions:
+- **Object** (§8.6.2, §13.15.5.2-4): a `CheckCoercible` (RequireObjectCoercible) first. Each
+  property then runs `GetProp`, or `PropKey` + `GetElem` for a computed key. With a rest
+  property, the keys go into a register block, and `ObjectRest` runs CopyDataProperties
+  (§7.3.25) into a new object, leaving out those keys.
+- **Array** (§8.6.3, §13.15.5.5): `GetIterator`, then one `IterStep` per element (elisions
+  included), and `IterRest` for a rest element. `IterStep` reuses the tree-walker's
+  `binding_step`. A done result, or an abrupt IteratorStep/IteratorValue, sets [[Done]] by
+  clearing the iterator register. A handler over the element range runs `IterCloseThrow`, which
+  closes only when not done (IteratorClose with a throw completion). The normal path ends with
+  `IterClose`, which is now a no-op on a cleared register.
+- **Initializers**: a `StrictEq` against undefined, then the initializer, with NamedEvaluation
+  (`named`) when the target is an identifier. TDZ stays static: each name becomes ready right
+  after its own initialization in pattern order, so `let [a = a] = []` throws and
+  `let {a, b = a} = o` does not.
+
+Scopes: `declared_in`, `enter_scope`, `for_in_of` and the catch clause now take every name of the
+pattern. Captured names go into the block, iteration or catch environment layout; the others get
+registers. The rejection reasons `destructuring declaration`, `for-in/of destructuring`,
+`destructuring catch parameter` and `destructuring assignment` are gone.
+
+Catch parameters: a pattern catch parameter (§14.15.2 CatchClauseEvaluation step 4) binds through
+the same `bind_pattern` in lexical mode. Captured names live in the catch environment; the others
+get registers that stay not-ready until their own initialization.
+
+Spread (§13.2.4.1 ArrayAccumulation, §13.3.8.1 ArgumentListEvaluation): an array literal element
+`...e` compiles to `ArraySpread`, which appends every value of `e`'s iterator. A call or `new` whose
+arguments include a spread builds the argument list as an array (`ArrayPush` per plain argument,
+`ArraySpread` per spread) and passes the sentinel count `SPREAD_ARGC`. The dispatch then reads the
+list back from the array, so an iterator that throws midway leaves no partial call.
+Over the 600 sampled cases, 100.0% of function bodies compile; the remaining fallbacks are one
+`with` statement and one unsupported expression kind.

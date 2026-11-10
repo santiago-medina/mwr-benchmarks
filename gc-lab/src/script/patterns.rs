@@ -84,7 +84,12 @@ impl Pattern {
     }
 }
 impl Engine<'_> {
-    fn binding_step(&mut self, iterator: Value, next: Value, done: &mut bool) -> Result<Value> {
+    pub(super) fn binding_step(
+        &mut self,
+        iterator: Value,
+        next: Value,
+        done: &mut bool,
+    ) -> Result<Value> {
         if *done {
             return Ok(Value::Undefined);
         }

@@ -170,6 +170,18 @@ impl Engine<'_> {
     }
 
     /// The dispatch loop from `*pc`; a throw leaves `*pc` one past the faulting instruction.
+    /// The argument values of a `Call`/`New`: `argc` registers from `args`, or the
+    /// elements of the spread Array in `args` (`SPREAD_ARGC`).
+    fn call_arguments(&mut self, base: usize, args: u32, argc: u32) -> Result<Vec<Value>> {
+        if argc == bytecode::SPREAD_ARGC {
+            let Value::Object(array) = self.reg(base, args) else {
+                unreachable!("spread array register")
+            };
+            return self.argument_values(array);
+        }
+        let start = base + args as usize;
+        Ok(self.bytecode.regs[start..start + argc as usize].to_vec())
+    }
     /// The environment in register `reg` (`NO_REG`: the function environment `local`).
     fn env_in(&self, base: usize, reg: u32, local: Id) -> Id {
         if reg == NO_REG {
@@ -386,8 +398,7 @@ impl Engine<'_> {
                     } else {
                         self.reg(base, this)
                     };
-                    let start = base + args as usize;
-                    let values = self.bytecode.regs[start..start + argc as usize].to_vec();
+                    let values = self.call_arguments(base, args, argc)?;
                     let value = if tail && self.tail_ok && self.non_tail == 0 {
                         self.defer_tail_call(f, receiver, values)?
                     } else {
@@ -402,8 +413,7 @@ impl Engine<'_> {
                     argc,
                 } => {
                     let f = self.reg(base, callee);
-                    let start = base + args as usize;
-                    let values = self.bytecode.regs[start..start + argc as usize].to_vec();
+                    let values = self.call_arguments(base, args, argc)?;
                     let value = self.construct(f, values)?;
                     self.set_reg(base, dst, value);
                 }
@@ -534,6 +544,13 @@ impl Engine<'_> {
                     let value = self.reg(base, src);
                     self.append_array(id, Some(value), false)?;
                 }
+                Insn::ArraySpread { array, src } => {
+                    let Value::Object(id) = self.reg(base, array) else {
+                        unreachable!("array register")
+                    };
+                    let value = self.reg(base, src);
+                    self.append_array(id, Some(value), true)?;
+                }
                 Insn::ArrayHole { array } => {
                     let Value::Object(id) = self.reg(base, array) else {
                         unreachable!("array register")
@@ -604,8 +621,57 @@ impl Engine<'_> {
                         self.set_reg(base, dst, value);
                     }
                 }
+                Insn::IterStep { dst, iter, next } => {
+                    let iterator = self.reg(base, iter);
+                    let mut done = iterator == Value::Undefined;
+                    let method = self.reg(base, next);
+                    let outcome = self.binding_step(iterator, method, &mut done);
+                    if done {
+                        self.set_reg(base, iter, Value::Undefined);
+                    }
+                    let value = outcome?;
+                    self.set_reg(base, dst, value);
+                }
+                Insn::IterRest { dst, iter, next } => {
+                    let array = self.new_array(0)?;
+                    self.set_reg(base, dst, Value::Object(array));
+                    let iterator = self.reg(base, iter);
+                    let method = self.reg(base, next);
+                    let mut done = iterator == Value::Undefined;
+                    while !done {
+                        self.tick()?;
+                        let outcome =
+                            self.binding_step(iterator.clone(), method.clone(), &mut done);
+                        if done {
+                            self.set_reg(base, iter, Value::Undefined);
+                        }
+                        let value = outcome?;
+                        if !done {
+                            self.append_array(array, Some(value), false)?;
+                        }
+                    }
+                }
+                Insn::ObjectRest {
+                    dst,
+                    src,
+                    keys,
+                    count,
+                } => {
+                    let id = self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;
+                    self.set_reg(base, dst, Value::Object(id));
+                    let mut excluded = Vec::with_capacity(count as usize);
+                    for i in 0..count {
+                        let key = self.reg(base, keys + i);
+                        excluded.push(self.to_key(key)?);
+                    }
+                    let source = self.reg(base, src);
+                    self.copy_properties(id, source, &excluded)?;
+                }
                 Insn::IterClose { iter } => {
                     let iterator = self.reg(base, iter);
+                    if iterator == Value::Undefined {
+                        continue;
+                    }
                     self.protect(&iterator)?;
                     self.set_reg(base, iter, Value::Undefined);
                     self.close_iterator(iterator, Ok(None))?;

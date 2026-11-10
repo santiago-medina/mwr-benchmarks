@@ -1,7 +1,7 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "6beb8267a737fa486ee0f972cd9f326d1af693ef318b4dbd9a860e6f666b6fd7",
+  "implementation_sha256": "d93c515d8bcf9b51258f5b08be1584448d06b845b3302cb6f27448ff2dbcbdd3",
   "runner_sha256": "4713329b9c23dcf06bd6cb040661a46e05fc7f4ee3554e0f43a003570213de5f",
   "new_failures": [
     "built-ins/Array/prototype/indexOf/length-zero-returns-minus-one.js",
@@ -154,8 +154,8 @@
   "profile": "full",
   "retry_timeouts": {
     "workers": 2,
-    "timeouts": 9,
-    "passed": 3
+    "timeouts": 10,
+    "passed": 5
   },
   "scopes": [
     "built-ins",
@@ -167,7 +167,7 @@
     "unsupported": 337,
     "failed": 145
   },
-  "assertions": 1219184,
+  "assertions": 1258077,
   "regressions": [],
   "unsupported_reasons": {
     "ordinary reflection on host objects": 11,
@@ -1355,12 +1355,6 @@
       "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"assignment refused\", value: Object(Js(Handle { heap: 2, index: 895, serial: 995 })) })); expected None",
       "assertions": 0,
       "cleanup": true
-    }
-  ],
-  "notes": [
-    {
-      "path": "built-ins/ArrayBuffer/prototype/sliceToImmutable/argument-coercion.js",
-      "note": "load timeout in full43 (checkpoint 36); passes alone in 4.6 s on vm and tree; kept as passed"
     }
   ]
 }

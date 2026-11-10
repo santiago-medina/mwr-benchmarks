@@ -373,6 +373,13 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - pe-bench (10 fixed RegExp property-escape cases, run alone): tree 37.1 s, VM 10.3 s (3.6x).
 - Full run on the VM: 47223/47708 pass (99.0%), +27 against full38. Failed 148 (-27), unsupported 337. Gained 27 (17 property-escape timeouts, 9 logical-assignment cases, 1 other), lost 0. The full run took ~10 min instead of ~39. Five timeouts remain on both engines: TypedArray copyWithin coerced-values-*-detached (3) and decodeURI/decodeURIComponent S15.1.3.x_A2.5_T1 (2); top-level script code still runs on the tree-walker.
 
+### Register VM stage 3: destructuring and spread (checkpoint 37, 2026-11-10)
+
+- Coverage step 12, destructuring: declarations (`var`/`let`/`const`), for-in/of heads, assignment patterns and catch parameters compile through BindingInitialization (§8.6.2), IteratorBindingInitialization (§8.6.3) and DestructuringAssignmentEvaluation (§13.15.5). New instructions are `IterStep`, `IterRest` and `ObjectRest` (CopyDataProperties, §7.3.25). Iterator close on abrupt completion goes through a handler over the element range. TDZ stays static, per name in pattern order.
+- Spread: array literal spread (§13.2.4.1) and spread arguments in calls and `new` (§13.3.8.1) build the list in an array (`ArraySpread`, sentinel count `SPREAD_ARGC`).
+- Over the 600 sampled cases, 100.0% of function bodies compile. Remaining fallbacks: `with` 1, expression kind 1.
+- Full run on the VM (full44): 47226/47708 (99.0%), with 1 gained (the full43 load timeout `sliceToImmutable/argument-coercion.js`, now a raw pass) and 0 lost. Equivalence over 2500 cases is identical on both engines. The dstr directories (1631 cases) and expressions/{call,new,array} plus statements/try (404 cases) give identical results on both engines. The probe `vmprobe/destructure.js` passes on both engines and under `--gc-stress`.
+
 ### Register VM stage 3: derived default constructors, block environments (checkpoint 36, 2026-11-10)
 
 - Coverage step 10, `%forward`: the derived default constructor (§15.7.14 step 10.a) compiles. Its SuperCall is hatched and forwards the argument list without the iterator protocol.

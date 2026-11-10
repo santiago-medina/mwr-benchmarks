@@ -15,13 +15,15 @@
 use super::ast_scan::{captured_names, mentions};
 use super::js_string::JsString;
 use super::parser::{self, Expr, Param, Property, Stmt};
-use super::patterns::Pattern;
+use super::patterns::{Pattern, PatternKey};
 use super::vm::Value;
 use std::collections::{HashMap, HashSet};
 
 pub(super) type Reg = u32;
 /// `this` operand of a call with an undefined receiver.
 pub(super) const NO_REG: Reg = u32::MAX;
+/// `argc` of a call or `new` whose arguments were spread into the Array in `args`.
+pub(super) const SPREAD_ARGC: u32 = u32::MAX;
 type CResult<T> = std::result::Result<T, &'static str>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -283,6 +285,12 @@ pub(super) enum Insn {
         array: Reg,
         src: Reg,
     },
+    /// A SpreadElement (§13.2.4.1 ArrayAccumulation, §13.3.8.1 ArgumentListEvaluation):
+    /// every value of the iterable `src`, appended to the Array in `array`.
+    ArraySpread {
+        array: Reg,
+        src: Reg,
+    },
     ArrayHole {
         array: Reg,
     },
@@ -315,6 +323,30 @@ pub(super) enum Insn {
         iter: Reg,
         next: Reg,
         to: u32,
+    },
+    /// IteratorStep + IteratorValue of a destructuring iterator (§8.6.3, §13.15.5.5):
+    /// `dst` is undefined once the record is done. A done result or an abrupt step sets
+    /// [[Done]] by clearing `iter`, so neither `IterClose` nor `IterCloseThrow` closes it.
+    IterStep {
+        dst: Reg,
+        iter: Reg,
+        next: Reg,
+    },
+    /// The rest element of an array pattern (§8.6.3 BindingRestElement, §13.15.5.5
+    /// AssignmentRestElement): a new Array of the remaining values; `iter` ends done.
+    IterRest {
+        dst: Reg,
+        iter: Reg,
+        next: Reg,
+    },
+    /// A rest property (§8.6.2 RestBindingInitialization, §13.15.5.4): a new ordinary
+    /// object and CopyDataProperties (§7.3.25) of `src` into it, excluding the property
+    /// keys in registers `keys..keys + count`.
+    ObjectRest {
+        dst: Reg,
+        src: Reg,
+        keys: Reg,
+        count: u32,
     },
     /// IteratorClose (§7.4.11) with a normal completion (break, return): the register
     /// is cleared first, so a throw from `return` does not close it again.
@@ -571,13 +603,12 @@ fn declared_in(statement: &Stmt, vars: &mut Vec<String>, all: &mut Vec<String>) 
         }
         Stmt::Let(name, _) | Stmt::Const(name, _) => all.push(name.clone()),
         Stmt::Bind { kind, pattern, .. } => {
-            let Pattern::Name(name) = pattern else {
-                return Err("vm: destructuring declaration");
-            };
-            if kind == "var" {
-                vars.push(name.clone());
+            for name in pattern.names() {
+                if kind == "var" {
+                    vars.push(name.clone());
+                }
+                all.push(name);
             }
-            all.push(name.clone());
         }
         Stmt::Declarations(items) | Stmt::Block(items) => declared_names(items, vars, all)?,
         Stmt::If(_, a, b) => {
@@ -604,12 +635,12 @@ fn declared_in(statement: &Stmt, vars: &mut Vec<String>, all: &mut Vec<String>) 
             body,
             ..
         } => {
-            if let Pattern::Name(name) = binding {
-                if kind == "var" {
-                    vars.push(name.clone());
-                }
-                if kind != "assignment" {
-                    all.push(name.clone());
+            if kind != "assignment" {
+                for name in binding.names() {
+                    if kind == "var" {
+                        vars.push(name.clone());
+                    }
+                    all.push(name);
                 }
             }
             declared_in(body, vars, all)?;
@@ -627,8 +658,8 @@ fn declared_in(statement: &Stmt, vars: &mut Vec<String>, all: &mut Vec<String>) 
         } => {
             declared_names(body, vars, all)?;
             if let Some((param, body)) = catch {
-                if let Some(Pattern::Name(name)) = param {
-                    all.push(name.clone());
+                if let Some(param) = param {
+                    all.extend(param.names());
                 }
                 declared_names(body, vars, all)?;
             }
@@ -761,17 +792,15 @@ impl Compiler {
         let mut scope = HashMap::new();
         let mut env_names = vec![];
         for statement in parser::direct_statements(body) {
-            let (name, constant) = match statement {
-                Stmt::Let(name, _) => (name, false),
-                Stmt::Const(name, _) => (name, true),
+            let declared: Vec<(String, bool)> = match statement {
+                Stmt::Let(name, _) => vec![(name.clone(), false)],
+                Stmt::Const(name, _) => vec![(name.clone(), true)],
                 Stmt::Bind { kind, pattern, .. } if kind != "var" => {
                     if parser::is_using(kind) {
                         return Err("vm: using declaration");
                     }
-                    let Pattern::Name(name) = pattern else {
-                        return Err("vm: destructuring declaration");
-                    };
-                    (name, kind == "const")
+                    let constant = kind == "const";
+                    pattern.names().into_iter().map(|n| (n, constant)).collect()
                 }
                 Stmt::Function(..) | Stmt::AsyncFunction(..) | Stmt::GeneratorFunction(..)
                     if function =>
@@ -783,23 +812,25 @@ impl Compiler {
                 }
                 _ => continue,
             };
-            if self.captured.contains(name) {
-                if function {
+            for (name, constant) in declared {
+                if self.captured.contains(&name) {
+                    if function {
+                        continue;
+                    }
+                    // Environment-resident: a block environment per evaluation.
+                    env_names.push((name, constant));
                     continue;
                 }
-                // Environment-resident: a block environment per evaluation.
-                env_names.push((name.clone(), constant));
-                continue;
+                let reg = self.alloc()?;
+                scope.insert(
+                    name,
+                    Binding {
+                        reg,
+                        constant,
+                        ready: false,
+                    },
+                );
             }
-            let reg = self.alloc()?;
-            scope.insert(
-                name.clone(),
-                Binding {
-                    reg,
-                    constant,
-                    ready: false,
-                },
-            );
         }
         self.scopes.push(scope);
         self.entered.push(!env_names.is_empty());
@@ -892,6 +923,26 @@ impl Compiler {
                 } else {
                     self.declare(name, init.as_ref())?;
                 }
+            }
+            Stmt::Bind {
+                kind,
+                pattern,
+                init,
+            } => {
+                if parser::is_using(kind) {
+                    return Err("vm: using declaration");
+                }
+                // §14.3.1.2 LexicalBinding / §14.3.2.1 VariableDeclaration: a pattern
+                // always has an initializer (an early error otherwise).
+                let init = init.as_ref().ok_or("vm: destructuring declaration")?;
+                let value = self.alloc()?;
+                self.expr(init, value)?;
+                let mode = if kind == "var" {
+                    BindMode::Var
+                } else {
+                    BindMode::Lexical
+                };
+                self.bind_pattern(pattern, value, mode)?;
             }
             Stmt::Set(object, key, value) => {
                 let obj = self.operand(object, &[value])?;
@@ -1039,7 +1090,6 @@ impl Compiler {
             Stmt::Function(..) | Stmt::AsyncFunction(..) | Stmt::GeneratorFunction(..) => {
                 return Err("vm: function declaration")
             }
-            Stmt::Bind { .. } => return Err("vm: destructuring declaration"),
             Stmt::With(..) => return Err("vm: with"),
             Stmt::Switch(value, cases) => self.switch_statement(value, cases)?,
             Stmt::ForIn {
@@ -1083,31 +1133,34 @@ impl Compiler {
         }
         let lexical = kind != "var" && kind != "assignment";
         let mark = self.next;
-        let mut env_iteration = false;
+        // A single name or member target; any other head is a destructuring pattern
+        // (ForIn/OfBodyEvaluation step 6.h: BindingInitialization or
+        // DestructuringAssignmentEvaluation of the value).
         let target = match binding {
-            Pattern::Name(name) => Expr::Name(name.clone()),
+            Pattern::Name(name) => Some(Expr::Name(name.clone())),
             Pattern::Target(target)
                 if kind == "assignment"
                     && matches!(**target, Expr::Member(..) | Expr::Computed(..)) =>
             {
-                (**target).clone()
+                Some((**target).clone())
             }
-            _ => return Err("vm: for-in/of destructuring"),
+            _ => None,
         };
+        let mut env_names = vec![];
         if lexical {
-            // §14.7.5.6 step 2: the bound name is in its TDZ while the iterable runs.
-            let Expr::Name(name) = &target else {
-                unreachable!("lexical names")
-            };
+            // §14.7.5.6 step 2: the bound names are in their TDZ while the iterable runs.
             let mut scope = HashMap::new();
-            if self.captured.contains(name) {
-                // Environment-resident: the TDZ environment around the iterable
-                // (§14.7.5.6 steps 2-5), then a fresh one per iteration (§14.7.5.7 step 6.g).
-                env_iteration = true;
-            } else {
+            for name in binding.names() {
+                if self.captured.contains(&name) {
+                    // Environment-resident: the TDZ environment around the iterable
+                    // (§14.7.5.6 steps 2-5), then a fresh one per iteration (§14.7.5.7
+                    // step 6.g).
+                    env_names.push((name, kind == "const"));
+                    continue;
+                }
                 let reg = self.alloc()?;
                 scope.insert(
-                    name.clone(),
+                    name,
                     Binding {
                         reg,
                         constant: kind == "const",
@@ -1118,14 +1171,11 @@ impl Compiler {
             self.scopes.push(scope);
         }
         let outer_env = self.current_env();
-        let env_reg = if env_iteration {
-            let Expr::Name(name) = &target else {
-                unreachable!("lexical names")
-            };
-            let reg = self.push_env(&[(name.clone(), kind == "const")])?;
-            Some((reg, self.layouts.len() as u32 - 1))
-        } else {
+        let env_reg = if env_names.is_empty() {
             None
+        } else {
+            let reg = self.push_env(&env_names)?;
+            Some((reg, self.layouts.len() as u32 - 1))
         };
         let iter = self.alloc()?;
         let next = self.alloc()?;
@@ -1158,7 +1208,15 @@ impl Compiler {
         // The tree-walker keeps both loops out of tail position (the iterator closes
         // after a `return`), and so does this.
         self.non_tail += 1;
-        let result = self.for_in_of_body(kind, &target, value, iter, body, enumeration);
+        let result = self.for_in_of_body(
+            kind,
+            binding,
+            target.as_ref(),
+            value,
+            iter,
+            body,
+            enumeration,
+        );
         self.non_tail -= 1;
         result?;
         let end = self.here();
@@ -1200,12 +1258,22 @@ impl Compiler {
     fn for_in_of_body(
         &mut self,
         kind: &str,
-        target: &Expr,
+        binding: &Pattern,
+        target: Option<&Expr>,
         value: Reg,
         iter: Reg,
         body: &Stmt,
         enumeration: bool,
     ) -> CResult<()> {
+        let Some(target) = target else {
+            let mode = match kind {
+                "var" => BindMode::Var,
+                "assignment" => BindMode::Assign,
+                _ => BindMode::Lexical,
+            };
+            self.bind_pattern(binding, value, mode)?;
+            return self.for_in_of_tail(iter, body, enumeration);
+        };
         match target {
             Expr::Name(name)
                 if (kind == "let" || kind == "const") && self.resolve(name).is_none() =>
@@ -1249,6 +1317,9 @@ impl Compiler {
             }
             _ => unreachable!("checked targets"),
         }
+        self.for_in_of_tail(iter, body, enumeration)
+    }
+    fn for_in_of_tail(&mut self, iter: Reg, body: &Stmt, enumeration: bool) -> CResult<()> {
         self.controls.push(Control {
             label: None,
             is_loop: true,
@@ -1261,6 +1332,248 @@ impl Compiler {
             env_depth: self.envs.len(),
         });
         self.statement(body)
+    }
+    /// BindingInitialization (§8.6.2) of a declaration pattern (`Lexical`: a let/const
+    /// InitializeBinding; `Var`: PutValue on the var binding) or
+    /// DestructuringAssignmentEvaluation (§13.15.5.2, `Assign`) of `pattern` with the
+    /// value in `src`. A target's reference is evaluated before its value is fetched
+    /// (§8.6.3 SingleNameBinding step 1, §13.15.5.5-6 step 1).
+    fn bind_pattern(&mut self, pattern: &Pattern, src: Reg, mode: BindMode) -> CResult<()> {
+        let leaf = self.pattern_leaf(pattern, mode)?;
+        self.bind_value(pattern, leaf, src, mode)
+    }
+    /// The reference of a single-name or target pattern (through an initializer);
+    /// `None` for a nested object or array pattern.
+    fn pattern_leaf(&mut self, pattern: &Pattern, mode: BindMode) -> CResult<Option<Leaf>> {
+        let target = match pattern {
+            Pattern::Default(inner, _) => return self.pattern_leaf(inner, mode),
+            Pattern::Object(..) | Pattern::Array(..) => return Ok(None),
+            Pattern::Name(name) => Expr::Name(name.clone()),
+            Pattern::Target(target) => (**target).clone(),
+        };
+        Ok(Some(match target {
+            Expr::Name(name) if mode == BindMode::Lexical => Leaf::Init(name),
+            Expr::Name(name) if self.resolve(&name).is_some() => Leaf::Local(name),
+            Expr::Name(name) => {
+                let reference = self.alloc()?;
+                let index = self.name(&name);
+                self.emit(Insn::ResolveName {
+                    dst: reference,
+                    name: index,
+                });
+                Leaf::Free(reference, index)
+            }
+            // The base and key go to fresh registers: a later default or element may
+            // reassign a local they mention before the PutValue.
+            Expr::Member(base, key) if mode == BindMode::Assign => {
+                let obj = self.alloc()?;
+                self.expr(&base, obj)?;
+                self.emit(Insn::CheckCoercible { obj });
+                Leaf::Prop(obj, self.name(&key))
+            }
+            Expr::Computed(base, key) if mode == BindMode::Assign => {
+                let obj = self.alloc()?;
+                self.expr(&base, obj)?;
+                let raw = self.alloc()?;
+                self.expr(&key, raw)?;
+                let key = self.alloc()?;
+                self.emit(Insn::PropKey {
+                    dst: key,
+                    obj,
+                    key: raw,
+                });
+                Leaf::Elem(obj, key)
+            }
+            _ => return Err("vm: assignment target"),
+        }))
+    }
+    fn bind_value(
+        &mut self,
+        pattern: &Pattern,
+        leaf: Option<Leaf>,
+        src: Reg,
+        mode: BindMode,
+    ) -> CResult<()> {
+        match pattern {
+            Pattern::Name(_) | Pattern::Target(_) => self.put_leaf(leaf.unwrap(), src),
+            Pattern::Default(inner, default) => {
+                // §8.6.3 SingleNameBinding step 3 / §13.15.5.5 step 3: the initializer
+                // runs only for undefined, with NamedEvaluation for an identifier target.
+                let value = self.alloc()?;
+                self.emit(Insn::Move { dst: value, src });
+                let undefined = self.alloc()?;
+                self.constant(Value::Undefined, undefined);
+                let cond = self.alloc()?;
+                self.emit(Insn::Binary {
+                    dst: cond,
+                    op: Op::StrictEq,
+                    a: value,
+                    b: undefined,
+                });
+                let skip = self.emit(Insn::JumpIfFalse { cond, to: 0 });
+                match &**inner {
+                    Pattern::Name(name) => self.named(default, value, name)?,
+                    Pattern::Target(target) if matches!(**target, Expr::Name(_)) => {
+                        let Expr::Name(name) = &**target else {
+                            unreachable!("name target")
+                        };
+                        self.named(default, value, name)?
+                    }
+                    _ => self.expr(default, value)?,
+                }
+                let here = self.here();
+                self.patch(skip, here);
+                self.bind_value(inner, leaf, value, mode)
+            }
+            Pattern::Object(properties, rest) => {
+                // §8.6.2 ObjectBindingPattern step 1 / §13.15.5.2 step 1.
+                self.emit(Insn::CheckCoercible { obj: src });
+                let count = properties.len() as u32;
+                let keys = self.next;
+                if rest.is_some() {
+                    for _ in 0..count {
+                        self.alloc()?;
+                    }
+                }
+                for (i, (key, property)) in properties.iter().enumerate() {
+                    let value = self.alloc()?;
+                    match key {
+                        PatternKey::Static(key) => {
+                            if rest.is_some() {
+                                let s = Value::String(key.clone().into());
+                                self.constant(s, keys + i as u32);
+                            }
+                            let leaf = self.pattern_leaf(property, mode)?;
+                            let name = self.name(key);
+                            self.emit(Insn::GetProp {
+                                dst: value,
+                                obj: src,
+                                name,
+                            });
+                            self.bind_value(property, leaf, value, mode)?;
+                        }
+                        PatternKey::Computed(e) => {
+                            let raw = self.alloc()?;
+                            self.expr(e, raw)?;
+                            let key = if rest.is_some() {
+                                keys + i as u32
+                            } else {
+                                self.alloc()?
+                            };
+                            self.emit(Insn::PropKey {
+                                dst: key,
+                                obj: src,
+                                key: raw,
+                            });
+                            let leaf = self.pattern_leaf(property, mode)?;
+                            self.emit(Insn::GetElem {
+                                dst: value,
+                                obj: src,
+                                key,
+                            });
+                            self.bind_value(property, leaf, value, mode)?;
+                        }
+                    }
+                }
+                if let Some(rest) = rest {
+                    let leaf = self.pattern_leaf(rest, mode)?;
+                    let dst = self.alloc()?;
+                    self.emit(Insn::ObjectRest {
+                        dst,
+                        src,
+                        keys,
+                        count,
+                    });
+                    self.bind_value(rest, leaf, dst, mode)?;
+                }
+                Ok(())
+            }
+            Pattern::Array(items, rest) => {
+                // §8.6.2 ArrayBindingPattern / §13.15.5.2 ArrayAssignmentPattern: GetIterator,
+                // IteratorBindingInitialization, then IteratorClose unless done.
+                let iter = self.alloc()?;
+                let next = self.alloc()?;
+                self.emit(Insn::GetIterator {
+                    iter,
+                    next,
+                    src,
+                    enumeration: false,
+                });
+                let start = self.here();
+                for item in items {
+                    let leaf = match item {
+                        Some(item) => self.pattern_leaf(item, mode)?,
+                        None => None,
+                    };
+                    let value = self.alloc()?;
+                    self.emit(Insn::IterStep {
+                        dst: value,
+                        iter,
+                        next,
+                    });
+                    if let Some(item) = item {
+                        self.bind_value(item, leaf, value, mode)?;
+                    }
+                }
+                if let Some(rest) = rest {
+                    let leaf = self.pattern_leaf(rest, mode)?;
+                    let dst = self.alloc()?;
+                    self.emit(Insn::IterRest { dst, iter, next });
+                    self.bind_value(rest, leaf, dst, mode)?;
+                }
+                let end = self.here();
+                let over = self.emit(Insn::Jump { to: 0 });
+                // An abrupt completion closes the iterator unless it is done (step 4 / 5).
+                let exc = self.alloc()?;
+                let target = self.here();
+                self.emit(Insn::IterCloseThrow { iter, exc });
+                self.handlers.push(Handler {
+                    start,
+                    end,
+                    target,
+                    exc,
+                    kind: None,
+                    env: self.current_env(),
+                });
+                let here = self.here();
+                self.patch(over, here);
+                self.emit(Insn::IterClose { iter });
+                Ok(())
+            }
+        }
+    }
+    fn put_leaf(&mut self, leaf: Leaf, src: Reg) -> CResult<()> {
+        match leaf {
+            Leaf::Init(name) => match self.resolve(&name) {
+                Some(binding) => {
+                    self.emit(Insn::Move {
+                        dst: binding.reg,
+                        src,
+                    });
+                    self.mark_ready(&name);
+                }
+                None if self.captured.contains(&name) => {
+                    let name = self.name(&name);
+                    self.emit(Insn::InitName { name, src });
+                }
+                None => return Err("vm: undeclared lexical"),
+            },
+            Leaf::Local(name) => self.store_name(&name, src)?,
+            Leaf::Free(reference, name) => {
+                self.emit(Insn::SetRef {
+                    reference,
+                    name,
+                    src,
+                });
+            }
+            Leaf::Prop(obj, name) => {
+                self.emit(Insn::SetProp { obj, name, src });
+            }
+            Leaf::Elem(obj, key) => {
+                self.emit(Insn::SetElem { obj, key, src });
+            }
+        }
+        Ok(())
     }
     /// PutValue of the register `src` on the binding `name` (a `var` or assignment
     /// target): a register local, or a reference resolved now (§9.4.2).
@@ -1343,7 +1656,8 @@ impl Compiler {
                         return Err("vm: var redeclares catch parameter");
                     }
                 }
-                Some(_) => return Err("vm: destructuring catch parameter"),
+                // A `var` redeclaring a pattern's name is an early error (§14.15.1).
+                Some(_) => {}
             }
         }
         let fin = match finally {
@@ -1407,6 +1721,31 @@ impl Compiler {
                         ready: true,
                     },
                 );
+            } else if let Some(pattern) = param {
+                // §14.15.2 steps 2-5: BindingInitialization of the CatchParameter pattern
+                // in the catch environment; its names are in their TDZ until bound.
+                let mut env_names = vec![];
+                for name in pattern.names() {
+                    if self.captured.contains(&name) {
+                        env_names.push((name, false));
+                        continue;
+                    }
+                    let reg = self.alloc()?;
+                    let binding = Binding {
+                        reg,
+                        constant: false,
+                        ready: false,
+                    };
+                    scope.insert(name, binding);
+                }
+                if !env_names.is_empty() {
+                    self.push_env(&env_names)?;
+                    catch_env = true;
+                }
+                self.scopes.push(std::mem::take(&mut scope));
+                let bound = self.bind_pattern(pattern, exc, BindMode::Lexical);
+                scope = self.scopes.pop().unwrap();
+                bound?;
             }
             // §15.10.2: a catch is in tail position only without a finally.
             let guard = fin.is_some() as u32;
@@ -1907,7 +2246,10 @@ impl Compiler {
                         None => {
                             self.emit(Insn::ArrayHole { array: dst });
                         }
-                        Some(Expr::Spread(_)) => return Err("vm: spread"),
+                        Some(Expr::Spread(inner)) => {
+                            let src = self.operand(inner, &[])?;
+                            self.emit(Insn::ArraySpread { array: dst, src });
+                        }
                         Some(element) => {
                             let src = self.operand(element, &[])?;
                             self.emit(Insn::ArrayPush { array: dst, src });
@@ -1977,7 +2319,13 @@ impl Compiler {
                 }
                 self.hatch(e, dst, None, false);
             }
-            Expr::Destructure(..) => return Err("vm: destructuring assignment"),
+            Expr::Destructure(pattern, rhs) => {
+                // §13.15.2 AssignmentExpression step 2: the value is the right-hand side.
+                let value = self.alloc()?;
+                self.expr(rhs, value)?;
+                self.bind_pattern(pattern, value, BindMode::Assign)?;
+                self.emit(Insn::Move { dst, src: value });
+            }
             Expr::OptionalChain(_) | Expr::Optional(_) => return Err("vm: optional chain"),
             _ => return Err("vm: expression kind"),
         }
@@ -1985,7 +2333,23 @@ impl Compiler {
     }
     fn arguments(&mut self, args: &[Expr]) -> CResult<(Reg, u32)> {
         if args.iter().any(|a| matches!(a, Expr::Spread(_))) {
-            return Err("vm: spread arguments");
+            // ArgumentListEvaluation (§13.3.8.1) with spreads: the values accumulate in an
+            // Array, as on the tree-walker (`spread_arguments`).
+            let array = self.alloc()?;
+            self.emit(Insn::NewArray { dst: array });
+            for arg in args {
+                let (e, spread) = match arg {
+                    Expr::Spread(inner) => (&**inner, true),
+                    e => (e, false),
+                };
+                let src = self.operand(e, &[])?;
+                self.emit(if spread {
+                    Insn::ArraySpread { array, src }
+                } else {
+                    Insn::ArrayPush { array, src }
+                });
+            }
+            return Ok((array, SPREAD_ARGC));
         }
         let base = self.next;
         for _ in args {
@@ -2411,6 +2775,22 @@ enum CallArgs<'a> {
     Template(&'a Expr, &'a super::templates::Template),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BindMode {
+    Lexical,
+    Var,
+    Assign,
+}
+
+/// The reference of a destructuring target, evaluated before its value.
+enum Leaf {
+    Init(String),
+    Local(String),
+    Free(Reg, u32),
+    Prop(Reg, u32),
+    Elem(Reg, Reg),
+}
+
 enum Target {
     Local(Binding),
     Free(Reg, u32),
@@ -2486,6 +2866,9 @@ fn reference_registers(
                 | Insn::NewArray { dst }
                 | Insn::NewObject { dst }
                 | Insn::IterNext { dst, .. }
+                | Insn::IterStep { dst, .. }
+                | Insn::IterRest { dst, .. }
+                | Insn::ObjectRest { dst, .. }
                 | Insn::PushEnv { dst, .. }
                 | Insn::CopyEnv { dst, .. } => Some(dst),
                 Insn::GetIterator { iter, next, .. } => {
@@ -2510,6 +2893,7 @@ fn reference_registers(
                 | Insn::Throw { .. }
                 | Insn::ArrayPush { .. }
                 | Insn::ArrayHole { .. }
+                | Insn::ArraySpread { .. }
                 | Insn::DefineField { .. }
                 | Insn::InitName { .. }
                 | Insn::IterClose { .. }
