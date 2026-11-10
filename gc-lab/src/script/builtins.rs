@@ -1874,6 +1874,30 @@ impl Engine<'_> {
                         );
                     }
                 }
+                if method == "freeze" {
+                    // SetIntegrityLevel (§7.3.15) defines each key through [[DefineOwnProperty]].
+                    // On a mapped arguments object (§10.4.4.2 steps 7.b) a non-writable data
+                    // define first takes the mapped value, then removes the mapping.
+                    let mapped: Vec<usize> = self
+                        .data(id)?
+                        .parameter_map
+                        .iter()
+                        .flatten()
+                        .enumerate()
+                        .filter_map(|(i, slot)| slot.as_ref().map(|_| i))
+                        .collect();
+                    for index in mapped {
+                        self.define(
+                            id,
+                            index.to_string(),
+                            Descriptor {
+                                writable: Some(false),
+                                configurable: Some(false),
+                                ..Descriptor::default()
+                            },
+                        )?;
+                    }
+                }
                 let mut d = self.data(id)?.clone();
                 d.extensible = false;
                 if method != "preventExtensions" {

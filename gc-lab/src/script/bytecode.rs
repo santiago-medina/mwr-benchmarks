@@ -12,12 +12,12 @@
 //! TDZ is resolved statically (§14.3.1, §9.1.1.1.1 GetBindingValue step 3): without
 //! closures, `switch` or `eval`, a reference to a lexical binding executes after its
 //! declaration exactly when it is textually after the end of that declaration.
-use super::ast_scan::mentions;
+use super::ast_scan::{captured_names, mentions};
 use super::js_string::JsString;
 use super::parser::{self, Expr, Param, Property, Stmt};
 use super::patterns::Pattern;
 use super::vm::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub(super) type Reg = u32;
 /// `this` operand of a call with an undefined receiver.
@@ -281,6 +281,39 @@ pub(super) enum Insn {
         name: u32,
         src: Reg,
     },
+    /// InitializeBinding (§9.1.1.1.4) of a captured top-level lexical in the function
+    /// environment.
+    InitName {
+        name: u32,
+        src: Reg,
+    },
+    /// ForIn/OfHeadEvaluation (§14.7.5.6) steps 6-7 on the value in `src`: an
+    /// EnumerateObjectProperties iterator (§14.7.5.9) or GetIterator (§7.4.3).
+    GetIterator {
+        iter: Reg,
+        next: Reg,
+        src: Reg,
+        enumeration: bool,
+    },
+    /// ForIn/OfBodyEvaluation (§14.7.5.7) steps 6.a-6.d: IteratorNext, jump to `to` when
+    /// done, else IteratorValue into `dst`.
+    IterNext {
+        dst: Reg,
+        iter: Reg,
+        next: Reg,
+        to: u32,
+    },
+    /// IteratorClose (§7.4.11) with a normal completion (break, return): the register
+    /// is cleared first, so a throw from `return` does not close it again.
+    IterClose {
+        iter: Reg,
+    },
+    /// IteratorClose with the throw completion in `exc` (unless `iter` was already
+    /// closed), then rethrow it.
+    IterCloseThrow {
+        iter: Reg,
+        exc: Reg,
+    },
 }
 
 pub(super) struct Chunk {
@@ -294,6 +327,9 @@ pub(super) struct Chunk {
     /// Exception handlers, innermost first: a throw at `start <= pc < end` stores the
     /// value in `exc`, sets `kind` (a finally's completion kind) to 1, and jumps to `target`.
     pub(super) handlers: Vec<Handler>,
+    /// Top-level function declarations, instantiated in the function environment at entry
+    /// (§10.2.11 step 36).
+    pub(super) hoist: Vec<Stmt>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -329,6 +365,8 @@ struct Control {
     /// `finally.len()` when the statement began: a break or continue to it from deeper
     /// would have to run a finally block (not compiled yet).
     finally_depth: usize,
+    /// A for-of loop's iterator register: leaving the loop by break or return closes it.
+    iterator: Option<Reg>,
 }
 
 struct Compiler {
@@ -350,15 +388,21 @@ struct Compiler {
     /// Try blocks (and catches with a finally) around the current code: no tail calls
     /// there (§15.10.2).
     non_tail: u32,
+    /// Function-level names a closure may capture: they live in the function environment
+    /// record, not in registers (BYTECODE_VM.md, stage 3 coverage step 3).
+    captured: HashSet<String>,
 }
 
 /// The register limit of one function (u16 operands in the design; checked here).
 const MAX_REGISTERS: u32 = 4096;
 
 pub(super) fn compile(params: &[Param], body: &[Stmt]) -> CResult<Chunk> {
-    if super::execute::arguments_needed(params, body) {
-        return Err("vm: arguments or eval");
+    // A direct eval can declare or read any binding by name, and `%forward` is the
+    // derived default constructor's argument forwarding: both stay on the tree-walker.
+    if mentions(&[&params, &body], &["\"eval\"", "%forward"]) {
+        return Err("vm: eval");
     }
+    let uses_arguments = super::execute::arguments_needed(params, body);
     let mut c = Compiler {
         code: vec![],
         consts: vec![],
@@ -375,32 +419,67 @@ pub(super) fn compile(params: &[Param], body: &[Stmt]) -> CResult<Chunk> {
         handlers: vec![],
         finally: vec![],
         non_tail: 0,
+        captured: HashSet::new(),
     };
     let mut all = vec![];
-    let mut param_regs = vec![];
     for param in params {
         let (Pattern::Name(name), None) = (&param.binding, &param.default) else {
             return Err("vm: non-simple parameter");
         };
-        if !c.function.contains_key(name) {
+        all.push(name.clone());
+    }
+    let mut vars = vec![];
+    declared_names(body, &mut vars, &mut all)?;
+    all.sort();
+    all.dedup();
+    // Names a closure mentions, and the top-level function declarations (instantiated in
+    // the environment before the body runs), are environment-resident.
+    let mut hoist = vec![];
+    for statement in body {
+        if let Stmt::Function(name, ..)
+        | Stmt::AsyncFunction(name, ..)
+        | Stmt::GeneratorFunction(name, ..) = parser::strip_labels(statement)
+        {
+            c.captured.insert(name.clone());
+            hoist.push(statement.clone());
+        }
+    }
+    c.captured.extend(captured_names(&body, &all));
+    if uses_arguments {
+        // FunctionDeclarationInstantiation (§10.2.11 steps 15-22) already bound
+        // `arguments` in the environment. A sloppy function with simple parameters gets a
+        // mapped arguments object (§10.4.4.7) whose elements alias the parameter bindings,
+        // so its parameters must live in the environment too.
+        c.captured.insert("arguments".to_string());
+        if matches!(body.first(), Some(Stmt::Sloppy)) {
+            for param in params {
+                c.captured.extend(param.binding.names());
+            }
+        }
+    }
+    let mut param_regs = vec![];
+    for param in params {
+        let Pattern::Name(name) = &param.binding else {
+            unreachable!("checked above")
+        };
+        if !c.function.contains_key(name) && !c.captured.contains(name) {
             let reg = c.alloc()?;
             c.function.insert(name.clone(), reg);
             let index = c.name(name);
             param_regs.push((index, reg));
         }
-        all.push(name.clone());
     }
-    let mut vars = vec![];
-    declared_names(body, &mut vars, &mut all)?;
     for name in vars {
-        if !c.function.contains_key(&name) {
+        if !c.function.contains_key(&name) && !c.captured.contains(&name) {
             let reg = c.alloc()?;
             c.function.insert(name, reg);
         }
     }
-    all.sort();
-    all.dedup();
-    c.needles = all.iter().map(|n| format!("{n:?}")).collect();
+    c.needles = all
+        .iter()
+        .filter(|n| !c.captured.contains(*n))
+        .map(|n| format!("{n:?}"))
+        .collect();
     c.block_body(body, true)?;
     c.emit(Insn::ReturnUndefined);
     let (code, handlers) = finish(c.code, &c.consts, &param_regs, &c.dead, c.handlers);
@@ -412,6 +491,7 @@ pub(super) fn compile(params: &[Param], body: &[Stmt]) -> CResult<Chunk> {
         registers: c.max,
         params: param_regs,
         handlers,
+        hoist,
     })
 }
 
@@ -447,6 +527,28 @@ fn declared_in(statement: &Stmt, vars: &mut Vec<String>, all: &mut Vec<String>) 
             }
         }
         Stmt::While { body, .. } | Stmt::Labeled(_, body) => declared_in(body, vars, all)?,
+        Stmt::ForIn {
+            kind,
+            binding,
+            body,
+            ..
+        }
+        | Stmt::ForOf {
+            kind,
+            binding,
+            body,
+            ..
+        } => {
+            if let Pattern::Name(name) = binding {
+                if kind == "var" {
+                    vars.push(name.clone());
+                }
+                if kind != "assignment" {
+                    all.push(name.clone());
+                }
+            }
+            declared_in(body, vars, all)?;
+        }
         Stmt::For { init, body, .. } => {
             if let Some(init) = init {
                 declared_in(init, vars, all)?;
@@ -498,6 +600,7 @@ impl Compiler {
             | Insn::JumpIfTrue { to, .. }
             | Insn::JumpIfNotNullish { to, .. }
             | Insn::Loop { to }
+            | Insn::IterNext { to, .. }
             | Insn::EndFinally { to, .. } => *to = target,
             _ => unreachable!("patching a non-jump"),
         }
@@ -558,7 +661,7 @@ impl Compiler {
 
     // ----- scopes and statements -----
 
-    fn enter_scope(&mut self, body: &[Stmt]) -> CResult<Reg> {
+    fn enter_scope(&mut self, body: &[Stmt], function: bool) -> CResult<Reg> {
         let mark = self.next;
         let mut scope = HashMap::new();
         for statement in parser::direct_statements(body) {
@@ -574,11 +677,23 @@ impl Compiler {
                     };
                     (name, kind == "const")
                 }
+                Stmt::Function(..) | Stmt::AsyncFunction(..) | Stmt::GeneratorFunction(..)
+                    if function =>
+                {
+                    continue
+                }
                 Stmt::Function(..) | Stmt::AsyncFunction(..) | Stmt::GeneratorFunction(..) => {
                     return Err("vm: function declaration")
                 }
                 _ => continue,
             };
+            if self.captured.contains(name) {
+                if function {
+                    continue;
+                }
+                // A block (or loop iteration) environment per evaluation: not yet.
+                return Err("vm: captured block lexical");
+            }
             let reg = self.alloc()?;
             scope.insert(
                 name.clone(),
@@ -603,8 +718,17 @@ impl Compiler {
         self.next = mark;
     }
     fn block_body(&mut self, body: &[Stmt], function: bool) -> CResult<()> {
-        let mark = self.enter_scope(body)?;
+        let mark = self.enter_scope(body, function)?;
         for statement in body {
+            if function
+                && matches!(
+                    parser::strip_labels(statement),
+                    Stmt::Function(..) | Stmt::AsyncFunction(..) | Stmt::GeneratorFunction(..)
+                )
+            {
+                // Instantiated at entry (`Chunk::hoist`); the statement itself is empty.
+                continue;
+            }
             self.statement(statement)?;
         }
         if function {
@@ -646,7 +770,7 @@ impl Compiler {
             }
             Stmt::Var(name, init) => {
                 if let Some(init) = init {
-                    self.assign_local(name, init, None)?;
+                    self.var_init(name, init)?;
                 }
             }
             Stmt::Let(name, init) | Stmt::Const(name, init) => self.declare(name, Some(init))?,
@@ -657,7 +781,7 @@ impl Compiler {
             } => {
                 if kind == "var" {
                     if let Some(init) = init {
-                        self.assign_local(name, init, None)?;
+                        self.var_init(name, init)?;
                     }
                 } else if parser::is_using(kind) {
                     return Err("vm: using declaration");
@@ -720,7 +844,7 @@ impl Compiler {
             } => {
                 let scope = match init.as_deref() {
                     Some(init) => {
-                        let mark = self.enter_scope(std::slice::from_ref(init))?;
+                        let mark = self.enter_scope(std::slice::from_ref(init), false)?;
                         self.statement(init)?;
                         Some(mark)
                     }
@@ -757,6 +881,7 @@ impl Compiler {
                     continues: vec![],
                     mark: self.next,
                     finally_depth: self.finally.len(),
+                    iterator: None,
                 });
                 self.statement(body)?;
                 let control = self.controls.pop().unwrap();
@@ -796,7 +921,22 @@ impl Compiler {
             Stmt::Bind { .. } => return Err("vm: destructuring declaration"),
             Stmt::With(..) => return Err("vm: with"),
             Stmt::Switch(..) => return Err("vm: switch"),
-            Stmt::ForIn { .. } | Stmt::ForOf { .. } => return Err("vm: for-in/of"),
+            Stmt::ForIn {
+                kind,
+                binding,
+                iterable,
+                body,
+            } => self.for_in_of(kind, binding, iterable, body, true)?,
+            Stmt::ForOf {
+                asynchronous: true, ..
+            } => return Err("vm: for-await"),
+            Stmt::ForOf {
+                kind,
+                binding,
+                iterable,
+                body,
+                ..
+            } => self.for_in_of(kind, binding, iterable, body, false)?,
             Stmt::Try {
                 body,
                 catch,
@@ -805,8 +945,210 @@ impl Compiler {
         }
         Ok(())
     }
+    /// ForInOfStatement (§14.7.5.5-§14.7.5.7). Layout: `iterable; GetIterator; top:
+    /// IterNext -> exit; bind; body; Loop top; [for-of: handler: IterCloseThrow]; exit:`.
+    /// The handler covers the binding and the body, not IteratorNext (§14.7.5.7 step
+    /// 6.i: only an abrupt binding or body closes the iterator, and only for-of does).
+    fn for_in_of(
+        &mut self,
+        kind: &str,
+        binding: &Pattern,
+        iterable: &Expr,
+        body: &Stmt,
+        enumeration: bool,
+    ) -> CResult<()> {
+        if !matches!(kind, "var" | "let" | "const" | "assignment") {
+            return Err("vm: using declaration");
+        }
+        let lexical = kind != "var" && kind != "assignment";
+        let mark = self.next;
+        let target = match binding {
+            Pattern::Name(name) => Expr::Name(name.clone()),
+            Pattern::Target(target)
+                if kind == "assignment"
+                    && matches!(**target, Expr::Member(..) | Expr::Computed(..)) =>
+            {
+                (**target).clone()
+            }
+            _ => return Err("vm: for-in/of destructuring"),
+        };
+        if lexical {
+            // §14.7.5.6 step 2: the bound name is in its TDZ while the iterable runs.
+            let Expr::Name(name) = &target else {
+                unreachable!("lexical names")
+            };
+            if self.captured.contains(name) {
+                return Err("vm: captured block lexical");
+            }
+            let reg = self.alloc()?;
+            let mut scope = HashMap::new();
+            scope.insert(
+                name.clone(),
+                Binding {
+                    reg,
+                    constant: kind == "const",
+                    ready: false,
+                },
+            );
+            self.scopes.push(scope);
+        }
+        let iter = self.alloc()?;
+        let next = self.alloc()?;
+        let src = self.alloc()?;
+        self.expr(iterable, src)?;
+        self.emit(Insn::GetIterator {
+            iter,
+            next,
+            src,
+            enumeration,
+        });
+        self.constant(Value::Undefined, src);
+        let top = self.here();
+        let value = self.alloc()?;
+        let exit = self.emit(Insn::IterNext {
+            dst: value,
+            iter,
+            next,
+            to: 0,
+        });
+        let start = self.here();
+        // The tree-walker keeps both loops out of tail position (the iterator closes
+        // after a `return`), and so does this.
+        self.non_tail += 1;
+        let result = self.for_in_of_body(kind, &target, value, iter, body, enumeration);
+        self.non_tail -= 1;
+        result?;
+        let end = self.here();
+        let continue_at = end;
+        self.emit(Insn::Loop { to: top });
+        if !enumeration {
+            let exc = self.alloc()?;
+            let target = self.here();
+            self.emit(Insn::IterCloseThrow { iter, exc });
+            self.handlers.push(Handler {
+                start,
+                end,
+                target,
+                exc,
+                kind: None,
+            });
+        }
+        self.close_loop(continue_at, Some(exit));
+        if lexical {
+            self.scopes.pop();
+        }
+        self.emit(Insn::Clear {
+            from: mark,
+            to: self.next,
+        });
+        self.next = mark;
+        Ok(())
+    }
+    /// One iteration: bind the value (§14.7.5.7 steps 6.e-6.h), then the body.
+    fn for_in_of_body(
+        &mut self,
+        kind: &str,
+        target: &Expr,
+        value: Reg,
+        iter: Reg,
+        body: &Stmt,
+        enumeration: bool,
+    ) -> CResult<()> {
+        match target {
+            Expr::Name(name) if kind == "let" || kind == "const" => {
+                self.mark_ready(name);
+                let reg = self.resolve(name).unwrap().reg;
+                self.emit(Insn::Move {
+                    dst: reg,
+                    src: value,
+                });
+            }
+            Expr::Name(name) => self.store_name(name, value)?,
+            Expr::Member(base, key) => {
+                let obj = self.operand(base, &[])?;
+                self.emit(Insn::CheckCoercible { obj });
+                let name = self.name(key);
+                self.emit(Insn::SetProp {
+                    obj,
+                    name,
+                    src: value,
+                });
+            }
+            Expr::Computed(base, key) => {
+                let obj = self.operand(base, &[key])?;
+                let raw = self.operand(key, &[])?;
+                let key = self.alloc()?;
+                self.emit(Insn::PropKey {
+                    dst: key,
+                    obj,
+                    key: raw,
+                });
+                self.emit(Insn::SetElem {
+                    obj,
+                    key,
+                    src: value,
+                });
+            }
+            _ => unreachable!("checked targets"),
+        }
+        self.controls.push(Control {
+            label: None,
+            is_loop: true,
+            breaks: vec![],
+            continues: vec![],
+            mark: self.next,
+            finally_depth: self.finally.len(),
+            iterator: (!enumeration).then_some(iter),
+        });
+        self.statement(body)
+    }
+    /// PutValue of the register `src` on the binding `name` (a `var` or assignment
+    /// target): a register local, or a reference resolved now (§9.4.2).
+    fn store_name(&mut self, name: &str, src: Reg) -> CResult<()> {
+        match self.resolve(name) {
+            Some(binding) if !binding.ready => {
+                self.emit(Insn::Tdz);
+            }
+            Some(binding) if binding.constant => {
+                self.emit(Insn::ConstAssign);
+            }
+            Some(binding) => {
+                self.emit(Insn::Move {
+                    dst: binding.reg,
+                    src,
+                });
+            }
+            None => {
+                let reference = self.alloc()?;
+                let index = self.name(name);
+                self.emit(Insn::ResolveName {
+                    dst: reference,
+                    name: index,
+                });
+                self.emit(Insn::SetRef {
+                    reference,
+                    name: index,
+                    src,
+                });
+            }
+        }
+        Ok(())
+    }
     /// `return` of the value in `src`: through the innermost pending finally, if any.
     fn return_value(&mut self, src: Reg) {
+        // §14.7.5.7 step 6.l: the for-of loops left before the next finally block close
+        // their iterators, innermost first (the finally's own return path closes the rest).
+        let depth = self.finally.len();
+        let open: Vec<Reg> = self
+            .controls
+            .iter()
+            .rev()
+            .filter(|c| c.finally_depth == depth)
+            .filter_map(|c| c.iterator)
+            .collect();
+        for iter in open {
+            self.emit(Insn::IterClose { iter });
+        }
         let Some(ctx) = self.finally.last() else {
             self.emit(Insn::Return { src });
             return;
@@ -831,6 +1173,9 @@ impl Compiler {
         if let Some((param, catch_body)) = catch {
             match param {
                 None => {}
+                Some(Pattern::Name(name)) if self.captured.contains(name) => {
+                    return Err("vm: captured block lexical");
+                }
                 Some(Pattern::Name(name)) => {
                     // Annex B.3.4 (a `var` redeclaring the catch parameter) stays on the
                     // tree-walker.
@@ -951,6 +1296,17 @@ impl Compiler {
     /// Jump out of `controls[index]` (break, or continue of a loop), clearing the
     /// registers of the scopes left on the way.
     fn exit_to(&mut self, index: usize, is_continue: bool) {
+        // The for-of loops left on the way close their iterators (§14.7.5.7 step 6.l),
+        // innermost first; a continue keeps its own loop's iterator open.
+        let skip = index + is_continue as usize;
+        let open: Vec<Reg> = self.controls[skip.min(self.controls.len())..]
+            .iter()
+            .rev()
+            .filter_map(|c| c.iterator)
+            .collect();
+        for iter in open {
+            self.emit(Insn::IterClose { iter });
+        }
         let mark = self.controls[index].mark;
         if self.next > mark {
             self.emit(Insn::Clear {
@@ -987,6 +1343,7 @@ impl Compiler {
             continues: vec![],
             mark: self.next,
             finally_depth: self.finally.len(),
+            iterator: None,
         });
         self.statement(body)
     }
@@ -1003,7 +1360,25 @@ impl Compiler {
             self.patch(exit, end);
         }
     }
+    /// `var name = init` (§14.3.2.1): PutValue on the resolved binding.
+    fn var_init(&mut self, name: &str, init: &Expr) -> CResult<()> {
+        if self.resolve(name).is_none() && self.captured.contains(name) {
+            let dst = self.alloc()?;
+            return self.assign(&Expr::Name(name.to_string()), init, dst);
+        }
+        self.assign_local(name, init, None)
+    }
     fn declare(&mut self, name: &str, init: Option<&Expr>) -> CResult<()> {
+        if self.resolve(name).is_none() && self.captured.contains(name) {
+            let src = self.alloc()?;
+            match init {
+                Some(init) => self.named(init, src, name)?,
+                None => self.constant(Value::Undefined, src),
+            }
+            let name = self.name(name);
+            self.emit(Insn::InitName { name, src });
+            return Ok(());
+        }
         let binding = self.resolve(name).ok_or("vm: undeclared lexical")?;
         match init {
             // Reads of `name` inside its own initializer are still in its TDZ.
@@ -1302,7 +1677,14 @@ impl Compiler {
             | Expr::AsyncFunction { .. }
             | Expr::AsyncArrow { .. }
             | Expr::GeneratorFunction { .. }
-            | Expr::Class(_) => return Err("vm: closure over locals"),
+            | Expr::Class(_) => {
+                // Every local a closure mentions is environment-resident (`captured`), so
+                // the tree-walker creates it against the function environment.
+                if self.touches_locals(e) {
+                    return Err("vm: closure over locals");
+                }
+                self.hatch(e, dst, None, false);
+            }
             Expr::Destructure(..) => return Err("vm: destructuring assignment"),
             Expr::OptionalChain(_) | Expr::Optional(_) => return Err("vm: optional chain"),
             _ => return Err("vm: expression kind"),
@@ -1757,7 +2139,12 @@ fn reference_registers(
                 | Insn::Call { dst, .. }
                 | Insn::New { dst, .. }
                 | Insn::NewArray { dst }
-                | Insn::NewObject { dst } => Some(dst),
+                | Insn::NewObject { dst }
+                | Insn::IterNext { dst, .. } => Some(dst),
+                Insn::GetIterator { iter, next, .. } => {
+                    changed |= mark(&mut refs, next);
+                    Some(iter)
+                }
                 Insn::Clear { .. }
                 | Insn::Tdz
                 | Insn::ConstAssign
@@ -1776,7 +2163,10 @@ fn reference_registers(
                 | Insn::Throw { .. }
                 | Insn::ArrayPush { .. }
                 | Insn::ArrayHole { .. }
-                | Insn::DefineField { .. } => None,
+                | Insn::DefineField { .. }
+                | Insn::InitName { .. }
+                | Insn::IterClose { .. }
+                | Insn::IterCloseThrow { .. } => None,
             };
             if let Some(reg) = written {
                 changed |= mark(&mut refs, reg);
@@ -1832,6 +2222,7 @@ fn finish(
                 | Insn::JumpIfTrue { to, .. }
                 | Insn::JumpIfNotNullish { to, .. }
                 | Insn::Loop { to }
+                | Insn::IterNext { to, .. }
                 | Insn::EndFinally { to, .. } => *to = index[*to as usize],
                 _ => {}
             }

@@ -556,3 +556,122 @@ gives 200/201 on both. Fallback mix over 600 sampled cases (`vmstats.sh`, task w
 89.7 % of function bodies compiled. The remaining reasons are `arguments or eval` 214,
 `closure over locals` 73, `for-in/of` 60, `non-simple parameter` 33, `template` 33, and
 `switch` 16; `vm: try` no longer appears.
+
+### Stage 3, coverage steps 3-4: closures and the arguments object (2026-11-10)
+
+**Closures (step 3).** The compiler splits the function's own bindings into two classes:
+- *Register-resident*: the default, as before.
+- *Environment-resident* (`Compiler::captured`): every declared name (parameter, `var`, top-level
+  `let`/`const`) mentioned inside a closure subtree of the body, plus every top-level function
+  declaration's name. `ast_scan::captured_names` finds the closure subtrees (arrow, function, async,
+  generator, class, accessor and class-init variants) in the body's `Debug` text, skipping string
+  literals, and looks for each name quoted inside them. A false positive only moves a binding to its
+  environment record; it cannot change semantics.
+
+An environment-resident name gets no register. Reads and writes compile as free names
+(`GetName` / `ResolveName` + `SetRef`) against the function environment that
+FunctionDeclarationInstantiation (§10.2.11) has already populated. `var` bindings start as
+undefined, lexical ones are in their TDZ, and parameters live in the parameter environment. A
+top-level `let`/`const` initializer ends in `InitName` (InitializeBinding, §9.1.1.1.4). TDZ and `const`
+errors come from the environment record itself. A closure expression then mentions no register
+binding, so it runs through the existing `Hatch` (the tree-walker creates the function object over
+the function environment, and NamedEvaluation still applies through the hatch's name). Top-level
+function declarations are kept in `Chunk::hoist` and instantiated at entry with `hoist_functions`,
+before parameters are copied into registers (a declaration can shadow a parameter).
+
+Still on the tree-walker: a captured binding declared in a nested block, a `for (let …)` head or a
+catch parameter (`vm: captured block lexical`). Those need a fresh environment per block
+evaluation or per iteration (CreatePerIterationEnvironment, §14.7.4.4), which is a separate step.
+Function declarations in nested blocks (Annex B.3.3) also stay on the tree-walker.
+
+**Arguments object (step 4).** `arguments` alone no longer rejects a body: only a direct `eval` or
+the derived default constructor's `%forward` do (`vm: eval`). The `arguments` object already
+exists in the environment (§10.2.11 steps 15-22), so the name is environment-resident. In a sloppy
+function with simple parameters the object is mapped (§10.4.4.7) and aliases the parameter bindings,
+so all its parameters become environment-resident as well. A strict function's unmapped object
+leaves its parameters in registers.
+
+Spec fix found by the probes (both engines): `Object.freeze` mutated the property map directly and
+skipped the mapped-arguments [[DefineOwnProperty]] (§10.4.4.2), so a frozen `arguments` stayed linked
+to its parameters. SetIntegrityLevel (§7.3.15) now defines each mapped index through `define`, which
+takes the current mapped value and removes the mapping.
+
+Gate: `vmprobe/closure.js` (22 cases: counters, parameter written after capture, hoisting order,
+function vs param/var, captured TDZ and const, class and accessor captures, NamedEvaluation) and
+`vmprobe/arguments.js` (13 cases: mapping, short argc, strict unmapped, arrow `arguments`,
+`var arguments`, defineProperty/freeze breaking the map, captured formal) pass on both engines and
+under `--gc-stress`. The closure-heavy directories (function-code, function and arrow
+expressions and statements, class definition, block-scope) give 400/400 on both engines.
+`language/arguments-object` and `built-ins/Object/{freeze,seal,isFrozen}` give 469/469 on both
+engines. The 2,500-case equivalence sample is still identical (`passed=2235 failed=251
+unsupported=14` on both). Fallback mix over the same 600 sampled cases: **96.1 %** of bodies compiled
+(89.7 % after step 2, 91.6 % after closures alone). The remaining reasons are `for-in/of` 60,
+`non-simple parameter` 33, `template` 33, `eval` 18, `switch` 16 and `captured block lexical` 5.
+
+### Stage 3, coverage step 5: for-in and for-of (2026-11-10)
+
+ForInOfStatement (§14.7.5.5-§14.7.5.7) compiles to four instructions:
+
+```
+  iterable -> src; GetIterator iter, next <- src (enumeration?)
+top:
+  IterNext value <- iter.next() ; done -> exit          (outside the handler)
+  [handler start] bind value; body [handler end]
+  Loop top
+  handler: IterCloseThrow iter, exc                     (for-of only)
+exit:
+```
+
+- `GetIterator` is §14.7.5.6 steps 6-7: EnumerateObjectProperties (§14.7.5.9, the engine's
+  `%ForInIteratorPrototype%` cursor, `null`/`undefined` give an empty one) or GetIterator (§7.4.3).
+- `IterNext` is §14.7.5.7 steps 6.a-6.d, with the same "iterator result is not object" TypeError as
+  the tree-walker.
+- The handler covers only the binding step and the body. An abrupt binding or body closes the
+  iterator (step 6.i and 6.l), and a throw from `next()` does not. Only for-of has a handler:
+  for-in returns the completion without IteratorClose.
+- `IterCloseThrow` is IteratorClose (§7.4.11) with a throw completion. Errors from `return` are
+  swallowed and the original value is rethrown.
+- `break` out of a for-of goes through `exit_to`, and so does a labeled break to an outer statement.
+  Either way it emits `IterClose` for every for-of loop it leaves, innermost first. `continue` keeps
+  its own loop's iterator. `IterClose` clears the iterator register before calling `return`. So
+  when `return` throws, the loop's own handler finds the register empty and only rethrows. Each
+  outer for-of still closes its iterator, which matches the spec's chain of completions.
+- `return` emits `IterClose` for the for-of loops between it and the innermost pending finally
+  (`finally_depth == finally.len()`), then goes on as before. The finally's return path calls
+  `return_value` again once the finally is popped, and that closes the loops outside it. So
+  `try { for (x of it) try { return } finally { A } } finally { B }` runs A, closes `it`, then
+  runs B, as the tree-walker does.
+- Bindings: a `let`/`const` name gets a register scope pushed before the iterable is compiled, so
+  `for (let x of x)` reads hit `Tdz` (§14.7.5.6 step 2). Each iteration writes the register, which
+  is the per-iteration copy, because a captured name is rejected (`captured block lexical`).
+  - `var` and assignment names go through `store_name`: a register Move, or ResolveName/SetRef
+    after the value, as in step 6.h.i.
+  - Member and computed assignment targets evaluate their reference after IteratorValue.
+  - Destructuring heads (`vm: for-in/of destructuring`), `using` heads and `for await` stay on
+    the tree-walker.
+- Like the tree-walker, neither loop's body is a tail position (`non_tail`), because the iterator
+  still closes after a `return`.
+
+Probe `vmprobe/forof.js` (28 cases) passes on both engines and under `--gc-stress`, and all 65
+of its bodies compile. It covers:
+- close order on break, labeled break, return and throw;
+- `return` throwing after break;
+- a non-object `return` result;
+- a `next` throw that must not close;
+- `continue outer`;
+- return through nested finally blocks;
+- TDZ and const assignment in the head;
+- member and computed targets;
+- the Annex B initializer;
+- deletion during for-in.
+
+Gate results:
+- `language/statements/for-of` and `for-in`: 870 cases, identical on both engines (843 passed, 27
+  unsupported).
+- 2,500-case equivalence sample: identical except
+  `ArrayBuffer/prototype/sliceToImmutable/argument-coercion.js`. That case is load-sensitive: it
+  takes 7-15 s on either engine under the machine's foreign load, and in full39 it passed only on
+  retry.
+- Fallback mix over the 600 sampled cases: **97.3 %** of bodies compiled (up from 96.1 %).
+  Remaining reasons: `template` 40, `non-simple parameter` 33, `eval` 18, `switch` 16,
+  `captured block lexical` 5, `for-in/of destructuring` 2, `destructuring declaration` 2.

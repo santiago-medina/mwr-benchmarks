@@ -131,6 +131,11 @@ impl Engine<'_> {
     }
 
     fn execute_chunk(&mut self, chunk: &Chunk, local: Id, base: usize) -> Result<Option<Value>> {
+        // §10.2.11 step 36 / `block`'s hoisting: top-level function declarations exist
+        // before the body (and before parameters are read: a declaration may shadow one).
+        if !chunk.hoist.is_empty() {
+            self.hoist_functions(&chunk.hoist, local)?;
+        }
         for (name, reg) in &chunk.params {
             let value = self.lookup(local, &chunk.names[*name as usize])?;
             self.set_reg(base, *reg, value);
@@ -501,6 +506,71 @@ impl Engine<'_> {
                     let prototype = self.intrinsics.as_ref().unwrap().object;
                     let id = self.new_object(Some(prototype))?;
                     self.set_reg(base, dst, Value::Object(id));
+                }
+                Insn::InitName { name, src } => {
+                    let value = self.reg(base, src);
+                    self.initialize(local, chunk.names[name as usize].as_str(), value)?;
+                }
+                Insn::GetIterator {
+                    iter,
+                    next,
+                    src,
+                    enumeration,
+                } => {
+                    let value = self.reg(base, src);
+                    let (iterator, method) = if enumeration {
+                        let iterator = self.enumeration(value)?;
+                        let next = self.intrinsics.as_ref().unwrap().functions
+                            ["%ForInIteratorPrototype%.next"];
+                        (iterator, Value::Object(next))
+                    } else {
+                        let method = self.get_member(value.clone(), Key::Symbol(0))?;
+                        self.protect(&method)?;
+                        self.open_iterator(value, method)?
+                    };
+                    self.set_reg(base, iter, iterator);
+                    self.set_reg(base, next, method);
+                }
+                Insn::IterNext {
+                    dst,
+                    iter,
+                    next,
+                    to,
+                } => {
+                    let (iterator, method) = (self.reg(base, iter), self.reg(base, next));
+                    let result = self.invoke_this(method, iterator, vec![])?;
+                    self.protect(&result)?;
+                    if !matches!(result, Value::Object(_)) {
+                        return self.throw_error("TypeError", "iterator result is not object");
+                    }
+                    if self.get_member(result.clone(), "done")?.truthy() {
+                        *pc = to as usize;
+                    } else {
+                        let value = self.get_member(result, "value")?;
+                        self.set_reg(base, dst, value);
+                    }
+                }
+                Insn::IterClose { iter } => {
+                    let iterator = self.reg(base, iter);
+                    self.protect(&iterator)?;
+                    self.set_reg(base, iter, Value::Undefined);
+                    self.close_iterator(iterator, Ok(None))?;
+                }
+                Insn::IterCloseThrow { iter, exc } => {
+                    let iterator = self.reg(base, iter);
+                    let value = self.reg(base, exc);
+                    if iterator == Value::Undefined {
+                        return Err(self.thrown(value));
+                    }
+                    self.protect(&iterator)?;
+                    self.protect(&value)?;
+                    self.set_reg(base, iter, Value::Undefined);
+                    let pending = Err(self.thrown(value.clone()));
+                    // A throw completion stays abrupt: IteratorClose returns it (§7.4.11 step 5).
+                    return match self.close_iterator(iterator, pending) {
+                        Err(error) => Err(error),
+                        Ok(_) => Err(self.thrown(value)),
+                    };
                 }
                 Insn::DefineField { obj, name, src } => {
                     let Value::Object(id) = self.reg(base, obj) else {

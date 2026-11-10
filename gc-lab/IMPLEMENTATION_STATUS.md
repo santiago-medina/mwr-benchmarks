@@ -372,3 +372,12 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - `js_check` defaults to the VM (`--engine=tree` or `MWR_ENGINE=tree` selects the tree-walker). The embedding default (`EngineMode`) stays Tree. Equivalence: tree and VM give identical results on a 2500-case sample and on `statements/try`.
 - pe-bench (10 fixed RegExp property-escape cases, run alone): tree 37.1 s, VM 10.3 s (3.6x).
 - Full run on the VM: 47223/47708 pass (99.0%), +27 against full38. Failed 148 (-27), unsupported 337. Gained 27 (17 property-escape timeouts, 9 logical-assignment cases, 1 other), lost 0. The full run took ~10 min instead of ~39. Five timeouts remain on both engines: TypedArray copyWithin coerced-values-*-detached (3) and decodeURI/decodeURIComponent S15.1.3.x_A2.5_T1 (2); top-level script code still runs on the tree-walker.
+
+### Register VM stage 3: closures, the arguments object, for-in/of (checkpoint 33, 2026-11-10)
+
+- Coverage step 3, closures: function-level names that a nested function, class or accessor mentions live in the function environment, not in registers (`ast_scan::captured_names`). Closures are created through `Hatch`. Top-level function declarations are instantiated at entry (`Chunk::hoist`), and `InitName` initializes captured lexicals. A captured block-level lexical still falls back.
+- Coverage step 4, the arguments object: only direct eval and `%forward` still reject a body. In sloppy functions with a mapped arguments object, the parameters live in the environment, so the map aliases them.
+- Coverage step 5, for-in/of: `GetIterator`, `IterNext`, `IterClose` and `IterCloseThrow` cover §14.7.5.6-7. IteratorClose runs on break, labeled break, return (also through nested `finally` blocks) and throw, but not after a throw from `next`. Heads with a TDZ `let`/`const`, `var`, a name or a member assignment target compile. Destructuring heads, `using` and `for await` fall back.
+- Spec fix on both engines: `Object.freeze` on a mapped arguments object goes through [[DefineOwnProperty]] (§10.4.4.2), so it unmaps the frozen indices.
+- Over the 600 sampled cases, 97.3% of function bodies compile (89.7% at checkpoint 32). Remaining fallbacks: template 40, non-simple parameter 33, eval 18, switch 16, captured block lexical 5.
+- Full run on the VM: 47223/47708 pass (99.0%), unchanged from full39, with 0 gained and 0 lost. The probes `vmprobe/{closure,arguments,forof}.js` pass on both engines and under `--gc-stress`.
