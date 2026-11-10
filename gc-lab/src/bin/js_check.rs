@@ -107,6 +107,17 @@ fn main() {
     let strict_only = remaining.iter().any(|s| s == "--strict-only");
     let module = remaining.iter().any(|s| s == "--module");
     let negative_resolution = remaining.iter().any(|s| s == "--negative-resolution");
+    // BYTECODE_VM.md stage 3: compilable function bodies run on the register VM (the
+    // default here since checkpoint 32: full test262 run with 0 lost cases); `--engine=tree`
+    // (or MWR_ENGINE=tree) keeps everything on the tree-walker, the embedding default.
+    // `--vm-stats` prints the VM counters to stderr.
+    let engine = remaining
+        .iter()
+        .find_map(|s| s.strip_prefix("--engine="))
+        .map(str::to_string)
+        .or_else(|| std::env::var("MWR_ENGINE").ok());
+    let vm_engine = engine.as_deref() != Some("tree");
+    let vm_stats = remaining.iter().any(|s| s == "--vm-stats");
     let negative = remaining.into_iter().find(|s| !s.starts_with("--"));
     let source = std::fs::read_to_string(&path).expect("source");
     if negative_parse {
@@ -178,6 +189,9 @@ fn main() {
     // The engine default (10k steps) is an embedding safety budget; conformance cases such as
     // testTypedArray.js loops need far more. The runner's per-case timeout bounds runaway cases.
     e.set_step_limit(50_000_000);
+    if vm_engine {
+        e.set_engine_mode(gc_lab::script::EngineMode::Vm);
+    }
     let prefix = if sloppy { "" } else { "\"use strict\";\n" };
     let full = format!("{prefix}{ASSERT_GLOBALS}{includes}{source}");
     let case = std::fs::canonicalize(&path).expect("case path");
@@ -323,6 +337,15 @@ fn main() {
             (result, expected) => ("failed", format!("{result:?}; expected {expected:?}")),
         }
     };
+    if vm_stats {
+        let stats = e.vm_stats();
+        let mut fallbacks: Vec<_> = stats.fallbacks.iter().collect();
+        fallbacks.sort_by(|a, b| b.1.cmp(a.1));
+        eprintln!(
+            "vm: compiled={} calls={} max_registers={} fallbacks={fallbacks:?}",
+            stats.compiled, stats.calls, stats.max_registers
+        );
+    }
     println!(
         "{{\"status\":{},\"reason\":{},\"assertions\":{assertions},\"cleanup\":{clean}}}",
         quote(status),

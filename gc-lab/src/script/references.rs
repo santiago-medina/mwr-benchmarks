@@ -67,7 +67,7 @@ impl Engine<'_> {
             _ => Err(ScriptError::Runtime("invalid reference")),
         }
     }
-    fn reference_get(&mut self, reference: &Reference) -> Result<Value> {
+    pub(super) fn reference_get(&mut self, reference: &Reference) -> Result<Value> {
         match reference {
             Reference::Binding(env, name) => self.lookup(*env, name),
             Reference::WithBinding(object, name, strict) => {
@@ -124,7 +124,14 @@ impl Engine<'_> {
         if assignment_skips(op, &old) {
             return Ok(old);
         }
-        let rhs = self.eval(rhs, env)?;
+        // §13.15.2 steps 4.a/5.a/6.a: a logical assignment to an IdentifierReference
+        // names an anonymous function definition (NamedEvaluation).
+        let rhs = match target {
+            Expr::Name(name) if matches!(op, "&&" | "||" | "??") => {
+                self.eval_named(rhs, env, name)?
+            }
+            _ => self.eval(rhs, env)?,
+        };
         self.protect(&rhs)?;
         let value = if matches!(op, "&&" | "||" | "??") {
             rhs

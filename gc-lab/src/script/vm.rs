@@ -230,6 +230,8 @@ pub struct Engine<'host> {
     pub(super) non_tail: u32,
     /// The call a tail-position `return` deferred to the caller's trampoline.
     pub(super) tail_call: Option<TailCall>,
+    /// Bytecode cache, register file and mode (BYTECODE_VM.md stage 3).
+    pub(super) bytecode: super::interp::VmState,
 }
 
 /// A deferred tail call; `roots` keep its values alive after the callee's frame is gone.
@@ -290,6 +292,7 @@ impl<'host> Engine<'host> {
             tail_ok: false,
             non_tail: 0,
             tail_call: None,
+            bytecode: Default::default(),
         })
     }
     // Move all VM state while changing only the lifetime of the borrowed host.
@@ -344,6 +347,7 @@ impl<'host> Engine<'host> {
             tail_ok: self.tail_ok,
             non_tail: self.non_tail,
             tail_call: self.tail_call,
+            bytecode: self.bytecode,
             adapter,
         };
         engine.flush_network();
@@ -586,6 +590,16 @@ impl<'host> Engine<'host> {
             self.roots.push(self.runtime.root(id)?);
         }
         Ok(())
+    }
+    /// The current depth of the execution-root stack (see `frame`).
+    pub(super) fn roots_mark(&self) -> usize {
+        self.roots.len()
+    }
+    /// Unroot what was protected since `mark`.
+    pub(super) fn release_roots(&mut self, mark: usize) {
+        for root in self.roots.drain(mark..) {
+            self.runtime.unroot(root).expect("owned execution root");
+        }
     }
     pub(super) fn frame<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
         let mark = self.roots.len();

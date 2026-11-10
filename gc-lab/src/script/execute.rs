@@ -1245,7 +1245,11 @@ impl Engine<'_> {
                 // their result in this frame, so they keep ordinary calls.
                 self.tail_ok = kind != FunctionKind::DerivedConstructor
                     && !matches!(body.first(), Some(Stmt::Sloppy));
-                let result = self.block(&body, local, true);
+                // Stage 3 of BYTECODE_VM.md: a compiled body runs on the register VM.
+                let result = match self.vm_chunk(&params, &body) {
+                    Some(chunk) => self.run_chunk(&chunk, local),
+                    None => self.block(&body, local, true),
+                };
                 self.tail_ok = false;
                 let result = result?;
                 if kind == FunctionKind::DerivedConstructor {
@@ -1587,6 +1591,10 @@ impl Engine<'_> {
             self.eval(x, env)?
         };
         self.protect(&v)?;
+        self.unary_values(op, v)
+    }
+    /// UnaryExpression evaluation (§13.5) after the operand's GetValue.
+    pub(super) fn unary_values(&mut self, op: &str, v: Value) -> Result<Value> {
         let v = if matches!(op, "-" | "~") {
             self.to_primitive(v, false)?
         } else {

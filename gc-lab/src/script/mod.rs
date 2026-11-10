@@ -29,10 +29,13 @@ mod modules;
 pub use modules::{ModuleLoad, ModuleRequest, ModuleSource, ModuleStatus, Referrer};
 pub use parser::ImportPhase;
 
+mod bytecode;
 mod collections;
 mod disposal;
+mod interp;
 mod shadow_realms;
 mod tail_calls;
+pub use interp::{EngineMode, VmStats};
 mod weak;
 
 mod array_methods;

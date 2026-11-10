@@ -98,6 +98,8 @@ pub struct Runtime {
     /// Running total of `charged_bytes()`; kept in O(1) (see GC_SCHEDULING.md).
     charged: usize,
     collections: u64,
+    /// Object ids held in bytecode registers (BYTECODE_VM.md stage 3): seed roots.
+    vm_seeds: Vec<Option<Id>>,
 }
 
 impl Runtime {
@@ -116,6 +118,7 @@ impl Runtime {
             foreign_roots: IdSet::default(),
             charged: 0,
             collections: 0,
+            vm_seeds: vec![],
         })
     }
 
@@ -336,7 +339,12 @@ impl Runtime {
             .into_iter()
             .map(Id::Dom)
             .chain(self.js.root_handles().into_iter().map(Id::Js))
+            .chain(self.vm_seeds.iter().flatten().copied())
             .collect()
+    }
+    /// The register mirror of the bytecode interpreter; every `Some` is a root.
+    pub fn vm_seeds(&mut self) -> &mut Vec<Option<Id>> {
+        &mut self.vm_seeds
     }
     pub fn reachable(&self, seeds: &[Id]) -> Result<IdSet, Error> {
         // Ephemerons indexed by key (WEAK_REFS.md): a value whose key is not marked yet

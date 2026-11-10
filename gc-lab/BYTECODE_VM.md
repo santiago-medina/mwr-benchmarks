@@ -454,3 +454,105 @@ stable under parallel load, which is the stage 3 target (≤ 5 k per iteration) 
 round of stage 2 fixes (whose kill line was met at checkpoint 24). Number literals should be
 parsed once at parse time as part of stage 3's constant pool. Stage 3 was gated on a
 second opinion (taskygpt HTTP 429, no credits); Santiago waived that gate on 2026-11-10.
+
+### Stage 3, coverage step 1 (2026-11-10, checkpoint 32 queue)
+
+What landed (`src/script/bytecode.rs` compiler, `src/script/interp.rs` executor):
+- Register bytecode for **leaf functions** with simple parameters that do not need an
+  `arguments` object. The compiler covers expressions, `var`/`let`/`const` with static TDZ
+  checks, `if`, `while`, `do`/`while`, `for`, labels, `break`/`continue`, `return` (with
+  §15.10 tail calls through the existing `defer_tail_call` trampoline), `throw`, array and
+  plain object literals, member get/set/delete, calls and `new`.
+- Anything else is rejected with a reason and the function runs on the tree-walker.
+  **Deviation from the requirement above:** the fallback is silent (counted per reason in
+  `VmStats`, printed by `js_check --vm-stats`) instead of an error under `--engine=vm`,
+  because the harness itself (`assert.sameValue`, `assert.throws`) uses `try`. The fallback
+  stays silent until `try` is compiled.
+- **Hatch:** a subexpression that mentions none of the function's own bindings runs on the
+  tree-walker against the function environment (one `Insn::Hatch`). That keeps rare
+  syntax (templates, regex literals, class expressions) from rejecting a whole function.
+- **Registers** are allocated with reuse (each statement frees its temporaries) and are
+  cleared at loop back-edges and block exit. The register window is mirrored into
+  `Runtime::vm_seeds`, which `root_ids()` returns as GC seeds, so a collection inside any
+  handler sees every live register.
+- Chunks are cached by the body's `Rc` pointer with a `Weak` check (the cache is pruned at
+  4096 entries). Known limit: closures created per instance share the body, so they compile once.
+- `ToPropertyKey` on a primitive has no side effects (§7.1.19), so `PropKey` keeps the raw
+  primitive and lets `GetElem`/`SetElem` take the existing fast index path.
+- Number literals are parsed once into the constant pool.
+- The engine mode is selected with `js_check --engine=vm` or `MWR_ENGINE=vm`. The default stays
+  `Tree` until the checkpoint gate below passes with the VM.
+
+Spec fix found by the VM work: the tree-walker's logical assignment (`a ??= function(){}`)
+did not apply NamedEvaluation (§13.15.2 steps 5.a / 6.a / 7.a). It now does in
+`references.rs`, and the VM matches it. `language/expressions/logical-assignment` is 81/81.
+
+Measurements (prof build, `CARGO_PROFILE_RELEASE_DEBUG=line-tables-only`):
+
+| loop2.js, 100 k iterations, `a[l++] = i` body | Ir total | Ir / iteration | wall |
+|---|---|---|---|
+| empty script | 20.0 M | | |
+| tree-walker | 1,261.9 M | 12.42 k | 0.18 s |
+| VM, first build | 689.2 M | 6.69 k (1.86x) | 0.10 s |
+| VM, raw primitive `PropKey` | 615.9 M | 5.96 k (2.08x) | 0.07 s |
+| VM, `finish` pass + register updates | 475.2 M | **4.55 k (2.73x)** | |
+
+After the first build the profile was half VM overhead: 27 dispatches per iteration of
+`loop2`, of which 3 were per-statement `Clear`s, 6 were `Move`s and 2 were `Const`s.
+Two compiler changes brought that down to 13 dispatches:
+- A `finish` pass after compilation computes, flow-insensitively, which registers may ever hold
+  an Object or Native value (parameters plus every instruction that can write one;
+  operators, `ToNumeric`, `Step`, `PropKey`, `typeof` and `delete` write primitives). It drops
+  each `Clear` whose range has none, because clearing exists only to end GC liveness. It also
+  drops the final copy into a discarded statement result, and remaps jump targets.
+- `x++` / `--x` on a ready mutable register binding steps the register in place
+  (§13.4.2.1, §13.4.4.1). As an expression statement or a `for` update, a postfix update
+  becomes a prefix one (same effects), and `Step` applies ToNumeric itself.
+  `js_check` prints a chunk's code with `MWR_VM_DUMP=1`.
+
+The rest of the per-iteration cost is the shared object model. An index key goes
+through `to_key` (number → string), `PropertyMap::position` (a hash lookup) and `plain_set`.
+`assign_member` is 2.6 k Ir per iteration inclusive (57 % of the total, amortising the
+`a.length = 0` truncation every 10 k stores). Dense element storage is the stage 4 object-model note, not a
+VM item.
+
+Equivalence: the same 2,500-case smoke sample over `language/` and `built-ins/` gives
+`passed=2235 failed=251 unsupported=14` on both engines, with no case whose verdict differs.
+`vmprobe/basic.js` (task workspace) passes under `--gc-stress`. Max registers on that sample: 9.
+
+Next coverage steps: (1) `try`/`catch`/`finally` through a handler side table, which removes the
+largest fallback reason and lets the fallback become an error under `--engine=vm`; (2) closures
+(non-leaf functions) via the stage 2 slot environments; (3) dense-element get/put fast paths.
+Kill line (unchanged): under 3x on loop2 after three coverage steps sends the design back to
+Literature Review (#82).
+
+### Stage 3, coverage step 2: try/catch/finally (2026-11-10, checkpoint 32 queue)
+
+TryStatement (§14.15.3) compiles to straight-line code plus a handler side table in the chunk
+(`Chunk::handlers`, innermost first). A `ScriptError::Thrown` raised at `pc` inside
+`start <= pc < end` stores the thrown value in the handler's `exc` register. For a finally, it
+also sets the completion-kind register to 1, then jumps to `target`. Limits, Unsupported,
+Memory and host errors are not catchable, the same as in the tree-walker. The dispatch loop is
+now `execute_from(.., &mut pc)` inside an outer loop that looks up the handler.
+
+Layout: `try-block; Jump normal; catch-block; normal: kind = 0; fin: finally-block;
+EndFinally{kind, val, to: end}; return-path; end:`. A `return` inside a try or catch that has a
+finally stores the value in `val`, sets `kind = 2` and jumps to `fin`. `EndFinally` continues
+for 0, rethrows `val` for 1, and for 2 falls through to the return path. That path is a
+`Return` or, through a nested finally, the same forwarding to the outer one. The catch parameter
+is a scope binding whose register is `exc`, so its own scope is separate from the catch block's
+(§14.15.2). Calls in a try block, or in a catch that has a finally, are not tail calls (§15.10.2):
+the compiler keeps a `non_tail` counter. `finish` remaps the handler ranges and the `EndFinally`
+targets, and marks `exc` registers as possible references.
+
+Still on the tree-walker (fallback reasons): break/continue that crosses a finally, destructuring
+catch parameters, and a catch block that declares `var <param>` (Annex B.3.4).
+
+Gate: `vmprobe/try.js` (21 cases: return through nested finally, finally overriding return or
+throw, rethrow, a catch in a loop with `continue`, catch scope shadowing, optional catch binding)
+passes on both engines and under `--gc-stress`. Equivalence is identical: the 2,500-case sample
+gives `passed=2235 failed=251 unsupported=14` on both engines, and `language/statements/try`
+gives 200/201 on both. Fallback mix over 600 sampled cases (`vmstats.sh`, task workspace):
+89.7 % of function bodies compiled. The remaining reasons are `arguments or eval` 214,
+`closure over locals` 73, `for-in/of` 60, `non-simple parameter` 33, `template` 33, and
+`switch` 16; `vm: try` no longer appears.
