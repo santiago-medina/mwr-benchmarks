@@ -288,3 +288,10 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Callgrind: fib(16) 256.9 M → 114.8 M instructions (2.24x); 20k-iteration let loop 1,192 M → 870 M (1.37x).
 - Full run: 45919/47708 pass (96.3%), +22 vs checkpoint 20 (the decodeURI/parseInt fixes made after that run). Failed 1102 (-2), unsupported 687 (-20). Lost 0. Runner timeouts 455 (-2).
 - Next: stage 2, scope analysis with slot-indexed environments (BYTECODE_VM.md); the element store (44% of the loop) waits for stage 4.
+
+### Roadmap B stage 2, part 1: hot-path costs (checkpoint 22, 2026-11-10)
+
+- OrdinarySet fast path (`plain_set`, §10.1.9.2 with Receiver = O on all-ordinary chains), an FxHash-style seeded key hasher for property maps and environments (HashDoS trade-off in BYTECODE_VM.md), no block environment for blocks without lexical declarations (§14.2.2), and one object fetch per scope level in identifier lookup.
+- Callgrind: 20k-iteration loop 869.0 M → 470.1 M instructions (1.85x), fib(16) 114.8 M → 111.0 M. Stage-2 kill line (≤ 15k per iteration) not met yet: 23.5k.
+- Full run: 45919/47708 pass (96.3%), +0. Lost 0. Runner timeouts 455 (unchanged).
+- Next: the per-iteration allocations (index keys, binding updates, ArraySetLength truncation), then the resolver with slot environments.

@@ -292,6 +292,35 @@ impl Engine<'_> {
         })
     }
     fn scoped(&mut self, body: &[Stmt], env: Id, can_return: bool) -> Result<Option<Value>> {
+        // §14.2.2 Block evaluation: a block whose StatementList declares nothing
+        // (BlockDeclarationInstantiation binds no names) gets an empty declarative
+        // environment, which no code can observe: a direct eval inside puts its
+        // `let`s in its own environment and its `var`s in the variable environment.
+        // Skip it. The list is the statement kinds that declare nothing at block level.
+        if super::parser::direct_statements(body).iter().all(|s| {
+            matches!(
+                s,
+                Stmt::Empty
+                    | Stmt::Expr(_)
+                    | Stmt::Return(_)
+                    | Stmt::Throw(_)
+                    | Stmt::Block(_)
+                    | Stmt::If(..)
+                    | Stmt::Break(_)
+                    | Stmt::Continue
+                    | Stmt::Var(..)
+                    | Stmt::Set(..)
+                    | Stmt::While { .. }
+                    | Stmt::For { .. }
+                    | Stmt::ForIn { .. }
+                    | Stmt::ForOf { .. }
+                    | Stmt::Try { .. }
+                    | Stmt::Switch(..)
+                    | Stmt::With(..)
+            ) || matches!(s, Stmt::Bind { kind, .. } if kind == "var")
+        }) {
+            return self.block(body, env, can_return);
+        }
         let local = self.new_environment(Some(env), body, false)?;
         self.protect(&Value::Object(local))?;
         self.block(body, local, can_return)

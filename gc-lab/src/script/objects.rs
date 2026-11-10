@@ -566,6 +566,132 @@ impl Engine<'_> {
             self.throw_error("TypeError", "property definition refused")
         }
     }
+    /// `Data` of an object whose [[GetOwnProperty]], [[DefineOwnProperty]] and [[Set]]
+    /// are the ordinary ones for `key` (§10.1): not a proxy, module namespace, typed
+    /// array or mapped arguments object. Arrays qualify for every key except `length`
+    /// (ArraySetLength, §10.4.2.4).
+    fn plain(&self, id: Id, key: &Key) -> Option<&Data> {
+        match self.objects.get(&id)? {
+            Object::Ordinary(d)
+            | Object::Builtin { data: d, .. }
+            | Object::Bound { data: d, .. }
+            | Object::Closure { data: d, .. }
+                if d.typed.is_none()
+                    && d.namespace.is_none()
+                    && d.parameter_map.is_none()
+                    && !(d.array && matches!(key, Key::String(s) if s == "length")) =>
+            {
+                Some(d)
+            }
+            _ => None,
+        }
+    }
+    /// OrdinarySet (§10.1.9.2) with Receiver = O, for the common cases only: every
+    /// object on the chain is `plain`, and the key is either absent from the chain or
+    /// a writable data property (own, or inherited: step 2.c-e then creates an own
+    /// one). Then OrdinarySetWithOwnDescriptor reduces to "replace the own value" or
+    /// CreateDataProperty on an extensible receiver (for an array index, §10.4.2.1
+    /// also bumps `length`). `None` means "take the general path"; nothing has been
+    /// mutated in that case.
+    fn plain_set(&mut self, id: Id, key: &Key, value: &Value) -> Result<Option<bool>> {
+        enum Plan {
+            Replace,
+            Create { length: Option<(u32, u32)> },
+        }
+        self.runtime.value(id)?;
+        let plan = {
+            let Some(own) = self.plain(id, key) else {
+                return Ok(None);
+            };
+            match own.properties.get(key) {
+                Some(Property {
+                    kind: Kind::Data { writable: true, .. },
+                    ..
+                }) => Plan::Replace,
+                Some(_) => return Ok(None),
+                None => {
+                    let mut at = own.prototype;
+                    for _ in 0..64 {
+                        let Some(p) = at else { break };
+                        let Some(d) = self.plain(p, key) else {
+                            return Ok(None);
+                        };
+                        match d.properties.get(key) {
+                            None => at = d.prototype,
+                            Some(Property {
+                                kind: Kind::Data { writable: true, .. },
+                                ..
+                            }) => {
+                                at = None;
+                                break;
+                            }
+                            Some(_) => return Ok(None),
+                        }
+                    }
+                    if at.is_some() || !own.extensible {
+                        return Ok(None);
+                    }
+                    let length = match (own.array, key.index()) {
+                        (true, Some(index)) => match own.properties.get(&Key::from("length")) {
+                            Some(Property {
+                                kind:
+                                    Kind::Data {
+                                        value: Value::Number(n),
+                                        writable,
+                                    },
+                                ..
+                            }) => {
+                                let old = f64::from_bits(*n) as u32;
+                                if index >= old && !writable {
+                                    return Ok(None);
+                                }
+                                Some((index, old))
+                            }
+                            _ => return Ok(None),
+                        },
+                        _ => None,
+                    };
+                    Plan::Create { length }
+                }
+            }
+        };
+        // Link the new edge before storing (a budget error leaves no mutation).
+        if let Some(child) = value.id() {
+            self.runtime.link(id, child)?;
+        }
+        let data = self.data_mut(id)?;
+        let mut old = None;
+        match plan {
+            Plan::Replace => {
+                if let Some(Property {
+                    kind: Kind::Data { value: slot, .. },
+                    ..
+                }) = data.properties.get_mut(key)
+                {
+                    old = std::mem::replace(slot, value.clone()).id();
+                }
+            }
+            Plan::Create { length } => {
+                data.properties
+                    .push((key.clone(), Property::data(value.clone(), true, true, true)));
+                if let Some((index, old_length)) = length {
+                    if index >= old_length {
+                        if let Some(Property {
+                            kind: Kind::Data { value: slot, .. },
+                            ..
+                        }) = data.properties.get_mut(&Key::from("length"))
+                        {
+                            *slot = Value::number(index as f64 + 1.0);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(child) = old {
+            self.runtime.unlink(id, child)?;
+        }
+        Ok(Some(true))
+    }
     pub(super) fn ordinary_set(
         &mut self,
         id: Id,
@@ -574,6 +700,11 @@ impl Engine<'_> {
         receiver: Value,
     ) -> Result<bool> {
         let key = key.into();
+        if receiver == Value::Object(id) {
+            if let Some(done) = self.plain_set(id, &key, &value)? {
+                return Ok(done);
+            }
+        }
         let mut at = Some(id);
         let mut found = None;
         for _ in 0..10_000 {

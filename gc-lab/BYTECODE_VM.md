@@ -288,3 +288,53 @@ about 19k per store): a new index walks the prototype chain through the generic
 string keys with SipHash. Dense elements and interned keys were left for stage 4
 (shapes and element kinds), where the "no indexed properties on the prototype chain"
 invariant they need belongs. test262 delta: see checkpoint 21 in ESTADO.md.
+
+### Stage 2, part 1 (checkpoint 22): hot-path costs before the resolver
+
+The stage-1 profile put the element store and hashing first, so these came before the
+resolver. Each step was measured on its own (callgrind, `loop_small.js`, 20k
+iterations):
+
+| step | loop_small | per iteration |
+|---|---:|---:|
+| stage 1 (checkpoint 21) | 869.0 M | 43.4 k |
+| `plain_set`: OrdinarySet fast path | 667.5 M | 33.4 k |
+| seeded key hasher in `PropertyMap` | 617.3 M | 30.9 k |
+| no block environment for blocks without lexical declarations | 516.0 M | 25.8 k |
+| `NameMap`/`NameSet` (same hasher) in environments | 473.5 M | 23.7 k |
+| `scan_level`: one object fetch per scope level in lookup | 470.1 M | 23.5 k |
+
+`fib_small.js`: 114.8 M → 111.0 M. Overall 1.85x on loop_small over stage 1.
+
+- `plain_set` (`objects.rs`) implements OrdinarySet §10.1.9.2 and
+  OrdinarySetWithOwnDescriptor §10.1.9.2.1 for the case where the receiver is the
+  target and every object on the prototype chain is ordinary data (no proxy, typed
+  array, module namespace, mapped arguments, String exotic or accessor on the path).
+  An own writable data property is replaced in place. An absent or inherited writable
+  data property is created on an extensible receiver. Array indices follow
+  §10.4.2.1 (index ≥ length needs a writable `length`, which is then bumped). Anything
+  else returns `None` and the generic path runs, so the fast path never decides an
+  edge case by itself.
+- Key hasher (`props.rs`): an FxHash-style word hasher with a murmur finaliser
+  replaces SipHash. **HashDoS trade-off:** the seed comes from `RandomState` once per
+  process, so keys that collide cannot be precomputed offline, but the hasher is not
+  keyed-cryptographic like SipHash. A page that can measure timing could in principle
+  search for collisions in its own process. That is acceptable for the lab. Before the
+  Servo path relies on it (roadmap D), shapes (stage 4) remove most string hashing, and
+  the remaining dictionary-mode maps can switch back to SipHash at a measured cost.
+- Block environments (`execute.rs`, `scoped`): Block evaluation §14.2.2 creates a
+  declarative environment and runs BlockDeclarationInstantiation §14.2.3. With no
+  lexically scoped declarations in the block's direct statements, that environment is
+  empty and unobservable, so it is skipped. The check is a whitelist of statement
+  kinds: anything else keeps the environment.
+- `scan_level` (`vm.rs`): GetIdentifierReference §9.1.2.1 walks outward, one level per
+  step. The walk now reads each environment object once and skips the empty alias and
+  object-binding maps.
+
+Kill line (≤ 15k per iteration): not met yet (23.5k). The remaining profile:
+malloc/free about 20% (23 allocations per iteration: key strings for array indices in
+`ordinary_get`, `to_string`, the ArraySetLength truncation loop and `argument_list`),
+`ordinary_set` 6.5k (half of it `codePoints.length = 0` truncation),
+`eval_reference` 6.3k and `lookup_with_base` 2.9k. Next: index keys without string
+allocation, then the resolver (slot environments) as designed above. This counts as
+fix round 1 of 3 toward the stage-2 kill line.

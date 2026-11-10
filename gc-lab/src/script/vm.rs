@@ -88,6 +88,19 @@ pub(super) enum FunctionKind {
     ClassConstructor,
     DerivedConstructor,
 }
+/// Binding-name maps of environment records, hashed with the seeded key hasher
+/// (props.rs `BuildKeyHasher`).
+pub(super) type NameMap<V> = HashMap<String, V, super::props::BuildKeyHasher>;
+pub(super) type NameSet = HashSet<String, super::props::BuildKeyHasher>;
+/// What one environment record contributes to a name lookup (`Engine::scan_level`).
+enum Level {
+    With(Id),
+    Alias(Id, String),
+    Global,
+    Bound(Option<Value>),
+    Parent(Id),
+    End,
+}
 #[derive(Clone)]
 pub(super) enum Object {
     Ordinary(Data),
@@ -115,20 +128,20 @@ pub(super) enum Object {
     },
     Environment {
         parent: Option<Id>,
-        bindings: HashMap<String, Option<Value>>,
-        mutable: HashSet<String>,
+        bindings: NameMap<Option<Value>>,
+        mutable: NameSet,
         /// Lexically declared `const` names (assignment throws even in sloppy code;
         /// other immutable bindings, such as a function expression's name, ignore it).
-        constants: HashSet<String>,
+        constants: NameSet,
         function_scope: bool,
-        object_bindings: HashSet<String>,
-        aliases: HashMap<String, (Id, String)>,
+        object_bindings: NameSet,
+        aliases: NameMap<(Id, String)>,
         /// Strict mode code (function and script environments read their body marker).
         strict: bool,
         /// Object environment record of a `with` statement.
         with_object: Option<Id>,
         /// `let`/`const`/class names (a sloppy eval `var` may not redeclare them).
-        lexical: HashSet<String>,
+        lexical: NameSet,
     },
     Closure {
         kind: FunctionKind,
@@ -533,10 +546,10 @@ impl<'host> Engine<'host> {
         body: &[Stmt],
         function_scope: bool,
     ) -> Result<Id> {
-        let mut bindings = HashMap::new();
-        let mut mutable = HashSet::new();
-        let mut constants = HashSet::new();
-        let mut lexical = HashSet::new();
+        let mut bindings = NameMap::default();
+        let mut mutable = NameSet::default();
+        let mut constants = NameSet::default();
+        let mut lexical = NameSet::default();
         for stmt in parser::direct_statements(body) {
             match stmt {
                 Stmt::Bind { kind, pattern, .. } if kind != "var" => {
@@ -581,7 +594,7 @@ impl<'host> Engine<'host> {
                 mutable.insert(n);
             }
         }
-        let mut object_bindings = HashSet::new();
+        let mut object_bindings = NameSet::default();
         if parent.is_none() {
             let mut names = vec![];
             parser::var_names(body, &mut names);
@@ -616,7 +629,7 @@ impl<'host> Engine<'host> {
                 constants,
                 function_scope,
                 object_bindings,
-                aliases: HashMap::new(),
+                aliases: NameMap::default(),
                 strict,
                 with_object: None,
                 lexical,
@@ -628,9 +641,9 @@ impl<'host> Engine<'host> {
     /// `names`; the same as `new_environment(parent, [let n; ...], false)` without
     /// building statements or walking a body.
     pub(super) fn let_environment(&mut self, parent: Option<Id>, names: &[String]) -> Result<Id> {
-        let mut bindings: HashMap<String, Option<Value>> =
+        let mut bindings: NameMap<Option<Value>> =
             names.iter().map(|n| (n.clone(), None)).collect();
-        let mutable: HashSet<String> = names.iter().cloned().collect();
+        let mutable: NameSet = names.iter().cloned().collect();
         let lexical = mutable.clone();
         if parent.is_none() {
             bindings
@@ -648,10 +661,10 @@ impl<'host> Engine<'host> {
                 parent,
                 bindings,
                 mutable,
-                constants: HashSet::new(),
+                constants: NameSet::default(),
                 function_scope: false,
-                object_bindings: HashSet::new(),
-                aliases: HashMap::new(),
+                object_bindings: NameSet::default(),
+                aliases: NameMap::default(),
                 strict,
                 with_object: None,
                 lexical,
@@ -773,58 +786,81 @@ impl<'host> Engine<'host> {
     }
     /// ResolveBinding + GetBindingValue in one walk; also returns the `with` object
     /// that holds the binding (the call `this`, §13.3.6.1 EvaluateCall step 1.b.ii).
+    /// One environment record of a name lookup (§9.1.2.1 GetIdentifierReference),
+    /// in a single record fetch: the `with` object (unless `skip_with`), an alias, a
+    /// global-object binding, a declarative binding, or the parent.
+    fn scan_level(&self, env: Id, name: &str, skip_with: bool) -> Result<Level> {
+        let Some(Object::Environment {
+            parent,
+            bindings,
+            object_bindings,
+            aliases,
+            with_object,
+            ..
+        }) = self.objects.get(&env)
+        else {
+            return Err(ScriptError::Runtime("invalid environment"));
+        };
+        if let (Some(object), false) = (with_object, skip_with) {
+            return Ok(Level::With(*object));
+        }
+        if !aliases.is_empty() {
+            if let Some((target, name)) = aliases.get(name) {
+                return Ok(Level::Alias(*target, name.clone()));
+            }
+        }
+        if !object_bindings.is_empty() && object_bindings.contains(name) {
+            return Ok(Level::Global);
+        }
+        if let Some(v) = bindings.get(name) {
+            return Ok(Level::Bound(v.clone()));
+        }
+        Ok(match parent {
+            Some(p) => Level::Parent(*p),
+            None => Level::End,
+        })
+    }
     pub(super) fn lookup_with_base(
         &mut self,
         mut env: Id,
         name: &str,
     ) -> Result<(Value, Option<Id>)> {
         loop {
-            if let Some(object) = self.env_with_object(env) {
-                if self.with_binding(object, name)? {
-                    // §9.1.1.2.6 GetBindingValue: HasProperty again, then Get.
-                    if !self.has(object, name)? {
-                        if self.env_strict(env) {
-                            return self
-                                .throw_error("ReferenceError", &format!("{name} is not defined"));
+            let level = match self.scan_level(env, name, false)? {
+                Level::With(object) => {
+                    if self.with_binding(object, name)? {
+                        // §9.1.1.2.6 GetBindingValue: HasProperty again, then Get.
+                        if !self.has(object, name)? {
+                            if self.env_strict(env) {
+                                return self.throw_error(
+                                    "ReferenceError",
+                                    &format!("{name} is not defined"),
+                                );
+                            }
+                            return Ok((Value::Undefined, Some(object)));
                         }
-                        return Ok((Value::Undefined, Some(object)));
+                        let v = self.get_member(Value::Object(object), name)?;
+                        return Ok((v, Some(object)));
                     }
-                    let v = self.get_member(Value::Object(object), name)?;
-                    return Ok((v, Some(object)));
+                    self.scan_level(env, name, true)?
                 }
-            }
-            if let Some(Object::Environment { aliases, .. }) = self.objects.get(&env) {
-                if let Some((target, name)) = aliases.get(name).cloned() {
-                    return self.lookup_with_base(target, &name);
-                }
-            }
-            let Some(Object::Environment {
-                parent,
-                bindings,
-                object_bindings,
-                ..
-            }) = self.objects.get(&env)
-            else {
-                return Err(ScriptError::Runtime("invalid environment"));
+                other => other,
             };
-            if object_bindings.contains(name) {
-                let global = self.intrinsics.as_ref().unwrap().global;
-                return self
-                    .get_member(Value::Object(global), name)
-                    .map(|v| (v, None));
-            }
-            if let Some(v) = bindings.get(name) {
-                return match v.clone() {
-                    Some(v) => Ok((v, None)),
-                    None => {
-                        self.throw_error("ReferenceError", "binding used before initialization")
-                    }
-                };
-            }
-            if let Some(p) = parent {
-                env = *p;
-            } else {
-                break;
+            match level {
+                Level::With(_) => unreachable!(),
+                Level::Alias(target, name) => return self.lookup_with_base(target, &name),
+                Level::Global => {
+                    let global = self.intrinsics.as_ref().unwrap().global;
+                    return self
+                        .get_member(Value::Object(global), name)
+                        .map(|v| (v, None));
+                }
+                Level::Bound(Some(v)) => return Ok((v, None)),
+                Level::Bound(None) => {
+                    return self.throw_error("ReferenceError", "binding used before initialization")
+                }
+                Level::Parent(p) => env = p,
+                Level::End => break,
             }
         }
         if matches!(
