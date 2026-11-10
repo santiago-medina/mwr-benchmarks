@@ -4,7 +4,7 @@
 //! host API (`take_module_requests` / `finish_module_request`).
 use super::{
     objects::{Descriptor, Key, Kind, Property},
-    parser::{self, ExportImport, ImportName, Module, SyntaxError},
+    parser::{self, ExportImport, ImportName, ImportPhase, Module, SyntaxError},
     promises::{Capability, Internal, State},
     vm::{Engine, Object, ScriptError, Value},
 };
@@ -41,6 +41,9 @@ pub struct ModuleRequest {
     pub referrer: Referrer,
     pub specifier: String,
     pub attributes: Vec<(String, String)>,
+    /// [[Phase]] of the first request for (referrer, specifier). Informative: the
+    /// host's answer must not depend on it (IMPORT_PHASES.md).
+    pub phase: ImportPhase,
 }
 /// The host's answer to a request (FinishLoadingImportedModule's `result`).
 #[derive(Clone, Debug)]
@@ -50,6 +53,13 @@ pub enum ModuleLoad {
         url: String,
         module_type: String,
         source: String,
+        host_defined: u64,
+    },
+    /// A host-provided module with a [[ModuleSource]] object (the shape of a Wasm
+    /// module record). It has no requests and no exports; IMPORT_PHASES.md.
+    ModuleSource {
+        url: String,
+        class_name: String,
         host_defined: u64,
     },
     /// A host failure; the engine throws a new `kind` error (HTML: TypeError).
@@ -94,6 +104,10 @@ struct Record {
     env: Option<Id>,
     /// The namespace object and its sorted [[Exports]], once created.
     namespace: Option<(Id, Vec<String>)>,
+    /// [[DeferredNamespace]]: the deferred namespace and its [[Exports]] without "then".
+    deferred: Option<(Id, Vec<String>)>,
+    /// [[ModuleSource]] and its [[ModuleSourceClassName]]; ~empty~ for source text.
+    source: Option<(Id, String)>,
     /// [[ImportMeta]], created lazily (§13.3.12.1); rooted by a hidden env binding.
     meta: Option<Id>,
 }
@@ -110,12 +124,13 @@ struct Graph {
 struct Pending {
     referrer: Option<usize>,
     specifier: String,
-    graphs: Vec<usize>,
+    graphs: Vec<(usize, bool)>,
     imports: Vec<usize>,
 }
-/// Who waits on a HostLoadImportedModule request: a loading graph or an `import()`.
+/// Who waits on a HostLoadImportedModule request: a loading graph (with `true` for a
+/// source-phase request, loaded without its own requests) or an `import()`.
 enum Waiter {
-    Graph(usize),
+    Graph(usize, bool),
     Import(usize),
 }
 /// A pending `import()` (§13.3.10.2 ContinueDynamicImport): its capability, the
@@ -125,6 +140,11 @@ struct DynamicImport {
     load: Option<Capability>,
     module: Option<usize>,
     roots: Vec<ExternalRoot>,
+    phase: ImportPhase,
+    /// `import.defer()`: evaluation promises not yet settled, and whether the
+    /// import promise already settled (a rejection settles it early).
+    waiting: usize,
+    settled: bool,
 }
 /// The reaction steps of ContinueDynamicImport.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -135,6 +155,10 @@ pub(super) enum DynamicStep {
     Evaluated,
     /// rejectedClosure (step 3).
     Rejected,
+    /// `import.defer()`: one asynchronous dependency's evaluation fulfilled.
+    DeferFulfilled,
+    /// `import.defer()`: one asynchronous dependency's evaluation rejected.
+    DeferRejected,
 }
 /// A failed load, kept as data so several waiting graphs can each throw it.
 #[derive(Clone)]
@@ -142,11 +166,19 @@ enum Failure {
     Syntax(SyntaxError),
     Error(String, String),
 }
+/// [[BindingName]] of a ResolvedBinding Record.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Binding {
+    Name(String),
+    Namespace,
+    DeferredNamespace,
+    Source,
+}
 enum Resolution {
     Null,
     Ambiguous,
-    /// ResolvedBinding { [[Module]], [[BindingName]] }; `None` is ~namespace~.
-    Binding(usize, Option<String>),
+    /// ResolvedBinding { [[Module]], [[BindingName]] }.
+    Binding(usize, Binding),
 }
 #[derive(Default)]
 pub(super) struct Registry {
@@ -158,6 +190,8 @@ pub(super) struct Registry {
     inflight: HashMap<(Option<usize>, String), u64>,
     /// [[LoadedModules]] of Script and Realm referrers (one host-wide map).
     script_loaded: HashMap<String, usize>,
+    /// Per-realm prototypes of host module source objects, by class name.
+    source_protos: HashMap<String, Id>,
     dynamic: Vec<Option<DynamicImport>>,
     outbox: Vec<ModuleRequest>,
     next_request: u64,
@@ -196,7 +230,7 @@ impl Registry {
         let syntax = &self.records[m].syntax;
         for e in &syntax.local_exports {
             if e.export_name.as_deref() == Some(name) {
-                return Resolution::Binding(m, e.local.clone());
+                return Resolution::Binding(m, Binding::Name(e.local.clone().unwrap_or_default()));
             }
         }
         for e in &syntax.indirect_exports {
@@ -205,7 +239,11 @@ impl Registry {
                     return Resolution::Null;
                 };
                 return match &e.import_name {
-                    Some(ExportImport::All) => Resolution::Binding(dep, None),
+                    Some(ExportImport::All) => Resolution::Binding(dep, Binding::Namespace),
+                    Some(ExportImport::DeferredNamespace) => {
+                        Resolution::Binding(dep, Binding::DeferredNamespace)
+                    }
+                    Some(ExportImport::Source) => Resolution::Binding(dep, Binding::Source),
                     Some(ExportImport::Name(n)) => self.resolve_export(dep, n, set),
                     _ => Resolution::Null,
                 };
@@ -214,7 +252,7 @@ impl Registry {
         if name == "default" {
             return Resolution::Null;
         }
-        let mut star: Option<(usize, Option<String>)> = None;
+        let mut star: Option<(usize, Binding)> = None;
         for e in &syntax.star_exports {
             let Ok(dep) = self.dependency(m, e.request.as_deref().unwrap_or_default()) else {
                 continue;
@@ -404,6 +442,11 @@ impl Engine<'_> {
                 }
                 Err(other) => return Err(other),
             },
+            ModuleLoad::ModuleSource {
+                url,
+                class_name,
+                host_defined,
+            } => Ok(self.module_source_record(&url, &class_name, host_defined)?),
             ModuleLoad::Error { kind, message } => Err(Failure::Error(kind, message)),
         };
         if let Ok(dep) = result {
@@ -423,8 +466,8 @@ impl Engine<'_> {
             }
         }
         let mut first = None;
-        for g in p.graphs {
-            if let Err(err) = self.frame(|e| e.continue_module_loading(g, result.clone())) {
+        for (g, single) in p.graphs {
+            if let Err(err) = self.frame(|e| e.continue_module_loading(g, single, result.clone())) {
                 first.get_or_insert(err);
             }
         }
@@ -458,6 +501,15 @@ impl Engine<'_> {
             return Err(ScriptError::Runtime("module source limit"));
         }
         let syntax = parser::parse_module(source).map_err(ScriptError::Syntax)?;
+        self.module_record_from(url, key, syntax, host_defined)
+    }
+    fn module_record_from(
+        &mut self,
+        url: &str,
+        key: (String, String),
+        syntax: Module,
+        host_defined: u64,
+    ) -> Result<usize> {
         let has_tla = syntax.body.iter().any(super::asynchronous::stmt_await);
         let i = self.modules.records.len();
         self.modules.keys.insert(key, i);
@@ -478,9 +530,47 @@ impl Engine<'_> {
             top: None,
             env: None,
             namespace: None,
+            deferred: None,
+            source: None,
             meta: None,
         });
         Ok(i)
+    }
+    /// A host module with a [[ModuleSource]] (ModuleLoad::ModuleSource): an empty
+    /// record whose source object inherits from a per-realm prototype for
+    /// `class_name`, itself inheriting from %AbstractModuleSource.prototype%.
+    fn module_source_record(
+        &mut self,
+        url: &str,
+        class_name: &str,
+        host_defined: u64,
+    ) -> Result<usize> {
+        let key = (url.to_string(), format!("source:{class_name}"));
+        if let Some(&i) = self.modules.keys.get(&key) {
+            return Ok(i);
+        }
+        if self.modules.records.len() >= MODULE_LIMIT {
+            return Err(ScriptError::Runtime("module graph limit"));
+        }
+        let syntax = parser::parse_module("").map_err(ScriptError::Syntax)?;
+        let i = self.module_record_from(url, key, syntax, host_defined)?;
+        let global = self.runtime.resolve(self.global.unwrap())?;
+        let abstract_proto = self.intrinsics.as_ref().unwrap().collection["AbstractModuleSource"];
+        self.frame(|e| {
+            let proto = match e.modules.source_protos.get(class_name) {
+                Some(&p) => p,
+                None => {
+                    let p = e.new_object(Some(abstract_proto))?;
+                    e.runtime.link(global, p)?;
+                    e.modules.source_protos.insert(class_name.into(), p);
+                    p
+                }
+            };
+            let object = e.new_object(Some(proto))?;
+            e.runtime.link(global, object)?;
+            e.modules.records[i].source = Some((object, class_name.into()));
+            Ok(i)
+        })
     }
     /// InnerModuleLoading (§16.2.1.6.1.1).
     fn inner_module_loading(&mut self, g: usize, m: usize) -> Result<()> {
@@ -488,17 +578,32 @@ impl Engine<'_> {
         {
             let requests = self.modules.records[m].syntax.requests.clone();
             self.modules.graphs[g].pending += requests.len();
-            for specifier in requests {
+            for (specifier, phase) in requests {
+                // A source-phase request loads the module but not its requests.
+                let single = phase == ImportPhase::Source;
                 if let Some(&dep) = self.modules.records[m].loaded.get(&specifier) {
-                    self.inner_module_loading(g, dep)?;
+                    if single {
+                        self.graph_request_done(g)?;
+                    } else {
+                        self.inner_module_loading(g, dep)?;
+                    }
                 } else {
-                    self.host_load_imported_module(Some(m), specifier, Waiter::Graph(g));
+                    self.host_load_imported_module(
+                        Some(m),
+                        specifier,
+                        phase,
+                        Waiter::Graph(g, single),
+                    );
                 }
                 if !self.modules.graphs[g].loading {
                     return Ok(());
                 }
             }
         }
+        self.graph_request_done(g)
+    }
+    /// InnerModuleLoading steps 3-4: one request of the graph is done.
+    fn graph_request_done(&mut self, g: usize) -> Result<()> {
         let graph = &mut self.modules.graphs[g];
         graph.pending -= 1;
         if graph.pending == 0 {
@@ -515,7 +620,13 @@ impl Engine<'_> {
     }
     /// HostLoadImportedModule (§16.2.1.10): queue a request for the host. A second
     /// graph waiting on the same (referrer, specifier) joins the request in flight.
-    fn host_load_imported_module(&mut self, m: Option<usize>, specifier: String, w: Waiter) {
+    fn host_load_imported_module(
+        &mut self,
+        m: Option<usize>,
+        specifier: String,
+        phase: ImportPhase,
+        w: Waiter,
+    ) {
         let r = &mut self.modules;
         let id = match r.inflight.get(&(m, specifier.clone())) {
             Some(id) => *id,
@@ -536,6 +647,7 @@ impl Engine<'_> {
                     },
                     specifier: specifier.clone(),
                     attributes: vec![],
+                    phase,
                 });
                 r.pending.insert(
                     id,
@@ -551,7 +663,7 @@ impl Engine<'_> {
         };
         let p = r.pending.get_mut(&id).unwrap();
         match w {
-            Waiter::Graph(g) => p.graphs.push(g),
+            Waiter::Graph(g, single) => p.graphs.push((g, single)),
             Waiter::Import(slot) => p.imports.push(slot),
         }
     }
@@ -559,12 +671,14 @@ impl Engine<'_> {
     fn continue_module_loading(
         &mut self,
         g: usize,
+        single: bool,
         result: std::result::Result<usize, Failure>,
     ) -> Result<()> {
         if !self.modules.graphs[g].loading {
             return Ok(());
         }
         match result {
+            Ok(_) if single => self.graph_request_done(g),
             Ok(m) => self.inner_module_loading(g, m),
             Err(failure) => {
                 self.modules.graphs[g].loading = false;
@@ -589,12 +703,7 @@ impl Engine<'_> {
         let promise = self.evaluate(root)?;
         if let Value::Object(p) = promise {
             // Evaluation errors of a top-level graph are read through module_status.
-            let mut data = self.data(p)?.clone();
-            if let Some(record) = data.promise.as_mut() {
-                record.handled = true;
-            }
-            self.replace_data(p, data)?;
-            self.unhandled.remove(&p);
+            self.mark_handled(p)?;
         }
         Ok(())
     }
@@ -635,7 +744,11 @@ impl Engine<'_> {
         // The environment exists before the dependencies link, so a cycle member's
         // import alias can name it; InitializeEnvironment fills it in afterwards.
         self.create_module_environment(m)?;
-        for specifier in self.modules.records[m].syntax.requests.clone() {
+        // Source-phase requests are not linked (IMPORT_PHASES.md, Linking).
+        for (specifier, phase) in self.modules.records[m].syntax.requests.clone() {
+            if phase == ImportPhase::Source {
+                continue;
+            }
             let dep = self.modules.dependency(m, &specifier)?;
             index = self.inner_module_linking(dep, stack, index)?;
             if self.modules.records[dep].status == Status::Linking {
@@ -686,7 +799,9 @@ impl Engine<'_> {
         for import in imports {
             let dep = self.modules.dependency(m, &import.request)?;
             let (target, binding) = match &import.import_name {
-                ImportName::Namespace => (dep, None),
+                ImportName::Namespace => (dep, Binding::Namespace),
+                ImportName::DeferredNamespace => (dep, Binding::DeferredNamespace),
+                ImportName::Source => (dep, Binding::Source),
                 ImportName::Name(n) => match self.modules.resolve_export(dep, n, &mut vec![]) {
                     Resolution::Binding(t, b) => (t, b),
                     Resolution::Null => return self.missing_export(&import.request, n),
@@ -694,11 +809,11 @@ impl Engine<'_> {
                 },
             };
             match binding {
-                None => {
-                    let namespace = self.module_namespace(target)?;
-                    self.initialize(env, &import.local, namespace)?;
+                Binding::Namespace | Binding::DeferredNamespace | Binding::Source => {
+                    let value = self.binding_value(target, &binding, &import.request)?;
+                    self.initialize(env, &import.local, value)?;
                 }
-                Some(name) => {
+                Binding::Name(name) => {
                     let target = self.modules.records[target]
                         .env
                         .ok_or(ScriptError::Runtime("module environment missing"))?;
@@ -710,6 +825,23 @@ impl Engine<'_> {
             }
         }
         Ok(())
+    }
+    /// The value of a ~namespace~, ~deferred-namespace~ or ~source~ binding:
+    /// GetModuleNamespace(target, phase), or GetModuleSource, which throws a
+    /// SyntaxError for a module without a [[ModuleSource]] (IMPORT_PHASES.md).
+    fn binding_value(&mut self, target: usize, binding: &Binding, request: &str) -> Result<Value> {
+        match binding {
+            Binding::Namespace => self.module_namespace(target, false),
+            Binding::DeferredNamespace => self.module_namespace(target, true),
+            Binding::Source => match &self.modules.records[target].source {
+                Some((id, _)) => Ok(Value::Object(*id)),
+                None => self.throw_error(
+                    "SyntaxError",
+                    &format!("The requested module '{request}' does not provide a module source"),
+                ),
+            },
+            Binding::Name(_) => Err(ScriptError::Runtime("binding is not a module value")),
+        }
     }
     fn missing_export<T>(&mut self, request: &str, name: &str) -> Result<T> {
         self.throw_error(
@@ -725,9 +857,16 @@ impl Engine<'_> {
             ),
         )
     }
-    /// GetModuleNamespace (§16.2.1.12) and ModuleNamespaceCreate (§10.4.6.12).
-    fn module_namespace(&mut self, m: usize) -> Result<Value> {
-        if let Some((id, _)) = &self.modules.records[m].namespace {
+    /// GetModuleNamespace (§16.2.1.12) and ModuleNamespaceCreate (§10.4.6.12), with
+    /// the defer proposal's phase: a deferred namespace is a separate object whose
+    /// [[Exports]] leave out "then".
+    fn module_namespace(&mut self, m: usize, deferred: bool) -> Result<Value> {
+        let slot = if deferred {
+            &self.modules.records[m].deferred
+        } else {
+            &self.modules.records[m].namespace
+        };
+        if let Some((id, _)) = slot {
             return Ok(Value::Object(*id));
         }
         let env = self.modules.records[m]
@@ -746,15 +885,24 @@ impl Engine<'_> {
             .collect();
         // [[Exports]] is ordered by code unit order (§10.4.6.12 step 6).
         names.sort_by_cached_key(|n| n.encode_utf16().collect::<Vec<u16>>());
+        if deferred {
+            names.retain(|n| n != "then");
+        }
         self.frame(|e| {
             let id = e.new_object(None)?;
             e.protect(&Value::Object(id))?;
-            // §28.3.1 @@toStringTag: "Module", non-writable, non-enumerable, non-configurable.
+            // §28.3.1 @@toStringTag: "Module" ("Deferred Module"), non-writable,
+            // non-enumerable, non-configurable.
+            let tag = if deferred {
+                "Deferred Module"
+            } else {
+                "Module"
+            };
             e.define(
                 id,
                 Key::Symbol(1),
                 Descriptor {
-                    value: Some(Value::String("Module".into())),
+                    value: Some(Value::String(tag.into())),
                     ..Default::default()
                 },
             )?;
@@ -763,22 +911,146 @@ impl Engine<'_> {
             data.namespace = Some(m);
             e.replace_data(id, data)?;
             e.runtime.link(id, env)?;
-            e.initialize(env, "\0namespace", Value::Object(id))?;
-            e.modules.records[m].namespace = Some((id, names));
+            if deferred {
+                e.initialize(env, "\0deferredNamespace", Value::Object(id))?;
+                e.modules.records[m].deferred = Some((id, names));
+            } else {
+                e.initialize(env, "\0namespace", Value::Object(id))?;
+                e.modules.records[m].namespace = Some((id, names));
+            }
             Ok(Value::Object(id))
         })
     }
-    pub(super) fn namespace_key(&self, id: Id, key: &Key) -> Option<(usize, String)> {
-        match key {
-            Key::String(s) => Some((self.data(id).ok()?.namespace?, s.clone())),
-            Key::Symbol(_) => None,
+    fn is_deferred_namespace(&self, id: Id, m: usize) -> bool {
+        self.modules
+            .records
+            .get(m)
+            .and_then(|r| r.deferred.as_ref())
+            .is_some_and(|(d, _)| *d == id)
+    }
+    /// The namespace dispatch of a string-keyed [[GetOwnProperty]], [[DefineOwnProperty]],
+    /// [[HasProperty]], [[Get]] or [[Delete]]. IsSymbolLikeNamespaceKey keys (symbols, and
+    /// "then" on a deferred namespace) return None and take the ordinary path; any other
+    /// key of a deferred namespace first runs GetModuleExportsList, which may evaluate.
+    pub(super) fn namespace_key(&mut self, id: Id, key: &Key) -> Result<Option<(usize, String)>> {
+        let Key::String(s) = key else {
+            return Ok(None);
+        };
+        let Some(m) = self.data(id)?.namespace else {
+            return Ok(None);
+        };
+        if self.is_deferred_namespace(id, m) {
+            if s == "then" {
+                return Ok(None);
+            }
+            self.ensure_deferred_evaluation(m)?;
         }
+        Ok(Some((m, s.clone())))
+    }
+    /// GetModuleExportsList (defer proposal) steps 1.a-b, as quoted in test262
+    /// `import-defer/evaluation-triggers`: TypeError unless the module is evaluated or
+    /// ReadyForSyncExecution; then EvaluateSync, which throws a rejection's reason.
+    fn ensure_deferred_evaluation(&mut self, m: usize) -> Result<()> {
+        if self.modules.records[m].status != Status::Evaluated
+            && !self.ready_for_sync_execution(m, &mut HashSet::new())
+        {
+            return self.throw_error(
+                "TypeError",
+                "deferred module cannot be evaluated synchronously while it or a dependency is evaluating or has top-level await",
+            );
+        }
+        // EvaluateModuleSync on an ~evaluated~ module (the draft's step 1): its
+        // [[EvaluationError]], if any. Its Evaluate() promise may never settle here,
+        // for a TLA module whose async evaluation already finished.
+        if self.modules.records[m].status == Status::Evaluated {
+            return match self.modules.records[m].error.clone() {
+                Some(error) => Err(self.thrown(error)),
+                None => Ok(()),
+            };
+        }
+        let Value::Object(p) = self.evaluate(m)? else {
+            return Err(ScriptError::Runtime("module evaluation without promise"));
+        };
+        self.mark_handled(p)?;
+        match self.data(p)?.promise.as_ref().map(|r| r.state.clone()) {
+            Some(State::Fulfilled(_)) => Ok(()),
+            Some(State::Rejected(error)) => Err(self.thrown(error)),
+            _ => Err(ScriptError::Runtime(
+                "synchronous module evaluation suspended",
+            )),
+        }
+    }
+    /// IsModuleSCCEvaluated (defer proposal, as quoted in test262): the status of
+    /// [[CycleRoot]] once evaluation set it, else the module's own status.
+    fn is_scc_evaluated(&self, m: usize) -> bool {
+        let r = &self.modules.records[m];
+        let root = match r.status {
+            Status::Evaluating | Status::EvaluatingAsync | Status::Evaluated => r.cycle_root,
+            _ => m,
+        };
+        self.modules.records[root].status == Status::Evaluated
+    }
+    /// ReadyForSyncExecution (defer proposal); source-phase requests are not
+    /// evaluated and are skipped.
+    fn ready_for_sync_execution(&self, m: usize, seen: &mut HashSet<usize>) -> bool {
+        if !seen.insert(m) {
+            return true;
+        }
+        let r = &self.modules.records[m];
+        if self.is_scc_evaluated(m) {
+            return true;
+        }
+        if matches!(r.status, Status::Evaluating | Status::EvaluatingAsync) || r.has_tla {
+            return false;
+        }
+        r.syntax.requests.iter().all(|(specifier, phase)| {
+            *phase == ImportPhase::Source
+                || self
+                    .modules
+                    .dependency(m, specifier)
+                    .is_ok_and(|dep| self.ready_for_sync_execution(dep, seen))
+        })
+    }
+    /// GatherAsynchronousTransitiveDependencies (defer proposal), skipping
+    /// source-phase requests.
+    fn gather_async_dependencies(&self, m: usize, seen: &mut Vec<usize>, out: &mut Vec<usize>) {
+        if seen.contains(&m) {
+            return;
+        }
+        seen.push(m);
+        let r = &self.modules.records[m];
+        if r.status == Status::Evaluating || self.is_scc_evaluated(m) {
+            return;
+        }
+        if r.has_tla {
+            if !out.contains(&m) {
+                out.push(m);
+            }
+            return;
+        }
+        for (specifier, phase) in &r.syntax.requests {
+            if *phase == ImportPhase::Source {
+                continue;
+            }
+            if let Ok(dep) = self.modules.dependency(m, specifier) {
+                self.gather_async_dependencies(dep, seen, out);
+            }
+        }
+    }
+    fn mark_handled(&mut self, p: Id) -> Result<()> {
+        let mut data = self.data(p)?.clone();
+        if let Some(record) = data.promise.as_mut() {
+            record.handled = true;
+        }
+        self.replace_data(p, data)?;
+        self.unhandled.remove(&p);
+        Ok(())
     }
     pub(super) fn namespace_has(&self, m: usize, name: &str) -> bool {
         self.modules
             .records
             .get(m)
-            .and_then(|r| r.namespace.as_ref())
+            .and_then(|r| r.namespace.as_ref().or(r.deferred.as_ref()))
             .is_some_and(|(_, names)| names.iter().any(|n| n == name))
     }
     /// Module namespace [[Get]] (§10.4.6.8) for a string key.
@@ -787,13 +1059,13 @@ impl Engine<'_> {
             return Ok(Value::Undefined);
         }
         match self.modules.resolve_export(m, name, &mut vec![]) {
-            Resolution::Binding(t, None) => self.module_namespace(t),
-            Resolution::Binding(t, Some(binding)) => {
+            Resolution::Binding(t, Binding::Name(binding)) => {
                 let Some(env) = self.modules.records[t].env else {
                     return self.throw_error("ReferenceError", &format!("{name} is not defined"));
                 };
                 self.lookup(env, &binding)
             }
+            Resolution::Binding(t, binding) => self.binding_value(t, &binding, name),
             _ => Err(ScriptError::Runtime("namespace export no longer resolves")),
         }
     }
@@ -825,11 +1097,21 @@ impl Engine<'_> {
     }
     /// Module namespace [[OwnPropertyKeys]] (§10.4.6.11).
     pub(super) fn namespace_own_keys(&mut self, id: Id, m: usize) -> Result<Vec<Key>> {
+        let deferred = self.is_deferred_namespace(id, m);
+        if deferred {
+            self.ensure_deferred_evaluation(m)?;
+        }
         let mut keys: Vec<Key> = self
             .modules
             .records
             .get(m)
-            .and_then(|r| r.namespace.as_ref())
+            .and_then(|r| {
+                if deferred {
+                    r.deferred.as_ref()
+                } else {
+                    r.namespace.as_ref()
+                }
+            })
             .map(|(_, names)| names.iter().map(|n| Key::String(n.clone())).collect())
             .unwrap_or_default();
         keys.extend(
@@ -913,8 +1195,31 @@ impl Engine<'_> {
         r.pending_async = 0;
         index += 1;
         stack.push(m);
-        for specifier in self.modules.records[m].syntax.requests.clone() {
-            let mut dep = self.modules.dependency(m, &specifier)?;
+        // The evaluationList (defer proposal): an evaluation-phase request adds its
+        // module, a defer request its asynchronous transitive dependencies, and a
+        // source-phase request nothing.
+        let mut list = vec![];
+        for (specifier, phase) in self.modules.records[m].syntax.requests.clone() {
+            let dep = self.modules.dependency(m, &specifier)?;
+            match phase {
+                ImportPhase::Evaluation => {
+                    if !list.contains(&dep) {
+                        list.push(dep);
+                    }
+                }
+                ImportPhase::Defer => {
+                    let mut found = vec![];
+                    self.gather_async_dependencies(dep, &mut vec![], &mut found);
+                    for d in found {
+                        if !list.contains(&d) {
+                            list.push(d);
+                        }
+                    }
+                }
+                ImportPhase::Source => {}
+            }
+        }
+        for mut dep in list {
             index = self.inner_module_evaluation(dep, stack, index)?;
             if self.modules.records[dep].status == Status::Evaluating {
                 let a = self.modules.records[dep].dfs_ancestor;
@@ -1150,7 +1455,12 @@ impl Engine<'_> {
         None
     }
     /// EvaluateImportCall (§13.3.10.1) from step 3, with the specifier evaluated.
-    pub(super) fn import_call(&mut self, env: Id, specifier: Value) -> Result<Value> {
+    pub(super) fn import_call(
+        &mut self,
+        env: Id,
+        specifier: Value,
+        phase: ImportPhase,
+    ) -> Result<Value> {
         let referrer = self.active_module(env);
         self.frame(|e| {
             // Step 5: NewPromiseCapability(%Promise%).
@@ -1175,6 +1485,9 @@ impl Engine<'_> {
                 load: None,
                 module: None,
                 roots,
+                phase,
+                waiting: 0,
+                settled: false,
             };
             let slot = match e.modules.dynamic.iter().position(Option::is_none) {
                 Some(i) => {
@@ -1195,7 +1508,9 @@ impl Engine<'_> {
             };
             match cached {
                 Some(dep) => e.continue_dynamic_import(slot, Ok(dep))?,
-                None => e.host_load_imported_module(referrer, specifier, Waiter::Import(slot)),
+                None => {
+                    e.host_load_imported_module(referrer, specifier, phase, Waiter::Import(slot))
+                }
             }
             Ok(cap.promise)
         })
@@ -1224,6 +1539,15 @@ impl Engine<'_> {
                 return self.finish_import(slot, Err(reason));
             }
         };
+        // Source phase: resolve with GetModuleSource(module), never link or evaluate.
+        if self.modules.dynamic[slot].as_ref().map(|d| d.phase) == Some(ImportPhase::Source) {
+            let result = match self.binding_value(module, &Binding::Source, "") {
+                Ok(v) => Ok(v),
+                Err(ScriptError::Thrown(ex)) => Err(ex.value),
+                Err(other) => return Err(other),
+            };
+            return self.finish_import(slot, result);
+        }
         let load = self.new_capability()?;
         let mut roots = vec![];
         for v in load.values() {
@@ -1304,17 +1628,43 @@ impl Engine<'_> {
         step: DynamicStep,
         arg: Value,
     ) -> Result<Value> {
-        let Some(module) = self
+        let Some((module, phase)) = self
             .modules
             .dynamic
             .get(slot)
             .and_then(|d| d.as_ref())
-            .and_then(|d| d.module)
+            .and_then(|d| Some((d.module?, d.phase)))
         else {
             return Err(ScriptError::Runtime("invalid dynamic import continuation"));
         };
         match step {
             DynamicStep::Rejected => self.finish_import(slot, Err(arg))?,
+            DynamicStep::DeferFulfilled | DynamicStep::DeferRejected => {
+                // The SafePerformPromiseAll of ContinueDynamicImport (defer proposal):
+                // the first rejection rejects; the import promise resolves with the
+                // deferred namespace once every evaluation fulfilled. The entry stays
+                // until the last reaction so the slot is not reused under it.
+                let entry = self.modules.dynamic[slot].as_mut().unwrap();
+                entry.waiting -= 1;
+                let (waiting, settled) = (entry.waiting, entry.settled);
+                if settled {
+                    if waiting == 0 {
+                        self.finish_import(slot, Ok(Value::Undefined))?;
+                    }
+                } else if step == DynamicStep::DeferRejected {
+                    if waiting == 0 {
+                        self.finish_import(slot, Err(arg))?;
+                    } else {
+                        let entry = self.modules.dynamic[slot].as_mut().unwrap();
+                        entry.settled = true;
+                        let reject = entry.cap.reject.clone();
+                        self.invoke(reject, vec![arg])?;
+                    }
+                } else if waiting == 0 {
+                    let namespace = self.module_namespace(module, true)?;
+                    self.finish_import(slot, Ok(namespace))?;
+                }
+            }
             DynamicStep::Loaded => {
                 // Steps 6.a-b: Link(); an abrupt completion rejects.
                 match self.link(module) {
@@ -1324,6 +1674,9 @@ impl Engine<'_> {
                         return Ok(Value::Undefined);
                     }
                     Err(other) => return Err(other),
+                }
+                if phase == ImportPhase::Defer {
+                    return self.defer_import_evaluate(slot, module);
                 }
                 // Steps 6.c-f: Evaluate(), then react to its promise.
                 let Value::Object(p) = self.evaluate(module)? else {
@@ -1348,11 +1701,124 @@ impl Engine<'_> {
             }
             DynamicStep::Evaluated => {
                 // Step 6.e.i: GetModuleNamespace(module).
-                let namespace = self.module_namespace(module)?;
+                let namespace = self.module_namespace(module, false)?;
                 self.finish_import(slot, Ok(namespace))?;
             }
         }
         Ok(Value::Undefined)
+    }
+    /// ContinueDynamicImport for `import.defer()` after Link() (IMPORT_PHASES.md):
+    /// evaluate only GatherAsynchronousTransitiveDependencies(module), wait on all
+    /// of them, then resolve with GetModuleNamespace(module, defer).
+    fn defer_import_evaluate(&mut self, slot: usize, module: usize) -> Result<Value> {
+        let mut deps = vec![];
+        self.gather_async_dependencies(module, &mut vec![], &mut deps);
+        if deps.is_empty() {
+            let namespace = self.module_namespace(module, true)?;
+            self.finish_import(slot, Ok(namespace))?;
+            return Ok(Value::Undefined);
+        }
+        self.modules.dynamic[slot].as_mut().unwrap().waiting = deps.len();
+        for dep in deps {
+            let Value::Object(p) = self.evaluate(dep)? else {
+                return Err(ScriptError::Runtime("module evaluation without promise"));
+            };
+            let fulfilled = self.internal_function(
+                Internal::DynamicImport {
+                    slot,
+                    step: DynamicStep::DeferFulfilled,
+                },
+                0,
+            )?;
+            let rejected = self.internal_function(
+                Internal::DynamicImport {
+                    slot,
+                    step: DynamicStep::DeferRejected,
+                },
+                1,
+            )?;
+            self.attach_reaction(p, Some(fulfilled), Some(rejected), None)?;
+            self.unhandled.remove(&p);
+        }
+        Ok(Value::Undefined)
+    }
+    /// %AbstractModuleSource% and its prototype (source phase imports §28.3), per
+    /// realm. Not a global property; the test host exposes it on `$262`.
+    pub(super) fn bootstrap_module_source(&mut self, env: Id) -> Result<()> {
+        let i = self.intrinsics.as_ref().unwrap();
+        let (object, function) = (i.object, i.function);
+        let base = self.intrinsic_function(env, "%AbstractModuleSource%", Some(function))?;
+        let proto = self.new_object(Some(object))?;
+        self.runtime.link(env, proto)?;
+        let intrinsics = self.intrinsics.as_mut().unwrap();
+        intrinsics
+            .functions
+            .insert("%AbstractModuleSource%".into(), base);
+        intrinsics
+            .collection
+            .insert("AbstractModuleSource".into(), proto);
+        // §28.3.1-2: name "AbstractModuleSource", length 0, a non-writable,
+        // non-enumerable, non-configurable `prototype`.
+        for (key, value) in [
+            ("name", Value::String("AbstractModuleSource".into())),
+            ("length", Value::number(0.0)),
+            ("prototype", Value::Object(proto)),
+        ] {
+            self.define(
+                base,
+                key,
+                Descriptor {
+                    value: Some(value),
+                    ..Default::default()
+                },
+            )?;
+        }
+        self.hidden(proto, "constructor", Value::Object(base))?;
+        // §28.3.3.2 get %AbstractModuleSource%.prototype [ @@toStringTag ].
+        let getter =
+            self.intrinsic_function(env, "%AbstractModuleSource%.prototype.tag", Some(function))?;
+        for (key, value) in [
+            ("name", Value::String("get [Symbol.toStringTag]".into())),
+            ("length", Value::number(0.0)),
+        ] {
+            self.define(
+                getter,
+                key,
+                Descriptor {
+                    value: Some(value),
+                    ..Default::default()
+                },
+            )?;
+        }
+        self.define(
+            proto,
+            Key::Symbol(1),
+            Descriptor {
+                get: Some(Value::Object(getter)),
+                configurable: Some(true),
+                ..Default::default()
+            },
+        )?;
+        Ok(())
+    }
+    /// Calls of %AbstractModuleSource% (§28.3.1.1: always a TypeError) and of its
+    /// @@toStringTag getter (§28.3.3.2: the [[ModuleSourceClassName]] of `this`, or
+    /// undefined when `this` has no such slot).
+    pub(super) fn module_source_builtin(&mut self, name: &str, receiver: Value) -> Result<Value> {
+        if name == "%AbstractModuleSource%" {
+            return self.throw_error("TypeError", "AbstractModuleSource is an abstract class");
+        }
+        let Value::Object(id) = receiver else {
+            return Ok(Value::Undefined);
+        };
+        Ok(self
+            .modules
+            .records
+            .iter()
+            .find_map(|r| r.source.as_ref().filter(|(s, _)| *s == id))
+            .map_or(Value::Undefined, |(_, class)| {
+                Value::String(class.as_str().into())
+            }))
     }
     /// `import.meta` (§13.3.12.1): the module's [[ImportMeta]], a null-prototype
     /// object; HostGetImportMetaProperties adds nothing yet.

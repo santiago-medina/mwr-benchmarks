@@ -200,6 +200,8 @@ impl Engine<'_> {
         let host = self.new_object(Some(object))?;
         self.runtime.link(env, host)?;
         objects.insert("$262".into(), host);
+        let abstract_source = self.intrinsics.as_ref().unwrap().functions["%AbstractModuleSource%"];
+        self.put_data(host, "AbstractModuleSource", Value::Object(abstract_source))?;
         for (method, length) in [
             ("detachArrayBuffer", 1),
             ("gc", 0),

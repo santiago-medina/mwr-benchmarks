@@ -263,3 +263,11 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 
 - 45309/47708 pass (95.0%), +333 vs checkpoint 17 (44976). Failed 714 (+1), unsupported 1685 (-334). The run lost 6: `class let {}` / `class yield {}` in sloppy scripts parsed. Fixed after the run (a class's BindingIdentifier is strict mode code, §11.2.2); the six pass again, and the recorded summary is the run as it was (45309).
 - Largest remaining buckets: unpaired UTF-16 strings 452, import phases 252 + 242 negative parse, createRealm 181, test262 agents 109, import attributes 62, ShadowRealm 57, runner timeouts 55, await expression shape 46, "unsupported character" 70, "expected punctuation" 38, call depth limit 34 (tco-* cases).
+
+### Gap 19: import phases (checkpoint 19, 2026-11-10)
+
+- `import source`, `import.source()`, %AbstractModuleSource% (`$262.AbstractModuleSource`), `import defer`, `import.defer()` and deferred namespaces, from the Stage 3 proposals. Design: IMPORT_PHASES.md. `source-phase-imports`, `source-phase-imports-module-source` and `import-defer` are out of UNIMPLEMENTED_SYNTAX. Feature cases: source 253/253, defer 250/252 (2 also use import attributes).
+- Side fixes: super property assignment targets (`super.x = v`, `super[k] op= v`, `++super.x`; PutValue throws on a refused [[Set]] only in strict code, §6.2.5.6), PrivateFieldAdd/PrivateMethodOrAccessorAdd on non-extensible objects throw TypeError (proxies exempt).
+- Host API: `ModuleRequest.phase` and `ModuleLoad::ModuleSource { url, class_name, host_defined }` (additive).
+- Full run: 45832/47708 pass (96.1%), +523 vs checkpoint 18. Failed 715 (+1), unsupported 1161 (-524). Lost 3, all runner timeouts under load (TypedArray set resizable-buffer, encodeURI/encodeURIComponent A2.5_T1); each passes alone in under 5 s.
+- Largest remaining buckets: unpaired UTF-16 strings 442, createRealm 181, test262 agents 109, import attributes 64 + 19 strict + 15 negative parse, ShadowRealm 57 + 64 non-pass in its dir, runner timeouts 68, await expression shape 46, "unsupported character" 70, call depth limit 34.

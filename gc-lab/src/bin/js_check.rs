@@ -29,6 +29,15 @@ fn resolve(base: &Path, specifier: &str) -> PathBuf {
 
 /// The test host's HostLoadImportedModule answer for one request.
 fn load(case: &Path, request: &ModuleRequest) -> ModuleLoad {
+    // test262 INTERPRETING.md: `<module source>` names a host module that has a
+    // module source object; `<do not resolve>` must fail to load.
+    if request.specifier == "<module source>" {
+        return ModuleLoad::ModuleSource {
+            url: "<module source>".into(),
+            class_name: "ModuleSource".into(),
+            host_defined: 0,
+        };
+    }
     let base = match &request.referrer {
         Referrer::Module { url, .. } => PathBuf::from(url),
         Referrer::Script { .. } | Referrer::Realm => case.to_path_buf(),

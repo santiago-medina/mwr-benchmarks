@@ -342,7 +342,7 @@ impl Engine<'_> {
         if self.is_proxy(id) {
             return self.proxy_own(id, &key);
         }
-        if let Some((m, name)) = self.namespace_key(id, &key) {
+        if let Some((m, name)) = self.namespace_key(id, &key)? {
             return self.namespace_own(m, &name);
         }
         if let Some(typed) = &self.data(id)?.typed {
@@ -387,7 +387,7 @@ impl Engine<'_> {
             if self.is_proxy(id) {
                 return self.proxy_has(id, &key);
             }
-            if let Some((m, name)) = self.namespace_key(id, &key) {
+            if let Some((m, name)) = self.namespace_key(id, &key)? {
                 return Ok(self.namespace_has(m, &name));
             }
             if let Some(typed) = &self.data(id)?.typed {
@@ -421,7 +421,7 @@ impl Engine<'_> {
             if self.is_proxy(id) {
                 return self.proxy_get(id, &key, receiver);
             }
-            if let Some((m, name)) = self.namespace_key(id, &key) {
+            if let Some((m, name)) = self.namespace_key(id, &key)? {
                 return self.namespace_get(m, &name);
             }
             if let Some(typed) = &self.data(id)?.typed {
@@ -453,7 +453,7 @@ impl Engine<'_> {
         if self.is_proxy(id) {
             return self.proxy_define(id, &key, d);
         }
-        if let Some((m, name)) = self.namespace_key(id, &key) {
+        if let Some((m, name)) = self.namespace_key(id, &key)? {
             return self.namespace_define(m, &name, d);
         }
         if let Some(typed) = self.data(id)?.typed.clone() {
@@ -610,7 +610,7 @@ impl Engine<'_> {
         if self.is_proxy(id) {
             return self.proxy_delete(id, &key);
         }
-        if let Some((m, name)) = self.namespace_key(id, &key) {
+        if let Some((m, name)) = self.namespace_key(id, &key)? {
             return Ok(!self.namespace_has(m, &name));
         }
         if let Some(typed) = &self.data(id)?.typed {

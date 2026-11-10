@@ -595,11 +595,13 @@ impl Engine<'_> {
         target: Option<Id>,
         key: Key,
         value: Value,
+        strict: bool,
     ) -> Result<()> {
         let Some(target) = target else {
             return self.throw_error("TypeError", "super base is null");
         };
-        if self.ordinary_set(target, key, value, this)? {
+        // PutValue (§6.2.5.6) step 5.d: a refused [[Set]] throws only in strict code.
+        if self.ordinary_set(target, key, value, this)? || !strict {
             Ok(())
         } else {
             self.throw_error("TypeError", "super assignment refused")
@@ -621,6 +623,14 @@ impl Engine<'_> {
         Ok((this, target, key))
     }
     pub(super) fn private_add(&mut self, id: Id, key: Key, property: Property) -> Result<()> {
+        // PrivateFieldAdd / PrivateMethodOrAccessorAdd step 1 (nonextensible-applies-to-
+        // private): a TypeError when O.[[Extensible]] is false. A proxy has no such slot.
+        if !self.is_proxy(id) && !self.data(id)?.extensible {
+            return self.throw_error(
+                "TypeError",
+                "cannot add a private element to a non-extensible object",
+            );
+        }
         if self.data(id)?.own(&key).is_some() {
             return self.throw_error("TypeError", "private element already present");
         }

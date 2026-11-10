@@ -107,7 +107,8 @@ fn expr_await(e: &Expr) -> bool {
         | Expr::Unary(_, a)
         | Expr::Update(a, ..)
         | Expr::Spread(a)
-        | Expr::ImportCall(a)
+        | Expr::ImportCall(a, _)
+        | Expr::SuperComputed(a)
         | Expr::OptionalChain(a)
         | Expr::Optional(a) => expr_await(a),
         Expr::Destructure(pattern, value) => {
@@ -255,6 +256,18 @@ impl Compiler {
                 Box::new(Expr::Undefined),
             )),
         ))
+    }
+    /// An assignment or update target with its sub-expressions saved in registers.
+    /// A super reference reads `this` and [[HomeObject]] when it is used.
+    fn assignment_target(&mut self, target: &Expr) -> Result<Expr> {
+        match target {
+            Expr::Name(_) | Expr::SuperMember(_) => Ok(target.clone()),
+            Expr::SuperComputed(key) => {
+                let key = self.expression(key)?;
+                Ok(Expr::SuperComputed(Box::new(read(key))))
+            }
+            _ => Ok(self.reference(target)?.1),
+        }
     }
     fn reference(&mut self, e: &Expr) -> Result<(usize, Expr)> {
         match e {
@@ -405,20 +418,16 @@ impl Compiler {
                 let (_, reference) = self.reference(e)?;
                 self.eval(reference)
             }
+            Expr::SuperComputed(_) => {
+                let reference = self.assignment_target(e)?;
+                self.eval(reference)
+            }
             Expr::Update(target, increment, prefix) => {
-                let target = if matches!(target.as_ref(), Expr::Name(_)) {
-                    target.as_ref().clone()
-                } else {
-                    self.reference(target)?.1
-                };
+                let target = self.assignment_target(target)?;
                 self.eval(Expr::Update(Box::new(target), *increment, *prefix))
             }
             Expr::Compound(op, target, value) => {
-                let target = if matches!(target.as_ref(), Expr::Name(_)) {
-                    target.as_ref().clone()
-                } else {
-                    self.reference(target)?.1
-                };
+                let target = self.assignment_target(target)?;
                 let old = self.eval(target.clone());
                 let logical = matches!(op.as_str(), "&&" | "||" | "??");
                 let out = self.reg();
@@ -469,11 +478,7 @@ impl Compiler {
                 self.eval(Expr::Destructure(pattern.clone(), Box::new(read(value))))
             }
             Expr::Assign(target, value) => {
-                let target = if matches!(target.as_ref(), Expr::Name(_)) {
-                    target.as_ref().clone()
-                } else {
-                    self.reference(target)?.1
-                };
+                let target = self.assignment_target(target)?;
                 let value = self.expression(value)?;
                 self.eval(Expr::Assign(Box::new(target), Box::new(read(value))))
             }
@@ -489,9 +494,9 @@ impl Compiler {
                 let value = self.expression(e)?;
                 self.eval(Expr::Unary(op.clone(), Box::new(read(value))))
             }
-            Expr::ImportCall(e) => {
+            Expr::ImportCall(e, phase) => {
                 let value = self.expression(e)?;
-                self.eval(Expr::ImportCall(Box::new(read(value))))
+                self.eval(Expr::ImportCall(Box::new(read(value)), *phase))
             }
             Expr::Conditional(condition, yes, no) => {
                 let condition = self.expression(condition)?;

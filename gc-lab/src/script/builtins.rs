@@ -545,6 +545,7 @@ impl Engine<'_> {
         self.bootstrap_enumeration(env, iterator)?;
         self.bootstrap_bigint(env, &mut objects)?;
         self.bootstrap_buffers(env, &mut objects)?;
+        self.bootstrap_module_source(env)?;
         self.bootstrap_atomics(env, &mut objects)?;
         self.bootstrap_typed(env, &mut objects)?;
         self.bootstrap_generators(env, &mut objects, iterator)?;
@@ -1062,6 +1063,9 @@ impl Engine<'_> {
         }
         if name.starts_with("Uint8Array.") {
             return self.uint8_base64_builtin(name, receiver, args);
+        }
+        if name.starts_with("%AbstractModuleSource%") {
+            return self.module_source_builtin(name, receiver);
         }
         if super::typed_arrays::kind(name).is_some() || name.starts_with("%TypedArray%") {
             return self.typed_builtin(name, receiver, args);

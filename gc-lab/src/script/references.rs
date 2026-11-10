@@ -15,7 +15,8 @@ pub(super) enum Reference {
     Unresolvable(String),
     /// Base, key, and whether the reference is in strict mode code.
     Property(Value, Key, bool),
-    Super(Value, Option<Id>, Key),
+    /// `this`, the [[HomeObject]]'s prototype, the key and strictness.
+    Super(Value, Option<Id>, Key, bool),
 }
 pub(super) fn assignment_skips(op: &str, value: &Value) -> bool {
     match op {
@@ -58,7 +59,7 @@ impl Engine<'_> {
             }
             Expr::SuperMember(_) | Expr::SuperComputed(_) => {
                 let (this, target, key) = self.super_key(target, env)?;
-                Ok(Reference::Super(this, target, key))
+                Ok(Reference::Super(this, target, key, self.env_strict(env)))
             }
             _ => Err(ScriptError::Runtime("invalid reference")),
         }
@@ -81,7 +82,7 @@ impl Engine<'_> {
                 self.throw_error("ReferenceError", &format!("{name} is not defined"))
             }
             Reference::Property(base, key, _) => self.get_member(base.clone(), key),
-            Reference::Super(this, target, key) => self.super_get(this.clone(), *target, key),
+            Reference::Super(this, target, key, _) => self.super_get(this.clone(), *target, key),
         }
     }
     pub(super) fn reference_set(&mut self, reference: Reference, value: Value) -> Result<Value> {
@@ -101,8 +102,8 @@ impl Engine<'_> {
             Reference::Property(base, key, strict) => {
                 self.assign_member(base, key, value.clone(), strict)?
             }
-            Reference::Super(this, target, key) => {
-                self.super_set(this, target, key, value.clone())?
+            Reference::Super(this, target, key, strict) => {
+                self.super_set(this, target, key, value.clone(), strict)?
             }
         }
         Ok(value)

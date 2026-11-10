@@ -673,9 +673,9 @@ impl Engine<'_> {
             Expr::PrivateName(n) => self.lookup(env, n),
             Expr::NewTarget => self.lookup(env, "%newtarget"),
             // §13.3.10.1 step 2: the specifier's evaluation throws; ToString rejects.
-            Expr::ImportCall(specifier) => {
+            Expr::ImportCall(specifier, phase) => {
                 let specifier = self.eval(specifier, env)?;
-                self.import_call(env, specifier)
+                self.import_call(env, specifier, *phase)
             }
             Expr::ImportMeta => self.import_meta(env),
             Expr::ClassInit(init) => self.eval_class_init(init, env),
@@ -1106,6 +1106,7 @@ impl Engine<'_> {
             Some(Object::Builtin { name, .. }) => {
                 super::typed_arrays::kind(name).is_some()
                     || name == "%TypedArray%"
+                    || name == "%AbstractModuleSource%"
                     || Self::temporal_constructor(name)
                     || super::disposal::is_constructor(name)
                     || matches!(
@@ -1201,6 +1202,10 @@ impl Engine<'_> {
                         args,
                         Some(new_target),
                     );
+                }
+                if name == "%AbstractModuleSource%" {
+                    return self
+                        .throw_error("TypeError", "AbstractModuleSource is an abstract class");
                 }
                 if name == "%TypedArray%" {
                     return self.throw_error("TypeError", "abstract TypedArray constructor");

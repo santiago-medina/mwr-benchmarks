@@ -25,6 +25,7 @@ pub use network::FetchResponse;
 
 mod modules;
 pub use modules::{ModuleLoad, ModuleRequest, ModuleSource, ModuleStatus, Referrer};
+pub use parser::ImportPhase;
 
 mod collections;
 mod disposal;

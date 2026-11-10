@@ -87,8 +87,9 @@ pub enum Expr {
     SuperCall(Vec<Expr>),
     NewTarget,
     ClassInit(Box<ClassInit>),
-    /// `import(specifier)` (§13.3.10).
-    ImportCall(Box<Expr>),
+    /// `import(specifier)` (§13.3.10), `import.source(specifier)` and
+    /// `import.defer(specifier)` (IMPORT_PHASES.md).
+    ImportCall(Box<Expr>, ImportPhase),
     /// `import.meta` (§13.3.12), module code only.
     ImportMeta,
     /// An OptionalExpression (§13.3.9): the boundary of an optional chain. A short-circuit
@@ -2301,7 +2302,14 @@ impl Parser<'_> {
                     Box::new(self.expression()?),
                 ));
             }
-            if !matches!(a, Expr::Name(_) | Expr::Member(..) | Expr::Computed(..)) {
+            if !matches!(
+                a,
+                Expr::Name(_)
+                    | Expr::Member(..)
+                    | Expr::Computed(..)
+                    | Expr::SuperMember(_)
+                    | Expr::SuperComputed(_)
+            ) {
                 return Err(self.error("invalid assignment target"));
             }
             self.strict_target(&a)?;
@@ -2482,7 +2490,11 @@ impl Parser<'_> {
             let target = target?;
             if !matches!(
                 target,
-                Expr::Name(_) | Expr::Member(..) | Expr::Computed(..)
+                Expr::Name(_)
+                    | Expr::Member(..)
+                    | Expr::Computed(..)
+                    | Expr::SuperMember(_)
+                    | Expr::SuperComputed(_)
             ) {
                 return Err(self.error("invalid update target"));
             }
@@ -2550,7 +2562,14 @@ impl Parser<'_> {
         // ImportCall is a CallExpression, not a MemberExpression: `new import(x)`
         // has no production (§13.3.5); `new (import(x))` is fine.
         if self.current() == &Token::Name("import".into())
-            && self.tokens.get(self.cursor + 1).map(|t| &t.0) == Some(&Token::Punct('('))
+            && match self.tokens.get(self.cursor + 1).map(|t| &t.0) {
+                Some(Token::Punct('(')) => true,
+                Some(Token::Punct('.')) => matches!(
+                    self.tokens.get(self.cursor + 2).map(|t| &t.0),
+                    Some(Token::Name(n)) if n == "source" || n == "defer"
+                ),
+                _ => false,
+            }
         {
             return Err(self.error("import() cannot be used with new"));
         }
@@ -2653,6 +2672,25 @@ impl Parser<'_> {
             values,
             tag: tag.map(Box::new),
         })))
+    }
+    /// The rest of an ImportCall after `(` (§13.3.10): `AssignmentExpression[+In] ,opt )`.
+    /// The two-argument form carries import attributes, which are not implemented.
+    fn import_call_rest(&mut self, phase: ImportPhase) -> Result<Expr, SyntaxError> {
+        if self.current() == &Token::Punct(')') {
+            return Err(self.error("import() requires a specifier"));
+        }
+        if self.op("...") {
+            return Err(self.error("spread argument in import()"));
+        }
+        let specifier = self.assignment()?;
+        if self.punct(',') {
+            if !self.punct(')') {
+                return Err(self.error("unsupported import attributes"));
+            }
+        } else {
+            self.expect(')')?;
+        }
+        Ok(Expr::ImportCall(Box::new(specifier), phase))
     }
     fn primary(&mut self) -> Result<Expr, SyntaxError> {
         if matches!(self.current(), Token::Template { start: true, .. }) {
@@ -2835,29 +2873,22 @@ impl Parser<'_> {
                 "false" => Ok(Expr::Bool(false)),
                 "this" => Ok(Expr::This),
                 "null" => Ok(Expr::Null),
-                // §13.3.10 ImportCall: `import ( AssignmentExpression[+In] ,opt )`. The
-                // two-argument form carries import attributes, which are not implemented.
-                "import" if self.punct('(') => {
-                    if self.current() == &Token::Punct(')') {
-                        return Err(self.error("import() requires a specifier"));
-                    }
-                    if self.op("...") {
-                        return Err(self.error("spread argument in import()"));
-                    }
-                    let specifier = self.assignment()?;
-                    if self.punct(',') {
-                        if !self.punct(')') {
-                            return Err(self.error("unsupported import attributes"));
-                        }
-                    } else {
-                        self.expect(')')?;
-                    }
-                    Ok(Expr::ImportCall(Box::new(specifier)))
-                }
+                // §13.3.10 ImportCall: `import ( AssignmentExpression[+In] ,opt )`.
+                "import" if self.punct('(') => self.import_call_rest(ImportPhase::Evaluation),
                 // §13.3.12 ImportMeta: only in module code (§16.2.1.1 early error otherwise).
+                // `import.source(` / `import.defer(` are the phase forms of ImportCall; a
+                // bare `import.source` has no production.
                 "import" if self.punct('.') => {
-                    if matches!(self.current(), Token::Name(n) if n == "source" || n == "defer") {
-                        return Err(self.error("unsupported import phase"));
+                    for (word, phase) in [
+                        ("source", ImportPhase::Source),
+                        ("defer", ImportPhase::Defer),
+                    ] {
+                        if self.word(word) {
+                            if !self.punct('(') {
+                                return Err(self.error("import phase requires a call"));
+                            }
+                            return self.import_call_rest(phase);
+                        }
                     }
                     if !self.word("meta") {
                         return Err(self.error("expected import.meta"));
@@ -2986,7 +3017,14 @@ impl Parser<'_> {
             } else if !self.newline()
                 && matches!(self.current(),Token::Op(op) if op=="++"||op=="--")
             {
-                if !matches!(e, Expr::Name(_) | Expr::Member(..) | Expr::Computed(..)) {
+                if !matches!(
+                    e,
+                    Expr::Name(_)
+                        | Expr::Member(..)
+                        | Expr::Computed(..)
+                        | Expr::SuperMember(_)
+                        | Expr::SuperComputed(_)
+                ) {
                     return Err(self.error("invalid update target"));
                 }
                 self.strict_target(&e)?;
@@ -3726,7 +3764,7 @@ fn validate_loop(
             | Expr::Unary(_, a)
             | Expr::Update(a, ..)
             | Expr::Spread(a)
-            | Expr::ImportCall(a)
+            | Expr::ImportCall(a, _)
             | Expr::OptionalChain(a)
             | Expr::Optional(a) => work.push((a, d + 1)),
             Expr::Conditional(a, b, c) => {
@@ -3754,6 +3792,14 @@ fn validate_loop(
 #[path = "module_parser.rs"]
 mod module_syntax;
 pub use module_syntax::{parse_module, Export, ExportImport, Import, ImportName, Module};
+
+/// ModuleRequest [[Phase]] (source phase imports / deferred evaluation proposals).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ImportPhase {
+    Evaluation,
+    Source,
+    Defer,
+}
 
 pub(super) fn var_names(body: &[Stmt], out: &mut Vec<String>) {
     for s in direct_statements(body) {

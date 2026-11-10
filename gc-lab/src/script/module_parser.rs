@@ -1,7 +1,7 @@
 //! Module syntax shares tokenization, expressions and strict validation with scripts.
 //! ParseModule (ECMA-262 §16.2.1.7.1) builds the Source Text Module Record entry
 //! lists; MODULE_RECORDS.md describes how modules.rs consumes them.
-use super::{tokenize_legacy, validate_loop, Expr, Parser, Stmt, SyntaxError, Token};
+use super::{tokenize_legacy, validate_loop, Expr, ImportPhase, Parser, Stmt, SyntaxError, Token};
 use std::collections::HashSet;
 
 /// [[ImportName]] of an ImportEntry (§16.2.1.7, Table 59).
@@ -10,6 +10,10 @@ pub enum ImportName {
     Name(String),
     /// `import * as ns` (namespace-object).
     Namespace,
+    /// `import defer * as ns` (deferred-namespace-object, IMPORT_PHASES.md).
+    DeferredNamespace,
+    /// `import source x` (~source~, IMPORT_PHASES.md).
+    Source,
 }
 #[derive(Clone, Debug)]
 pub struct Import {
@@ -25,6 +29,10 @@ pub enum ExportImport {
     All,
     /// `export * from` (all-but-default).
     AllButDefault,
+    /// `import defer * as ns from "m"; export { ns }` (~deferred-namespace~).
+    DeferredNamespace,
+    /// `import source x from "m"; export { x }` (~source~).
+    Source,
 }
 #[derive(Clone, Debug)]
 pub struct Export {
@@ -36,16 +44,24 @@ pub struct Export {
 #[derive(Clone, Debug)]
 pub struct Module {
     pub body: Vec<Stmt>,
-    /// [[RequestedModules]] in source order, without duplicates.
-    pub requests: Vec<String>,
+    /// [[RequestedModules]] in source order: ModuleRequest Records, deduplicated on
+    /// (specifier, phase).
+    pub requests: Vec<(String, ImportPhase)>,
     pub imports: Vec<Import>,
     pub local_exports: Vec<Export>,
     pub indirect_exports: Vec<Export>,
     pub star_exports: Vec<Export>,
 }
 impl Module {
+    /// The distinct specifiers the host has to load, whatever their phase.
     pub fn dependencies(&self) -> Vec<&str> {
-        self.requests.iter().map(String::as_str).collect()
+        let mut out: Vec<&str> = vec![];
+        for (s, _) in &self.requests {
+            if !out.contains(&s.as_str()) {
+                out.push(s);
+            }
+        }
+        out
     }
 }
 
@@ -90,9 +106,13 @@ fn specifier(p: &mut Parser<'_>) -> Result<String, SyntaxError> {
     }
     Ok(s)
 }
-fn request(module: &mut Module, specifier: &str) {
-    if !module.requests.iter().any(|r| r == specifier) {
-        module.requests.push(specifier.into());
+fn request(module: &mut Module, specifier: &str, phase: ImportPhase) {
+    if !module
+        .requests
+        .iter()
+        .any(|(r, p)| r == specifier && *p == phase)
+    {
+        module.requests.push((specifier.into(), phase));
     }
 }
 /// The ImportedBinding after `as` or a bare import specifier: a BindingIdentifier.
@@ -109,19 +129,51 @@ fn import_declaration(p: &mut Parser<'_>, module: &mut Module) -> Result<(), Syn
     if let Token::String(_) = p.current() {
         let s = specifier(p)?;
         p.semi()?;
-        request(module, &s);
+        request(module, &s, ImportPhase::Evaluation);
         return Ok(());
     }
-    // Import phases (`import defer`, `import source`) are not implemented.
-    if let Token::Name(n) = p.current() {
-        if matches!(n.as_str(), "defer" | "source") {
-            let next = p.tokens.get(p.cursor + 1).map(|t| &t.0);
-            if matches!(next, Some(Token::Op(o)) if o == "*")
-                || matches!(next, Some(Token::Name(m)) if m != "from")
-            {
-                return Err(p.error("unsupported import phase"));
-            }
+    // Phase imports: `import source ImportedBinding FromClause` and
+    // `import defer NameSpaceImport FromClause`. The phase words are contextual and
+    // unescaped; `import source from "m"` and `import defer from "m"` stay default imports
+    // (`import source from from "m"` is a source import named `from`).
+    let token = |p: &Parser<'_>, k: usize| p.tokens.get(p.cursor + k).map(|t| t.0.clone());
+    let from = Some(Token::Name("from".into()));
+    let phase = match p.current() {
+        Token::Name(n) if n == "source" => match token(p, 1) {
+            Some(Token::Name(n)) if n == "from" => token(p, 2) == from,
+            Some(Token::Name(_) | Token::EscapedName(_)) => true,
+            _ => false,
         }
+        .then_some(ImportPhase::Source),
+        Token::Name(n) if n == "defer" => {
+            matches!(token(p, 1), Some(Token::Op(o)) if o == "*").then_some(ImportPhase::Defer)
+        }
+        _ => None,
+    };
+    if let Some(phase) = phase {
+        p.take();
+        let import_name = if phase == ImportPhase::Defer {
+            p.take();
+            if !p.word("as") {
+                return Err(p.error("expected as"));
+            }
+            ImportName::DeferredNamespace
+        } else {
+            ImportName::Source
+        };
+        let local = imported_binding(p)?;
+        if !p.word("from") {
+            return Err(p.error("expected from"));
+        }
+        let s = specifier(p)?;
+        p.semi()?;
+        request(module, &s, phase);
+        module.imports.push(Import {
+            request: s,
+            import_name,
+            local,
+        });
+        return Ok(());
     }
     let mut entries: Vec<(ImportName, String)> = vec![];
     let named = |p: &mut Parser<'_>, entries: &mut Vec<(ImportName, String)>| {
@@ -167,7 +219,7 @@ fn import_declaration(p: &mut Parser<'_>, module: &mut Module) -> Result<(), Syn
     }
     let s = specifier(p)?;
     p.semi()?;
-    request(module, &s);
+    request(module, &s, ImportPhase::Evaluation);
     module
         .imports
         .extend(entries.into_iter().map(|(import_name, local)| Import {
@@ -195,7 +247,7 @@ fn export_declaration(
         }
         let s = specifier(p)?;
         p.semi()?;
-        request(module, &s);
+        request(module, &s, ImportPhase::Evaluation);
         out.push(Export {
             import_name: Some(if export_name.is_some() {
                 ExportImport::All
@@ -235,7 +287,7 @@ fn export_declaration(
         };
         p.semi()?;
         if let Some(s) = &from {
-            request(module, s);
+            request(module, s, ImportPhase::Evaluation);
         }
         for (local, exported, offset) in pairs {
             if from.is_none() {
@@ -464,22 +516,18 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
                 None => module.local_exports.push(ee),
                 // Step 10.a.ii.2: re-export of an imported namespace object is an
                 // indirect `~all~` entry, so two such paths resolve to the same binding.
-                Some(ie) if ie.import_name == ImportName::Namespace => {
-                    module.indirect_exports.push(Export {
-                        export_name: ee.export_name,
-                        request: Some(ie.request.clone()),
-                        import_name: Some(ExportImport::All),
-                        local: None,
-                    })
-                }
+                // The phase forms reclassify the same way (IMPORT_PHASES.md).
                 Some(ie) => {
-                    let ImportName::Name(n) = &ie.import_name else {
-                        unreachable!()
+                    let import_name = match &ie.import_name {
+                        ImportName::Namespace => ExportImport::All,
+                        ImportName::DeferredNamespace => ExportImport::DeferredNamespace,
+                        ImportName::Source => ExportImport::Source,
+                        ImportName::Name(n) => ExportImport::Name(n.clone()),
                     };
                     module.indirect_exports.push(Export {
                         export_name: ee.export_name,
                         request: Some(ie.request.clone()),
-                        import_name: Some(ExportImport::Name(n.clone())),
+                        import_name: Some(import_name),
                         local: None,
                     });
                 }
