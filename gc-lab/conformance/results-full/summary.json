@@ -1,8 +1,8 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "2e2690be71a3bda7943e875c6c4be487ce63dae000db502b5a2c3b0fc8f32188",
-  "runner_sha256": "3e6a09277f3b7c6cbd4e2229ac53d6b179417e602e41cfe37f8d4578ad1b18db",
+  "implementation_sha256": "f5408295121dd043eb1e02666f17254bb3204808022dc31a352349a403d129f2",
+  "runner_sha256": "6b461e16038def66f193d813a031c1ea6148a169e95085ba41c85b4dc0808ed7",
   "new_failures": [
     "built-ins/AbstractModuleSource/length.js",
     "built-ins/AbstractModuleSource/name.js",
@@ -407,19 +407,14 @@
     "built-ins/TypedArrayConstructors/of/custom-ctor-returns-immutable-arraybuffer.js",
     "built-ins/Uint8Array/prototype/setFromBase64/throws-when-target-is-backed-by-immutable-arraybuffer.js",
     "built-ins/Uint8Array/prototype/setFromHex/throws-when-target-is-backed-by-immutable-arraybuffer.js",
-    "built-ins/decodeURI/S15.1.3.1_A1.11_T1.js",
     "built-ins/decodeURI/S15.1.3.1_A1.12_T1.js",
-    "built-ins/decodeURI/S15.1.3.1_A1.12_T2.js",
     "built-ins/decodeURI/S15.1.3.1_A1.12_T3.js",
+    "built-ins/decodeURI/S15.1.3.1_A1.2_T1.js",
     "built-ins/decodeURI/S15.1.3.1_A2.1_T1.js",
     "built-ins/decodeURI/S15.1.3.1_A2.4_T1.js",
     "built-ins/decodeURI/S15.1.3.1_A2.5_T1.js",
-    "built-ins/decodeURIComponent/S15.1.3.2_A1.10_T1.js",
-    "built-ins/decodeURIComponent/S15.1.3.2_A1.11_T1.js",
     "built-ins/decodeURIComponent/S15.1.3.2_A1.11_T2.js",
     "built-ins/decodeURIComponent/S15.1.3.2_A1.12_T1.js",
-    "built-ins/decodeURIComponent/S15.1.3.2_A1.12_T2.js",
-    "built-ins/decodeURIComponent/S15.1.3.2_A1.2_T1.js",
     "built-ins/decodeURIComponent/S15.1.3.2_A1.2_T2.js",
     "built-ins/decodeURIComponent/S15.1.3.2_A2.1_T1.js",
     "built-ins/decodeURIComponent/S15.1.3.2_A2.4_T1.js",
@@ -479,6 +474,8 @@
     "language/expressions/call/tco-non-eval-function.js",
     "language/expressions/call/tco-non-eval-global.js",
     "language/expressions/call/tco-non-eval-with.js",
+    "language/expressions/class/class-name-ident-let.js",
+    "language/expressions/class/class-name-ident-yield.js",
     "language/expressions/class/elements/arrow-body-direct-eval-err-contains-arguments.js",
     "language/expressions/class/elements/arrow-body-indirect-eval-err-contains-newtarget.js",
     "language/expressions/class/elements/arrow-body-private-direct-eval-err-contains-arguments.js",
@@ -585,6 +582,10 @@
     "language/statements/async-generator/yield-star-return-then-getter-ticks.js",
     "language/statements/block/tco-stmt-list.js",
     "language/statements/block/tco-stmt.js",
+    "language/statements/class/class-name-ident-let-escaped.js",
+    "language/statements/class/class-name-ident-let.js",
+    "language/statements/class/class-name-ident-yield-escaped.js",
+    "language/statements/class/class-name-ident-yield.js",
     "language/statements/class/definition/fn-length-static-precedence-order.js",
     "language/statements/class/definition/fn-name-static-precedence-order.js",
     "language/statements/class/definition/methods-restricted-properties.js",
@@ -726,11 +727,11 @@
   ],
   "total": 47708,
   "counts": {
-    "failed": 713,
-    "passed": 44976,
-    "unsupported": 2019
+    "failed": 714,
+    "passed": 45309,
+    "unsupported": 1685
   },
-  "assertions": 714249,
+  "assertions": 714654,
   "regressions": [],
   "unsupported_reasons": {
     "$262.createRealm (one realm)": 181,
@@ -738,45 +739,39 @@
     "ordinary reflection on host objects": 18,
     "map output length exceeds array range": 6,
     "test262 agents (one agent per engine)": 109,
-    "unpaired UTF-16 string storage": 447,
-    "syntax: unsupported reserved expression": 8,
+    "unpaired UTF-16 string storage": 452,
     "syntax: AST nesting limit": 3,
     "surrogate string wrapper": 1,
-    "syntax (strict): unsupported or missing expression": 120,
     "syntax (strict): unsupported character": 44,
     "syntax: unsupported character": 26,
     "syntax (sloppy): unsupported character": 8,
-    "syntax: reserved binding identifier": 115,
-    "syntax: unsupported or missing expression": 38,
+    "syntax (strict): unsupported or missing expression": 1,
     "syntax: duplicate prototype literal": 1,
     "resumable assignment pattern expressions": 24,
-    "negative parse test for unimplemented syntax: optional-chaining": 26,
+    "syntax: invalid shorthand property": 4,
     "syntax: invalid assignment target": 19,
     "negative parse test for unimplemented syntax: import-defer": 93,
     "negative parse test for unimplemented syntax: source-phase-imports": 86,
     "with in generator or async function": 10,
-    "syntax (strict): unsupported reserved expression": 29,
-    "await expression shape": 44,
-    "syntax: expected punctuation": 1,
+    "await expression shape": 46,
+    "syntax: expected punctuation": 38,
     "syntax (strict): unsupported property key": 16,
-    "syntax: expected semicolon": 3,
+    "syntax: expected semicolon": 2,
     "syntax: unsupported import phase": 252,
-    "syntax: unsupported import attributes": 60,
+    "syntax: unsupported import attributes": 62,
     "negative parse test for unimplemented syntax: import-attributes": 15,
     "negative parse test for unimplemented syntax: source-phase-imports,source-phase-imports-module-source": 63,
     "syntax (strict): unsupported import attributes": 19,
     "syntax (sloppy): unsupported import attributes": 2,
-    "syntax: invalid accessor parameters": 3,
+    "syntax: invalid accessor parameters": 4,
     "syntax: invalid update target": 2,
+    "syntax: unsupported or missing expression": 1,
     "$262.evalScript": 13,
-    "syntax (module): unsupported or missing expression": 8,
     "syntax (module): surrogate strings unsupported": 6,
-    "syntax (module): unsupported reserved expression": 2,
     "resumable catch binding expressions": 1,
     "resumable binding pattern expressions": 12,
-    "syntax: escaped reserved word": 4,
+    "syntax: unexpected token": 1,
     "syntax: binding declaration requires initializer": 8,
-    "resumable loop binding expressions": 37,
     "syntax: syntax nesting limit": 1,
     "syntax: invalid shorthand binding": 1
   },
@@ -3979,13 +3974,6 @@
       "cleanup": true
     },
     {
-      "path": "built-ins/decodeURI/S15.1.3.1_A1.11_T1.js",
-      "source_sha256": "de78bea284f8d8c02f0927b18e623cb194bf1074b5bbd4e91c6e7889511bb73e",
-      "status": "failed",
-      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURI/S15.1.3.1_A1.11_T1.js']' timed out after 10 seconds",
-      "assertions": 0
-    },
-    {
       "path": "built-ins/decodeURI/S15.1.3.1_A1.12_T1.js",
       "source_sha256": "44c67b728cd6dc4ef96f694234a22242b923b0affaf7f79ec66907d20317d557",
       "status": "failed",
@@ -3993,17 +3981,17 @@
       "assertions": 0
     },
     {
-      "path": "built-ins/decodeURI/S15.1.3.1_A1.12_T2.js",
-      "source_sha256": "700310ddd4bfa487e9a11ae160403f0510961564f59fb8abac1bc7e0ce294b17",
-      "status": "failed",
-      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURI/S15.1.3.1_A1.12_T2.js']' timed out after 10 seconds",
-      "assertions": 0
-    },
-    {
       "path": "built-ins/decodeURI/S15.1.3.1_A1.12_T3.js",
       "source_sha256": "3e9a6309bad9d16611da84a2fda300bd9caaa07ee52ee1727336b8b3f986eb78",
       "status": "failed",
       "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURI/S15.1.3.1_A1.12_T3.js']' timed out after 10 seconds",
+      "assertions": 0
+    },
+    {
+      "path": "built-ins/decodeURI/S15.1.3.1_A1.2_T1.js",
+      "source_sha256": "3df3875ad7f5886feb0f86e494221a45b9eebf0f6bc1791bbc7ba24e374156ed",
+      "status": "failed",
+      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURI/S15.1.3.1_A1.2_T1.js']' timed out after 10 seconds",
       "assertions": 0
     },
     {
@@ -4028,20 +4016,6 @@
       "assertions": 0
     },
     {
-      "path": "built-ins/decodeURIComponent/S15.1.3.2_A1.10_T1.js",
-      "source_sha256": "acb714a6121726888d59222cfa7a56e4a61f2657c6d51d6d0db18df7fe564876",
-      "status": "failed",
-      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURIComponent/S15.1.3.2_A1.10_T1.js']' timed out after 10 seconds",
-      "assertions": 0
-    },
-    {
-      "path": "built-ins/decodeURIComponent/S15.1.3.2_A1.11_T1.js",
-      "source_sha256": "7950a7f6df07eb7c92f0ca17328356d9b8ab6efaf7565987f5fa80c04a0dff83",
-      "status": "failed",
-      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURIComponent/S15.1.3.2_A1.11_T1.js']' timed out after 10 seconds",
-      "assertions": 0
-    },
-    {
       "path": "built-ins/decodeURIComponent/S15.1.3.2_A1.11_T2.js",
       "source_sha256": "94fb758d9e8d8bb7d23b888442759e843c80d911a538f26a38d37d09d94b1542",
       "status": "failed",
@@ -4053,20 +4027,6 @@
       "source_sha256": "374a363052e314a806e5dcdaff70f67d44d11a40a0a4376224babea09a11c9cf",
       "status": "failed",
       "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURIComponent/S15.1.3.2_A1.12_T1.js']' timed out after 10 seconds",
-      "assertions": 0
-    },
-    {
-      "path": "built-ins/decodeURIComponent/S15.1.3.2_A1.12_T2.js",
-      "source_sha256": "c6739e651a16ad4f99bb64af24123acf2141a411f915e135262552470d2cc3dd",
-      "status": "failed",
-      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURIComponent/S15.1.3.2_A1.12_T2.js']' timed out after 10 seconds",
-      "assertions": 0
-    },
-    {
-      "path": "built-ins/decodeURIComponent/S15.1.3.2_A1.2_T1.js",
-      "source_sha256": "e99aaabbd291df900f11e31f5ed6063ec3de5c8e2768e599e8d7a9ab5c7c8d54",
-      "status": "failed",
-      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/decodeURIComponent/S15.1.3.2_A1.2_T1.js']' timed out after 10 seconds",
       "assertions": 0
     },
     {
@@ -4528,6 +4488,22 @@
       "source_sha256": "d50ebf30dfa315ea5ba57fe555176a0ecbd393fe4515fcaf7ae52e8f256eebec",
       "status": "failed",
       "reason": "Err(Runtime(\"call depth limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/class/class-name-ident-let.js",
+      "source_sha256": "bbb88b18ec83cf608189a6135fa3b399bd131cb2cf1375e63ae12155982bd7b2",
+      "status": "failed",
+      "reason": "parsed in sloppy mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/expressions/class/class-name-ident-yield.js",
+      "source_sha256": "fea7940e29ad726d1873f1c990342f5c702ef8eb7d984685b8d21e688edef63b",
+      "status": "failed",
+      "reason": "parsed in sloppy mode; expected early SyntaxError",
       "assertions": 0,
       "cleanup": true
     },
@@ -5366,6 +5342,38 @@
       "source_sha256": "6e9f597ed517e7f07093ea33bb0a4ab23e0f892560d976a956453da3eb9bca57",
       "status": "failed",
       "reason": "Err(Runtime(\"call depth limit\")); expected None",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/statements/class/class-name-ident-let-escaped.js",
+      "source_sha256": "aa3029394e271500bbd8fe20025f1a4fce67ae5321cc043526a945da8ce94295",
+      "status": "failed",
+      "reason": "parsed in sloppy mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/statements/class/class-name-ident-let.js",
+      "source_sha256": "0764d1b1420b169f9fb12050e87efc463c4fa11f3a19ba171d88f5600ed7cfeb",
+      "status": "failed",
+      "reason": "parsed in sloppy mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/statements/class/class-name-ident-yield-escaped.js",
+      "source_sha256": "a749c7dba0b1d651745fd7288837e6e6c6175b4e78b82f35fe5bd07819198581",
+      "status": "failed",
+      "reason": "parsed in sloppy mode; expected early SyntaxError",
+      "assertions": 0,
+      "cleanup": true
+    },
+    {
+      "path": "language/statements/class/class-name-ident-yield.js",
+      "source_sha256": "9601664ebec4012b2bf7198e7747b48b997e7e72f29d1480487188e9a316b79d",
+      "status": "failed",
+      "reason": "parsed in sloppy mode; expected early SyntaxError",
       "assertions": 0,
       "cleanup": true
     },

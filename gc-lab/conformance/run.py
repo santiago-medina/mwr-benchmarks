@@ -16,7 +16,7 @@ TEMPORAL_SCOPES = ['built-ins/Temporal']  # needs the gc-lab/temporal build (--b
 ASYNC_SCOPES = ['language/expressions/async-function', 'language/expressions/async-arrow-function', 'language/expressions/await', 'language/statements/async-function']
 
 # Negative parse cases for syntax the parser does not implement could only pass by accident.
-UNIMPLEMENTED_SYNTAX = {'import-defer','source-phase-imports','source-phase-imports-module-source','import-attributes','optional-chaining','decorators'}
+UNIMPLEMENTED_SYNTAX = {'import-defer','source-phase-imports','source-phase-imports-module-source','import-attributes','decorators'}
 def field(meta, name):
     match = re.search(r'^' + name + r':\s*([^\n]*)(?:\n((?:[ \t]+[^\n]*\n)*))?', meta, re.M)
     return (match.group(1) + '\n' + (match.group(2) or '')).strip() if match else ''

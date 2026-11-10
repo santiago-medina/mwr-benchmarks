@@ -107,7 +107,9 @@ fn expr_await(e: &Expr) -> bool {
         | Expr::Unary(_, a)
         | Expr::Update(a, ..)
         | Expr::Spread(a)
-        | Expr::ImportCall(a) => expr_await(a),
+        | Expr::ImportCall(a)
+        | Expr::OptionalChain(a)
+        | Expr::Optional(a) => expr_await(a),
         Expr::Destructure(pattern, value) => {
             expr_await(value) || pattern.expressions().into_iter().any(expr_await)
         }

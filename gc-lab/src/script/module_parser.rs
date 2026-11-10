@@ -337,7 +337,7 @@ fn export_default(
         {
             local = p.name()?;
         }
-        let (params, body) = p.function_rest(false, false)?;
+        let (params, body) = p.function_rest(false, false, generator, async_function)?;
         p.strict_function_name(Some(&local), &body)?;
         module.body.push(if generator {
             Stmt::GeneratorFunction(local.clone(), params, body, async_function)
@@ -378,6 +378,7 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
     let (tokens, legacy) = tokenize_legacy(source)?;
     let mut p = Parser::new(tokens, legacy, source, true);
     p.module = true;
+    p.await_kw = true;
     p.new_target = false;
     let mut module = Module {
         body: vec![],

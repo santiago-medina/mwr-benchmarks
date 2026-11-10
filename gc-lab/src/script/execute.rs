@@ -774,6 +774,18 @@ impl Engine<'_> {
             }
             Expr::Call(f, args) => self.eval_call(f, args, env, false),
             Expr::New(f, args) => self.eval_call(f, args, env, true),
+            // §13.3.9.1 OptionalExpression evaluation.
+            Expr::OptionalChain(chain) => match self.eval(chain, env) {
+                Err(ScriptError::ShortCircuit) => Ok(Value::Undefined),
+                other => other,
+            },
+            Expr::Optional(base) => {
+                let value = self.eval(base, env)?;
+                if matches!(value, Value::Undefined | Value::Null) {
+                    return Err(ScriptError::ShortCircuit);
+                }
+                Ok(value)
+            }
             Expr::Unary(op, a) => self.eval_unary(op, a, env),
             Expr::Binary(op, a, b) => self.eval_binary(op, a, b, env),
             Expr::Conditional(condition, yes, no) => {
@@ -1315,6 +1327,14 @@ impl Engine<'_> {
                 self.eval(k, env)?;
             }
             return self.throw_error("ReferenceError", "delete of a super property");
+        }
+        // §13.5.1.2: `delete a?.b` is true when the chain short-circuits.
+        if let Expr::OptionalChain(chain) = x {
+            return match self.eval_unary(op, chain, env) {
+                Err(ScriptError::ShortCircuit) if op == "delete" => Ok(Value::Bool(true)),
+                Err(ScriptError::ShortCircuit) => self.eval_unary(op, &Expr::Undefined, env),
+                other => other,
+            };
         }
         if op == "delete" {
             let target = match x {

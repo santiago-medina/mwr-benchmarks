@@ -19,6 +19,9 @@ pub enum ScriptError {
     LoopContinue,
     /// `break label` (also a desugared `continue label`), caught by `Stmt::Labeled`.
     LabelBreak(String),
+    /// An optional chain link met null or undefined (§13.3.9.1); caught by the enclosing
+    /// `Expr::OptionalChain`, which evaluates to undefined.
+    ShortCircuit,
     Thrown(Exception),
 }
 impl ScriptError {

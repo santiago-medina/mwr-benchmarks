@@ -169,6 +169,19 @@ impl Engine<'_> {
     }
     pub(super) fn call_target(&mut self, callee: &Expr, env: Id) -> Result<(Value, Value)> {
         match callee {
+            // `a.b?.()`: the optional link keeps the member's `this` (§13.3.9.2).
+            Expr::Optional(base) => {
+                let (receiver, function) = self.call_target(base, env)?;
+                if matches!(function, Value::Undefined | Value::Null) {
+                    return Err(ScriptError::ShortCircuit);
+                }
+                Ok((receiver, function))
+            }
+            // `(a?.b)()`: a parenthesized chain still yields a Reference (§13.2.9.1).
+            Expr::OptionalChain(chain) => match self.call_target(chain, env) {
+                Err(ScriptError::ShortCircuit) => Ok((Value::Undefined, Value::Undefined)),
+                other => other,
+            },
             Expr::Member(base, key) => {
                 let receiver = self.eval(base, env)?;
                 self.protect(&receiver)?;

@@ -91,6 +91,12 @@ pub enum Expr {
     ImportCall(Box<Expr>),
     /// `import.meta` (§13.3.12), module code only.
     ImportMeta,
+    /// An OptionalExpression (§13.3.9): the boundary of an optional chain. A short-circuit
+    /// raised by an `Optional` link inside makes the whole chain evaluate to undefined.
+    OptionalChain(Box<Expr>),
+    /// The base of a `?.` link inside an `OptionalChain`: when it evaluates to null or
+    /// undefined the chain short-circuits (§13.3.9.1 step 3).
+    Optional(Box<Expr>),
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Class {
@@ -311,6 +317,12 @@ struct Parser<'a> {
     module: bool,
     /// Whether `new.target` is allowed (§15.1.1, §16.2.1.1): false only at module top level.
     new_target: bool,
+    /// The [Yield] grammar parameter (§13.1, §15.5): generator parameters and body, where
+    /// `yield` is a YieldExpression and not an IdentifierReference.
+    yield_kw: bool,
+    /// The [Await] grammar parameter (§13.1, §15.8, §15.7.1): async function parameters and
+    /// body, module top level and class static blocks, where `await` is not an identifier.
+    await_kw: bool,
 }
 pub(super) fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
     tokenize_legacy(source).map(|(tokens, _)| tokens)
@@ -564,6 +576,13 @@ pub(super) fn tokenize_legacy(
                 Token::Op("...".into())
             }
             '(' | ')' | '[' | ']' | '.' | ',' | ';' | ':' => Token::Punct(c),
+            // §12.8 OptionalChainingPunctuator: `?.` [lookahead ∉ DecimalDigit].
+            '?' if source[offset + 1..].starts_with('.')
+                && !source[offset + 2..].starts_with(|c: char| c.is_ascii_digit()) =>
+            {
+                chars.next();
+                Token::Op("?.".into())
+            }
             '?' if !chars.peek().is_some_and(|(_, c)| *c == '?') => Token::Punct('?'),
             '=' | '!' | '<' | '>' | '+' | '-' | '*' | '/' | '%' | '&' | '|' | '^' | '~' | '?' => {
                 let mut op = c.to_string();
@@ -660,6 +679,8 @@ impl<'a> Parser<'a> {
             no_arguments: false,
             module: false,
             new_target: true,
+            yield_kw: false,
+            await_kw: false,
         }
     }
     pub(super) fn legacy_check(&self) -> Result<(), SyntaxError> {
@@ -781,6 +802,14 @@ impl Parser<'_> {
         let strict = self.strict;
         self.binding_name(strict)
     }
+    /// A BindingIdentifier parsed with the given [Yield] / [Await] parameters.
+    fn name_in(&mut self, generator: bool, asynchronous: bool) -> Result<String, SyntaxError> {
+        let saved = (self.yield_kw, self.await_kw);
+        (self.yield_kw, self.await_kw) = (generator, asynchronous);
+        let result = self.name();
+        (self.yield_kw, self.await_kw) = saved;
+        result
+    }
     /// A binding identifier; `strict` rejects `eval`, `arguments` and the
     /// strict-mode future reserved words.
     fn binding_name(&mut self, strict: bool) -> Result<String, SyntaxError> {
@@ -790,13 +819,13 @@ impl Parser<'_> {
             }
         }
         if let Token::Name(n) = self.current().clone() {
-            if reserved(&n) {
+            if self.reserved_here(&n) {
                 return Err(self.error("reserved binding identifier"));
             }
             self.take();
             Ok(n)
         } else if let Token::EscapedName(n) = self.current().clone() {
-            if reserved(&n) {
+            if self.reserved_here(&n) {
                 return Err(self.error("escaped reserved word"));
             }
             self.take();
@@ -804,6 +833,20 @@ impl Parser<'_> {
         } else {
             Err(self.error("expected identifier"))
         }
+    }
+    /// §13.1.1: `yield`, `await` and `let` are reserved words only in some contexts. True when
+    /// `n` is one of them and may be an Identifier here.
+    fn contextual_identifier(&self, n: &str) -> bool {
+        match n {
+            "yield" => !self.strict && !self.yield_kw,
+            "await" => !self.await_kw && !self.module,
+            "let" => !self.strict,
+            _ => false,
+        }
+    }
+    /// `reserved(n)` refined by the [Yield] / [Await] context and strictness.
+    fn reserved_here(&self, n: &str) -> bool {
+        reserved(n) && !self.contextual_identifier(n)
     }
     fn key(&mut self) -> Result<String, SyntaxError> {
         match self.take() {
@@ -1015,6 +1058,10 @@ impl Parser<'_> {
         let mut declarations = vec![];
         let mut pattern = first;
         loop {
+            // §14.3.1.1: `let` is never a lexically bound name.
+            if kind != "var" && pattern.names().iter().any(|n| n == "let") {
+                return Err(self.error("let is disallowed as a lexically bound name"));
+            }
             let init = if self.op("=") {
                 Some(self.expression()?)
             } else {
@@ -1099,7 +1146,7 @@ impl Parser<'_> {
         {
             let getter = key == "get";
             (key, computed) = self.literal_key()?;
-            let (params, body) = self.function_rest(true, false)?;
+            let (params, body) = self.function_rest(true, false, false, false)?;
             match (getter, params.as_slice()) {
                 (true, []) => Property::Getter(body),
                 (false, [param]) if !param.rest && param.default.is_none() => {
@@ -1108,7 +1155,7 @@ impl Parser<'_> {
                 _ => return Err(self.error("invalid accessor parameters")),
             }
         } else if generator || asynchronous || self.current() == &Token::Punct('(') {
-            let (params, body) = self.function_rest(true, false)?;
+            let (params, body) = self.function_rest(true, false, generator, asynchronous)?;
             Property::Value(if generator {
                 Expr::GeneratorFunction {
                     name: None,
@@ -1156,7 +1203,22 @@ impl Parser<'_> {
         ))
     }
     /// Parameters and body of a function, with the given super context.
+    /// Parameters and body of a function; `generator` / `asynchronous` set its [Yield] /
+    /// [Await] grammar parameters (§15.2, §15.5, §15.8, §15.6).
     fn function_rest(
+        &mut self,
+        super_property: bool,
+        super_call: bool,
+        generator: bool,
+        asynchronous: bool,
+    ) -> Result<(Vec<Param>, Vec<Stmt>), SyntaxError> {
+        let saved_context = (self.yield_kw, self.await_kw);
+        (self.yield_kw, self.await_kw) = (generator, asynchronous);
+        let result = self.function_rest_inner(super_property, super_call);
+        (self.yield_kw, self.await_kw) = saved_context;
+        result
+    }
+    fn function_rest_inner(
         &mut self,
         super_property: bool,
         super_call: bool,
@@ -1221,6 +1283,14 @@ impl Parser<'_> {
             ));
         }
         Ok(Expr::Member(Box::new(e), self.key()?))
+    }
+    /// A class's BindingIdentifier is strict mode code (§11.2.2), so `let`,
+    /// `yield` and `static` are reserved there even in sloppy scripts.
+    fn class_name(&mut self) -> Result<String, SyntaxError> {
+        let strict = std::mem::replace(&mut self.strict, true);
+        let result = self.binding_name(true);
+        self.strict = strict;
+        result
     }
     fn class_tail(&mut self, name: Option<String>) -> Result<Class, SyntaxError> {
         let saved = std::mem::replace(&mut self.strict, true);
@@ -1318,7 +1388,11 @@ impl Parser<'_> {
                     let labels = std::mem::take(&mut self.labels);
                     let no_arguments = std::mem::replace(&mut self.no_arguments, true);
                     let new_target = std::mem::replace(&mut self.new_target, true);
+                    // §15.7.1 ClassStaticBlockStatementList: [~Yield, +Await, ~Return].
+                    let context = (self.yield_kw, self.await_kw);
+                    (self.yield_kw, self.await_kw) = (false, true);
                     let body = self.block();
+                    (self.yield_kw, self.await_kw) = context;
                     self.new_target = new_target;
                     self.no_arguments = no_arguments;
                     self.labels = labels;
@@ -1397,13 +1471,13 @@ impl Parser<'_> {
                     if constructor.is_some() {
                         return Err(self.error("duplicate class constructor"));
                     }
-                    constructor = Some(self.function_rest(true, derived)?);
+                    constructor = Some(self.function_rest(true, derived, false, false)?);
                     continue;
                 }
                 if is_static && named(&key, "prototype") {
                     return Err(self.error("static prototype method"));
                 }
-                let (params, body) = self.function_rest(true, false)?;
+                let (params, body) = self.function_rest(true, false, generator, asynchronous)?;
                 let kind = match accessor {
                     Some(true) => {
                         if !params.is_empty() {
@@ -1679,7 +1753,7 @@ impl Parser<'_> {
         let (Token::Name(name) | Token::EscapedName(name)) = self.current() else {
             return None;
         };
-        if reserved(name)
+        if self.reserved_here(name)
             || (self.strict
                 && matches!(
                     name.as_str(),
@@ -1827,7 +1901,7 @@ impl Parser<'_> {
             });
         }
         if self.word("for") {
-            let asynchronous = self.word("await");
+            let asynchronous = self.await_kw && self.word("await");
             self.expect('(')?;
             // §14.7.5 ForInOfStatement: `for ( [lookahead ≠ using of] ForDeclaration of ...`.
             // `for (using of = x;;)` is still a declaration; `for (using of of y)` is not.
@@ -1843,7 +1917,20 @@ impl Parser<'_> {
                 Some(if n == 2 { "await using" } else { "using" })
             } else if self.word("const") {
                 Some("const")
-            } else if self.word("let") {
+            } else if self.current() == &Token::Name("let".into())
+                && (self.strict
+                    || matches!(
+                        self.tokens.get(self.cursor + 1).map(|t| &t.0),
+                        Some(Token::Punct('[' | '{') | Token::EscapedName(_))
+                    )
+                    || matches!(
+                        self.tokens.get(self.cursor + 1).map(|t| &t.0),
+                        Some(Token::Name(n)) if n != "in"
+                    ))
+            {
+                // §14.7.4/§14.7.5: sloppy `let` that does not start a binding
+                // (`for (let in o)`, `for (let;;)`) is an identifier expression.
+                self.cursor += 1;
                 Some("let")
             } else if self.word("var") {
                 Some("var")
@@ -1856,6 +1943,10 @@ impl Parser<'_> {
                 } else {
                     self.binding_pattern()?
                 };
+                // §14.7.5.1: a ForDeclaration's BoundNames never contain "let".
+                if kind != "var" && binding.names().iter().any(|n| n == "let") {
+                    return Err(self.error("let is disallowed as a lexically bound name"));
+                }
                 if is_using(kind) && self.current() == &Token::Name("in".into()) {
                     return Err(self.error("for-in cannot declare using bindings"));
                 }
@@ -1885,7 +1976,15 @@ impl Parser<'_> {
                 Some(Box::new(stmt))
             } else if self.punct(';') {
                 None
-            } else if let Some((binding, enumeration)) = self.iteration_assignment_head()? {
+            } else if let Some((binding, enumeration)) = {
+                let let_start = self.current() == &Token::Name("let".into());
+                let head = self.iteration_assignment_head()?;
+                // §14.7.5 `for ( [lookahead ∉ { let, async of }] LeftHandSideExpression of`.
+                if let_start && matches!(head, Some((_, false))) {
+                    return Err(self.error("for-of left side cannot start with let"));
+                }
+                head
+            } {
                 let iterable = if enumeration {
                     self.sequence()?
                 } else {
@@ -1982,7 +2081,7 @@ impl Parser<'_> {
             self.take();
             let generator = self.op("*");
             let name = self.name()?;
-            let (params, body) = self.function_rest(false, false)?;
+            let (params, body) = self.function_rest(false, false, generator, true)?;
             self.strict_function_name(Some(&name), &body)?;
             if generator {
                 return Ok(Stmt::GeneratorFunction(name, params, body, true));
@@ -1990,14 +2089,14 @@ impl Parser<'_> {
             return Ok(Stmt::AsyncFunction(name, params, body));
         }
         if self.word("class") {
-            let name = self.binding_name(true)?;
+            let name = self.class_name()?;
             let class = self.class_tail(Some(name.clone()))?;
             return Ok(Stmt::Let(name, Expr::Class(Box::new(class))));
         }
         if self.word("function") {
             let generator = self.op("*");
             let n = self.name()?;
-            let (p, body) = self.function_rest(false, false)?;
+            let (p, body) = self.function_rest(false, false, generator, false)?;
             self.strict_function_name(Some(&n), &body)?;
             return Ok(if generator {
                 Stmt::GeneratorFunction(n, p, body, false)
@@ -2147,7 +2246,7 @@ impl Parser<'_> {
         r
     }
     fn assignment(&mut self) -> Result<Expr, SyntaxError> {
-        if self.word("yield") {
+        if self.yield_kw && self.word("yield") {
             if self.newline()
                 || matches!(
                     self.current(),
@@ -2316,7 +2415,8 @@ impl Parser<'_> {
     fn binary_inner(&mut self, min: u8) -> Result<Expr, SyntaxError> {
         let start = self.cursor;
         let unary_left = matches!(self.current(), Token::Op(s) if matches!(s.as_str(), "+"|"-"|"!"|"~"))
-            || matches!(self.current(), Token::Name(s) if matches!(s.as_str(), "typeof"|"void"|"delete"|"await"));
+            || matches!(self.current(), Token::Name(s) if matches!(s.as_str(), "typeof"|"void"|"delete"))
+            || (self.await_kw && self.current() == &Token::Name("await".into()));
         let mut a = self.unary()?;
         loop {
             let op = match self.current() {
@@ -2389,7 +2489,7 @@ impl Parser<'_> {
             self.strict_target(&target)?;
             return Ok(Expr::Update(Box::new(target), increment, true));
         }
-        if self.word("await") {
+        if self.await_kw && self.word("await") {
             if self.depth >= 64 {
                 return Err(self.error("syntax nesting limit"));
             }
@@ -2424,48 +2524,84 @@ impl Parser<'_> {
             return Ok(Expr::Unary(op, Box::new(e)));
         }
         if self.word("new") {
-            if self.punct('.') {
-                if !self.word("target") {
-                    return Err(self.error("expected new.target"));
-                }
-                if !self.new_target {
-                    return Err(self.error("new.target outside a function"));
-                }
-                return self.postfix(Expr::NewTarget);
+            let (e, arguments) = self.new_operator()?;
+            // §13.3.9: `new a?.b` has no production (a NewExpression without Arguments is
+            // not a MemberExpression).
+            if !arguments && matches!(self.current(), Token::Op(op) if op == "?.") {
+                return Err(self.error("optional chain after new without arguments"));
             }
-            // ImportCall is a CallExpression, not a MemberExpression: `new import(x)`
-            // has no production (§13.3.5); `new (import(x))` is fine.
-            if self.current() == &Token::Name("import".into())
-                && self.tokens.get(self.cursor + 1).map(|t| &t.0) == Some(&Token::Punct('('))
-            {
-                return Err(self.error("import() cannot be used with new"));
-            }
-            let mut f = self.primary()?;
-            loop {
-                if self.punct('.') {
-                    f = self.member_after_dot(f)?;
-                } else if self.punct('[') {
-                    if self.current() == &Token::Punct(']') {
-                        return Err(self.error("expected expression in computed member"));
-                    }
-                    let k = self.sequence()?;
-                    self.expect(']')?;
-                    f = Expr::Computed(Box::new(f), Box::new(k));
-                } else {
-                    break;
-                }
-            }
-            let a = if self.punct('(') {
-                self.arguments()?
-            } else {
-                vec![]
-            };
-            return self.postfix(Expr::New(Box::new(f), a));
+            return self.postfix(e);
         }
         let a = self.primary()?;
         self.postfix(a)
     }
+    /// `new` MemberExpression Arguments / `new` NewExpression (§13.3.5), after the `new`
+    /// token; also `new.target`. Returns the expression and whether Arguments were present.
+    fn new_operator(&mut self) -> Result<(Expr, bool), SyntaxError> {
+        if self.punct('.') {
+            if !self.word("target") {
+                return Err(self.error("expected new.target"));
+            }
+            if !self.new_target {
+                return Err(self.error("new.target outside a function"));
+            }
+            return Ok((Expr::NewTarget, true));
+        }
+        // ImportCall is a CallExpression, not a MemberExpression: `new import(x)`
+        // has no production (§13.3.5); `new (import(x))` is fine.
+        if self.current() == &Token::Name("import".into())
+            && self.tokens.get(self.cursor + 1).map(|t| &t.0) == Some(&Token::Punct('('))
+        {
+            return Err(self.error("import() cannot be used with new"));
+        }
+        // `new new X()` (§13.3.5): the inner `new MemberExpression Arguments` binds first.
+        let mut f = if self.word("new") {
+            if self.depth >= 64 {
+                return Err(self.error("syntax nesting limit"));
+            }
+            self.depth += 1;
+            let inner = self.new_operator();
+            self.depth -= 1;
+            inner?.0
+        } else {
+            self.primary()?
+        };
+        loop {
+            if self.punct('.') {
+                f = self.member_after_dot(f)?;
+            } else if self.punct('[') {
+                if self.current() == &Token::Punct(']') {
+                    return Err(self.error("expected expression in computed member"));
+                }
+                let k = self.sequence()?;
+                self.expect(']')?;
+                f = Expr::Computed(Box::new(f), Box::new(k));
+            } else {
+                break;
+            }
+        }
+        if self.punct('(') {
+            Ok((Expr::New(Box::new(f), self.arguments()?), true))
+        } else {
+            Ok((Expr::New(Box::new(f), vec![]), false))
+        }
+    }
+    /// §15.3 ConciseBody: [~Yield, ~Await].
     fn arrow_body(&mut self) -> Result<Vec<Stmt>, SyntaxError> {
+        self.arrow_body_in(false)
+    }
+    /// §15.9 AsyncConciseBody: [~Yield, +Await].
+    fn async_arrow_body(&mut self) -> Result<Vec<Stmt>, SyntaxError> {
+        self.arrow_body_in(true)
+    }
+    fn arrow_body_in(&mut self, asynchronous: bool) -> Result<Vec<Stmt>, SyntaxError> {
+        let saved = (self.yield_kw, self.await_kw);
+        (self.yield_kw, self.await_kw) = (false, asynchronous);
+        let result = self.arrow_body_inner();
+        (self.yield_kw, self.await_kw) = saved;
+        result
+    }
+    fn arrow_body_inner(&mut self) -> Result<Vec<Stmt>, SyntaxError> {
         if self.current() == &Token::Punct('{') {
             self.function_body()
         } else {
@@ -2541,15 +2677,15 @@ impl Parser<'_> {
                 })
         {
             self.take();
-            let name = self.name()?;
+            let name = self.name_in(false, true)?;
             self.op("=>");
-            let body = self.arrow_body()?;
+            let body = self.async_arrow_body()?;
             return Ok(Expr::AsyncArrow {
                 params: vec![name.into()],
                 body,
             });
         }
-        if matches!(self.current(),Token::Name(name) | Token::EscapedName(name) if !reserved(name))
+        if matches!(self.current(),Token::Name(name) | Token::EscapedName(name) if !self.reserved_here(name))
             && self
                 .tokens
                 .get(self.cursor + 1)
@@ -2582,9 +2718,10 @@ impl Parser<'_> {
                 let name = if self.current() == &Token::Punct('(') {
                     None
                 } else {
-                    Some(self.name()?)
+                    // §15.8 / §15.6: the expression's own name takes its [Yield] / [Await].
+                    Some(self.name_in(generator, true)?)
                 };
-                let (params, body) = self.function_rest(false, false)?;
+                let (params, body) = self.function_rest(false, false, generator, true)?;
                 self.strict_function_name(name.as_deref(), &body)?;
                 if generator {
                     return Ok(Expr::GeneratorFunction {
@@ -2603,12 +2740,17 @@ impl Parser<'_> {
                 });
             }
             if self.is_arrow() {
-                let params = self.params()?;
+                // §15.9 AsyncArrowHead: ArrowFormalParameters[~Yield, +Await].
+                let saved = (self.yield_kw, self.await_kw);
+                (self.yield_kw, self.await_kw) = (false, true);
+                let params = self.params();
+                (self.yield_kw, self.await_kw) = saved;
+                let params = params?;
                 if std::mem::take(&mut self.duplicates) {
                     return Err(self.error("duplicate parameter"));
                 }
                 self.op("=>");
-                let body = self.arrow_body()?;
+                let body = self.async_arrow_body()?;
                 return Ok(Expr::AsyncArrow { params, body });
             }
             self.cursor = save;
@@ -2619,9 +2761,10 @@ impl Parser<'_> {
             let name = if self.current() == &Token::Punct('(') {
                 None
             } else {
-                Some(self.name()?)
+                // §15.2 / §15.5: the expression's own name takes its [Yield] / [Await].
+                Some(self.name_in(generator, false)?)
             };
-            let (params, body) = self.function_rest(false, false)?;
+            let (params, body) = self.function_rest(false, false, generator, false)?;
             self.strict_function_name(name.as_deref(), &body)?;
             return Ok(if generator {
                 Expr::GeneratorFunction {
@@ -2651,7 +2794,8 @@ impl Parser<'_> {
         }
         if self.word("class") {
             let name = match self.current() {
-                Token::Name(n) if n != "extends" => Some(self.binding_name(true)?),
+                Token::Name(n) if n != "extends" => Some(self.class_name()?),
+                Token::EscapedName(_) => Some(self.class_name()?),
                 _ => None,
             };
             return Ok(Expr::Class(Box::new(self.class_tail(name)?)));
@@ -2723,12 +2867,11 @@ impl Parser<'_> {
                     }
                     Ok(Expr::ImportMeta)
                 }
-                // `new` forms not yet parsed here and words that are identifiers in some
-                // sloppy contexts stay unsupported; every other reserved word in primary
+                // §13.1.1: `let` / `yield` / `await` are identifiers outside strict code and
+                // the [Yield] / [Await] contexts; every other reserved word in primary
                 // position is an early SyntaxError (§13.2 has no production for it).
-                "new" | "let" | "yield" | "await" => {
-                    Err(self.error("unsupported reserved expression"))
-                }
+                "let" | "yield" | "await" if self.contextual_identifier(&n) => Ok(Expr::Name(n)),
+                "let" | "yield" | "await" => Err(self.error("unexpected reserved word")),
                 _ if reserved(&n) => Err(self.error("unexpected reserved word")),
                 _ if self.strict && strict_future_reserved(&n) => {
                     Err(self.error("reserved word in strict mode"))
@@ -2744,7 +2887,7 @@ impl Parser<'_> {
             Token::EscapedName(n) if n == "arguments" && self.no_arguments => {
                 Err(self.error("arguments in class field initializer"))
             }
-            Token::EscapedName(n) if !reserved(&n) => Ok(Expr::Name(n)),
+            Token::EscapedName(n) if !self.reserved_here(&n) => Ok(Expr::Name(n)),
             Token::EscapedName(_) => Err(self.error("escaped reserved word")),
             Token::RegExp { pattern, flags } => {
                 if !super::regexp_builtins::literal_ok(&pattern, &flags) {
@@ -2796,6 +2939,10 @@ impl Parser<'_> {
                 }
                 Ok(Expr::Object(props))
             }
+            // §13.2 PrimaryExpression: these tokens start no expression production, so
+            // the program is not in the language (an early SyntaxError). Any other token
+            // here may begin syntax the parser does not implement yet.
+            token if never_starts_expression(&token) => Err(self.error("unexpected token")),
             _ => Err(self.error("unsupported or missing expression")),
         }
     }
@@ -2834,6 +2981,8 @@ impl Parser<'_> {
                 e = self.template(Some(e))?;
             } else if self.punct('(') {
                 e = Expr::Call(Box::new(e), self.arguments()?);
+            } else if matches!(self.current(), Token::Op(op) if op == "?.") {
+                return self.optional_chain(e);
             } else if !self.newline()
                 && matches!(self.current(),Token::Op(op) if op=="++"||op=="--")
             {
@@ -2851,6 +3000,96 @@ impl Parser<'_> {
             }
         }
         Err(self.error("postfix nesting limit"))
+    }
+}
+impl Parser<'_> {
+    /// §13.3.9 OptionalExpression: `base OptionalChain`. Every following member access and
+    /// call belongs to the chain; a TemplateLiteral in it is an early error (§13.3.9.1), and
+    /// the chain is neither an assignment nor an update target (§13.15.1, §13.4.1).
+    fn optional_chain(&mut self, mut e: Expr) -> Result<Expr, SyntaxError> {
+        for _ in 0..64 {
+            if self.op("?.") {
+                let base = Expr::Optional(Box::new(e));
+                e = if self.punct('(') {
+                    Expr::Call(Box::new(base), self.arguments()?)
+                } else if self.punct('[') {
+                    let key = self.sequence()?;
+                    self.expect(']')?;
+                    Expr::Computed(Box::new(base), Box::new(key))
+                } else if matches!(self.current(), Token::Template { .. }) {
+                    return Err(self.error("tagged template in optional chain"));
+                } else {
+                    self.member_after_dot(base)?
+                };
+            } else if self.punct('.') {
+                e = self.member_after_dot(e)?;
+            } else if self.punct('[') {
+                let key = self.sequence()?;
+                self.expect(']')?;
+                e = Expr::Computed(Box::new(e), Box::new(key));
+            } else if self.punct('(') {
+                e = Expr::Call(Box::new(e), self.arguments()?);
+            } else if matches!(self.current(), Token::Template { .. }) {
+                return Err(self.error("tagged template in optional chain"));
+            } else {
+                if !self.newline()
+                    && matches!(self.current(), Token::Op(op) if op == "++" || op == "--")
+                {
+                    return Err(self.error("invalid update target"));
+                }
+                return Ok(Expr::OptionalChain(Box::new(e)));
+            }
+        }
+        Err(self.error("postfix nesting limit"))
+    }
+}
+/// Punctuators that begin no ExpressionStatement / AssignmentExpression production (§13).
+/// `...`, `/`, `/=` and `#name` are left out: they may start syntax handled elsewhere or
+/// not implemented (spread, regular expression literals, `#x in o`).
+fn never_starts_expression(token: &Token) -> bool {
+    match token {
+        Token::End => true,
+        Token::Punct(c) => matches!(c, ';' | ')' | ']' | '}' | ',' | ':' | '?' | '.'),
+        Token::Op(op) => matches!(
+            op.as_str(),
+            "=" | "=="
+                | "==="
+                | "!="
+                | "!=="
+                | "=>"
+                | "?."
+                | "*"
+                | "**"
+                | "%"
+                | "<"
+                | ">"
+                | "<="
+                | ">="
+                | "<<"
+                | ">>"
+                | ">>>"
+                | "&"
+                | "|"
+                | "^"
+                | "&&"
+                | "||"
+                | "??"
+                | "+="
+                | "-="
+                | "*="
+                | "%="
+                | "**="
+                | "<<="
+                | ">>="
+                | ">>>="
+                | "&="
+                | "|="
+                | "^="
+                | "&&="
+                | "||="
+                | "??="
+        ),
+        _ => false,
     }
 }
 /// Words the grammar recognises by spelling outside the reserved set.
@@ -3487,7 +3726,9 @@ fn validate_loop(
             | Expr::Unary(_, a)
             | Expr::Update(a, ..)
             | Expr::Spread(a)
-            | Expr::ImportCall(a) => work.push((a, d + 1)),
+            | Expr::ImportCall(a)
+            | Expr::OptionalChain(a)
+            | Expr::Optional(a) => work.push((a, d + 1)),
             Expr::Conditional(a, b, c) => {
                 work.push((a, d + 1));
                 work.push((b, d + 1));

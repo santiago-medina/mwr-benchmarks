@@ -250,3 +250,16 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 
 - 44976/47708 pass (94.3%), +1158 vs checkpoint 16 (43818). Failed 713 (+5), unsupported 2019 (-1163). Lost 0. There are 12 new failures, from cases that were unsupported before and now run: 8 `built-ins/AbstractModuleSource` (source phase imports not implemented) and 4 `ShadowRealm.prototype.importValue` (ShadowRealm not defined).
 - Largest remaining buckets: unpaired UTF-16 strings 447, import phase 252 + 242 negative parse, createRealm 181, "unsupported or missing expression" 158, "reserved binding identifier" 115 (`await` as an identifier in scripts), test262 agents 109, import attributes 60, runner timeouts 60, ShadowRealm 57, await expression shape 44, resumable loop binding expressions 37.
+
+### Parser leftovers: contextual keywords, optional chaining, `new new X` (gap 18, 2026-11-10)
+
+- `yield`, `await` and `let` are contextual (13.1.1): the parser tracks the [Yield]/[Await] parameters (`yield_kw`, `await_kw`) per function, arrow (ConciseBody is [~Yield]; async arrows are [+Await]), class static block ([~Yield, +Await]) and module. `yield` is an identifier only in sloppy code outside generators, `await` only outside async functions, modules and static blocks, `let` only in sloppy code and never as a lexically bound name (14.3.1.1, 14.7.5.1). In a for head, sloppy `let` that does not start a binding (`for (let in o)`, `for (let;;)`) is an identifier expression, and `for (let of x)` is a SyntaxError (14.7.5 lookahead).
+- Optional chaining (13.3.9): `?.` token (no DecimalDigit lookahead, 12.8), `Expr::OptionalChain` boundary plus `Expr::Optional` links, short-circuit through a non-terminal `ScriptError::ShortCircuit` caught at the boundary. Calls keep `this`, `delete a?.b` is true on a nullish base, private names work (`o?.#x`). Early errors: tagged template in a chain, assignment/update target, `new a?.b()`.
+- `new new X()` (13.3.5): the inner `new MemberExpression Arguments` binds first.
+- Tokens that can never start an expression (`)`, `;`, binary operators, end of input) now give "unexpected token", a real early SyntaxError, instead of "unsupported or missing expression".
+- Still unsupported: `await` inside some async shapes the resumable compiler does not lower ("await expression shape"), `with` in generators/async functions.
+
+### Checkpoint 18: full test262 baseline (2026-11-10)
+
+- 45309/47708 pass (95.0%), +333 vs checkpoint 17 (44976). Failed 714 (+1), unsupported 1685 (-334). The run lost 6: `class let {}` / `class yield {}` in sloppy scripts parsed. Fixed after the run (a class's BindingIdentifier is strict mode code, §11.2.2); the six pass again, and the recorded summary is the run as it was (45309).
+- Largest remaining buckets: unpaired UTF-16 strings 452, import phases 252 + 242 negative parse, createRealm 181, test262 agents 109, import attributes 62, ShadowRealm 57, runner timeouts 55, await expression shape 46, "unsupported character" 70, "expected punctuation" 38, call depth limit 34 (tco-* cases).
