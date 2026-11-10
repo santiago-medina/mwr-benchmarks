@@ -1,7 +1,7 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "80b740cc0cb55fae82c555016ac0552904e21db458f74af8a7518184e86f0408",
+  "implementation_sha256": "34d33f496fda0db4a6e2f1638b857ce856afad444574bcf4079c205e2b193141",
   "runner_sha256": "b21b67200e954746c1bc711726025819be308352877947a6f778245b8bc69e34",
   "new_failures": [
     "built-ins/Array/prototype/at/returns-undefined-for-holes-in-sparse-arrays.js",
@@ -192,6 +192,7 @@
     "built-ins/Function/prototype/caller-arguments/accessor-properties.js",
     "built-ins/Function/prototype/caller/prop-desc.js",
     "built-ins/Function/prototype/toString/S15.3.4.2_A11.js",
+    "built-ins/Function/prototype/toString/built-in-function-object.js",
     "built-ins/Function/prototype/toString/method-computed-property-name.js",
     "built-ins/GeneratorFunction/instance-restricted-properties.js",
     "built-ins/GeneratorPrototype/constructor.js",
@@ -1115,11 +1116,11 @@
   ],
   "total": 47708,
   "counts": {
-    "passed": 45919,
+    "passed": 45918,
     "unsupported": 687,
-    "failed": 1102
+    "failed": 1103
   },
-  "assertions": 936737,
+  "assertions": 936736,
   "regressions": [],
   "unsupported_reasons": {
     "$262.createRealm (one realm)": 181,
@@ -2658,6 +2659,13 @@
       "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 877, serial: 987 })) })); expected None",
       "assertions": 2,
       "cleanup": true
+    },
+    {
+      "path": "built-ins/Function/prototype/toString/built-in-function-object.js",
+      "source_sha256": "250b2ab3dfad6e0462f34eb5fa677a42be4c20aa04bd4ed1c10fcba4397a1652",
+      "status": "failed",
+      "reason": "runner: Command '['/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/temporal/target/release/js_check', '/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/test/built-ins/Function/prototype/toString/built-in-function-object.js', '--include=/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/harness/nativeFunctionMatcher.js', '--include=/home/santi/tasky_spaces/task-2335-mwr/repo/gc-lab/.test262-source/harness/wellKnownIntrinsicObjects.js']' timed out after 10 seconds",
+      "assertions": 0
     },
     {
       "path": "built-ins/Function/prototype/toString/method-computed-property-name.js",

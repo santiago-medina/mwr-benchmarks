@@ -7,6 +7,15 @@ pub(super) enum Key {
     String(String),
     Symbol(u64),
 }
+thread_local! {
+    /// The `"length"` key, built once per thread: the array fast paths compare and
+    /// look it up on every element store.
+    static LENGTH: Key = Key::String("length".into());
+}
+/// Runs `f` with the shared `"length"` key.
+pub(super) fn with_length_key<R>(f: impl FnOnce(&Key) -> R) -> R {
+    LENGTH.with(|k| f(k))
+}
 impl From<&str> for Key {
     fn from(v: &str) -> Self {
         Self::String(v.into())
@@ -407,7 +416,7 @@ impl Engine<'_> {
             }
         }
         let data = self.data(id)?;
-        let mut property = data.own(&key).cloned();
+        let mut property = data.properties.get(&key).cloned();
         if let (Some(p), Some((env, name))) = (&mut property, self.mapped_slot(data, &key)) {
             if let (Kind::Data { value, .. }, Some(Object::Environment { bindings, .. })) =
                 (&mut p.kind, self.objects.get(&env))
@@ -469,6 +478,22 @@ impl Engine<'_> {
             let Some(id) = at else {
                 return Ok(Value::Undefined);
             };
+            // OrdinaryGet §10.1.8.1 on a `plain` level: its [[GetOwnProperty]] is the
+            // property map itself, so read it in place (steps 1-3 for data properties,
+            // step 2.b for the parent when absent). Accessors take the general path.
+            if let Some(d) = self.plain(id, &key) {
+                match d.properties.get(&key) {
+                    None => {
+                        at = d.prototype;
+                        continue;
+                    }
+                    Some(Property {
+                        kind: Kind::Data { value, .. },
+                        ..
+                    }) => return Ok(value.clone()),
+                    Some(_) => {}
+                }
+            }
             if self.is_proxy(id) {
                 return self.proxy_get(id, &key, receiver);
             }
@@ -570,6 +595,14 @@ impl Engine<'_> {
     /// are the ordinary ones for `key` (§10.1): not a proxy, module namespace, typed
     /// array or mapped arguments object. Arrays qualify for every key except `length`
     /// (ArraySetLength, §10.4.2.4).
+    /// OrdinaryGet (§10.1.8.1) steps 1-3 when `id` is `plain` and has an own data
+    /// property `key`; `None` means "use [[Get]]".
+    pub(super) fn plain_own_data(&self, id: Id, key: &Key) -> Option<Value> {
+        match &self.plain(id, key)?.properties.get(key)?.kind {
+            Kind::Data { value, .. } => Some(value.clone()),
+            Kind::Accessor { .. } => None,
+        }
+    }
     fn plain(&self, id: Id, key: &Key) -> Option<&Data> {
         match self.objects.get(&id)? {
             Object::Ordinary(d)
@@ -591,30 +624,36 @@ impl Engine<'_> {
     /// a writable data property (own, or inherited: step 2.c-e then creates an own
     /// one). Then OrdinarySetWithOwnDescriptor reduces to "replace the own value" or
     /// CreateDataProperty on an extensible receiver (for an array index, §10.4.2.1
-    /// also bumps `length`). `None` means "take the general path"; nothing has been
-    /// mutated in that case.
-    fn plain_set(&mut self, id: Id, key: &Key, value: &Value) -> Result<Option<bool>> {
+    /// also bumps `length`). `Err(key)` hands the key back for the general path;
+    /// nothing has been mutated in that case.
+    fn plain_set(
+        &mut self,
+        id: Id,
+        owned: Key,
+        value: &Value,
+    ) -> Result<std::result::Result<bool, Key>> {
         enum Plan {
             Replace,
             Create { length: Option<(u32, u32)> },
         }
         self.runtime.value(id)?;
+        let key = &owned;
         let plan = {
             let Some(own) = self.plain(id, key) else {
-                return Ok(None);
+                return Ok(Err(owned));
             };
             match own.properties.get(key) {
                 Some(Property {
                     kind: Kind::Data { writable: true, .. },
                     ..
                 }) => Plan::Replace,
-                Some(_) => return Ok(None),
+                Some(_) => return Ok(Err(owned)),
                 None => {
                     let mut at = own.prototype;
                     for _ in 0..64 {
                         let Some(p) = at else { break };
                         let Some(d) = self.plain(p, key) else {
-                            return Ok(None);
+                            return Ok(Err(owned));
                         };
                         match d.properties.get(key) {
                             None => at = d.prototype,
@@ -625,14 +664,14 @@ impl Engine<'_> {
                                 at = None;
                                 break;
                             }
-                            Some(_) => return Ok(None),
+                            Some(_) => return Ok(Err(owned)),
                         }
                     }
                     if at.is_some() || !own.extensible {
-                        return Ok(None);
+                        return Ok(Err(owned));
                     }
                     let length = match (own.array, key.index()) {
-                        (true, Some(index)) => match own.properties.get(&Key::from("length")) {
+                        (true, Some(index)) => match with_length_key(|k| own.properties.get(k)) {
                             Some(Property {
                                 kind:
                                     Kind::Data {
@@ -643,11 +682,11 @@ impl Engine<'_> {
                             }) => {
                                 let old = f64::from_bits(*n) as u32;
                                 if index >= old && !writable {
-                                    return Ok(None);
+                                    return Ok(Err(owned));
                                 }
                                 Some((index, old))
                             }
-                            _ => return Ok(None),
+                            _ => return Ok(Err(owned)),
                         },
                         _ => None,
                     };
@@ -673,13 +712,13 @@ impl Engine<'_> {
             }
             Plan::Create { length } => {
                 data.properties
-                    .push((key.clone(), Property::data(value.clone(), true, true, true)));
+                    .push((owned, Property::data(value.clone(), true, true, true)));
                 if let Some((index, old_length)) = length {
                     if index >= old_length {
                         if let Some(Property {
                             kind: Kind::Data { value: slot, .. },
                             ..
-                        }) = data.properties.get_mut(&Key::from("length"))
+                        }) = with_length_key(|k| data.properties.get_mut(k))
                         {
                             *slot = Value::number(index as f64 + 1.0);
                         }
@@ -690,7 +729,7 @@ impl Engine<'_> {
         if let Some(child) = old {
             self.runtime.unlink(id, child)?;
         }
-        Ok(Some(true))
+        Ok(Ok(true))
     }
     pub(super) fn ordinary_set(
         &mut self,
@@ -699,10 +738,11 @@ impl Engine<'_> {
         value: Value,
         receiver: Value,
     ) -> Result<bool> {
-        let key = key.into();
+        let mut key = key.into();
         if receiver == Value::Object(id) {
-            if let Some(done) = self.plain_set(id, &key, &value)? {
-                return Ok(done);
+            match self.plain_set(id, key, &value)? {
+                Ok(done) => return Ok(done),
+                Err(back) => key = back,
             }
         }
         let mut at = Some(id);

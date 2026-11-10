@@ -295,3 +295,10 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Callgrind: 20k-iteration loop 869.0 M → 470.1 M instructions (1.85x), fib(16) 114.8 M → 111.0 M. Stage-2 kill line (≤ 15k per iteration) not met yet: 23.5k.
 - Full run: 45919/47708 pass (96.3%), +0. Lost 0. Runner timeouts 455 (unchanged).
 - Next: the per-iteration allocations (index keys, binding updates, ArraySetLength truncation), then the resolver with slot environments.
+
+### Roadmap B stage 2, round 2: allocations and the reference walk (checkpoint 23, 2026-11-10)
+
+- InitializeBinding in place, OrdinaryGet read in place on plain chains, ArraySetLength step 19 as one pass for long ranges, CreateListFromArrayLike with a reused key buffer, one-walk identifier resolution (`Engine::resolve_name`), borrowed reference names, and an integer fast path for Number::toString (§6.1.6.1.20).
+- Callgrind: 20k-iteration loop 470.1 M → 319.1 M instructions (16.0k per iteration, kill line ≤ 15k, round 2 of 3), fib(16) 111.0 M → 105.6 M.
+- Full run: 45918/47708 pass (96.2%), -1. Lost 1: built-ins/Function/prototype/toString/built-in-function-object.js timed out under foreign load (load average ~9.5) and passes alone in 2 s, so it is counted as a load timeout, not a regression. Runner timeouts 456.
+- Next: round 3 (plain_set, lookup_with_base, initialize link/unlink, malloc/free), then the resolver with slot environments.

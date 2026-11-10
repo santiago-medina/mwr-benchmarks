@@ -92,6 +92,12 @@ pub(super) enum FunctionKind {
 /// (props.rs `BuildKeyHasher`).
 pub(super) type NameMap<V> = HashMap<String, V, super::props::BuildKeyHasher>;
 pub(super) type NameSet = HashSet<String, super::props::BuildKeyHasher>;
+/// What `resolve_name` found for an identifier.
+pub(super) enum Resolved {
+    With(Id),
+    Found,
+    Unresolvable,
+}
 /// What one environment record contributes to a name lookup (`Engine::scan_level`).
 enum Level {
     With(Id),
@@ -715,29 +721,6 @@ impl<'host> Engine<'host> {
         }
         Ok(true)
     }
-    /// The `with` object that resolves `name` from `env`, if any (the call `this`).
-    pub(super) fn with_base(&mut self, mut env: Id, name: &str) -> Result<Option<Id>> {
-        loop {
-            if let Some(object) = self.env_with_object(env) {
-                if self.with_binding(object, name)? {
-                    return Ok(Some(object));
-                }
-            }
-            let Some(Object::Environment {
-                parent, bindings, ..
-            }) = self.objects.get(&env)
-            else {
-                return Ok(None);
-            };
-            if bindings.contains_key(name) {
-                return Ok(None);
-            }
-            match parent {
-                Some(p) => env = *p,
-                None => return Ok(None),
-            }
-        }
-    }
     /// `delete name` (sloppy code only): object records delete, declarative ones refuse.
     pub(super) fn delete_binding(&mut self, mut env: Id, name: &str) -> Result<bool> {
         loop {
@@ -942,7 +925,12 @@ impl<'host> Engine<'host> {
             self.runtime.unlink(env, id)?;
         }
         if let Some(Object::Environment { bindings, .. }) = self.objects.get_mut(&env) {
-            bindings.insert(name.into(), Some(value));
+            match bindings.get_mut(name) {
+                Some(slot) => *slot = Some(value),
+                None => {
+                    bindings.insert(name.into(), Some(value));
+                }
+            }
         }
         Ok(())
     }
@@ -952,13 +940,21 @@ impl<'host> Engine<'host> {
         }
         self.initialize(env, name, value)
     }
-    /// ResolveBinding for strict assignment: true when `name` resolves nowhere, so
-    /// PutValue must throw even if the right-hand side creates the global property.
-    pub(super) fn unresolvable(&mut self, mut env: Id, name: &str) -> Result<bool> {
+    /// ResolveBinding (§9.4.2) through GetIdentifierReference (§9.1.2.1) in one walk,
+    /// for building a Reference: the `with` object that has `name` (an Object
+    /// Environment Record base), or whether some record has it. `name` resolves
+    /// nowhere only when the global object lacks it too; that is computed only when
+    /// `strict` asks (sloppy PutValue creates the global property).
+    pub(super) fn resolve_name(
+        &mut self,
+        mut env: Id,
+        name: &str,
+        strict: bool,
+    ) -> Result<Resolved> {
         loop {
             if let Some(object) = self.env_with_object(env) {
                 if self.with_binding(object, name)? {
-                    return Ok(false);
+                    return Ok(Resolved::With(object));
                 }
             }
             let Some(Object::Environment {
@@ -972,14 +968,18 @@ impl<'host> Engine<'host> {
                 return Err(ScriptError::Runtime("invalid environment"));
             };
             if bindings.contains_key(name)
-                || aliases.contains_key(name)
-                || object_bindings.contains(name)
+                || (!aliases.is_empty() && aliases.contains_key(name))
+                || (!object_bindings.is_empty() && object_bindings.contains(name))
             {
-                return Ok(false);
+                return Ok(Resolved::Found);
             }
+            let parent = *parent;
             match parent {
-                Some(p) => env = *p,
-                None => return Ok(self.global_property(name)?.is_none()),
+                Some(p) => env = p,
+                None if strict && self.global_property(name)?.is_none() => {
+                    return Ok(Resolved::Unresolvable);
+                }
+                None => return Ok(Resolved::Found),
             }
         }
     }

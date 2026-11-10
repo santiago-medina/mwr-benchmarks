@@ -53,6 +53,11 @@ pub(super) fn number_string(n: f64) -> String {
     if n.is_infinite() {
         return if n < 0.0 { "-Infinity" } else { "Infinity" }.into();
     }
+    // Number::toString (§6.1.6.1.20) step 7: an integral value below 10^21 is its
+    // decimal digits; below 2^53 the conversion to i64 is exact.
+    if n.fract() == 0.0 && n.abs() < 9_007_199_254_740_992.0 {
+        return (n as i64).to_string();
+    }
     if n.abs() >= 1e21 || n.abs() < 1e-6 {
         let s = format!("{n:e}");
         if let Some((a, b)) = s.split_once('e') {
@@ -1693,6 +1698,9 @@ impl Engine<'_> {
     /// ToString (§7.1.17) as scalar text; an ill-formed result reports Unsupported.
     /// Sites that handle lone surrogates call `to_js_string`.
     pub(super) fn to_string(&mut self, v: Value) -> Result<String> {
+        if let Value::Number(n) = v {
+            return Ok(number_string(f64::from_bits(n)));
+        }
         Ok(self.to_js_string(v)?.text()?.to_owned())
     }
     /// ToString (§7.1.17).

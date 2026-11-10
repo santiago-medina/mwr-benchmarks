@@ -105,7 +105,55 @@ impl Engine<'_> {
         if !self.define_in_place(id, key, desc)? {
             return Ok(false);
         }
-        // Step 19: delete own array indices >= newLen, descending. Probe the
+        // Step 19: delete own array indices >= newLen, descending, stopping at the
+        // first non-configurable one (19.d.iii). Deleting a configurable property of
+        // an ordinary array runs no code and has no effect beyond its absence, so a
+        // long range is one pass: the highest non-configurable index >= newLen stops
+        // the deletion, every index above it goes.
+        if old - new > 8 {
+            let data = self.data(id)?;
+            let stop = data
+                .properties
+                .iter()
+                .filter_map(|(k, p)| k.index().filter(|i| *i >= new && !p.configurable))
+                .max();
+            let cut = stop.map_or(new, |s| s + 1);
+            let mut edges = Vec::new();
+            self.data_mut(id)?.properties.retain(|(k, p)| {
+                let doomed = k.index().is_some_and(|i| i >= cut);
+                if doomed {
+                    edges.extend(p.edges());
+                }
+                !doomed
+            });
+            for child in edges {
+                self.runtime.unlink(id, child)?;
+            }
+            let accepted = stop.is_none();
+            if let Some(index) = stop {
+                // Step 19.d.iii.
+                self.define_in_place(
+                    id,
+                    Key::from("length"),
+                    Descriptor {
+                        value: Some(Value::number(index as f64 + 1.0)),
+                        ..Descriptor::default()
+                    },
+                )?;
+            }
+            if final_readonly {
+                self.define_in_place(
+                    id,
+                    Key::from("length"),
+                    Descriptor {
+                        writable: Some(false),
+                        ..Descriptor::default()
+                    },
+                )?;
+            }
+            return Ok(accepted);
+        }
+        // Short ranges, one by one in descending order. Probe the
         // range directly when it is shorter than the property list (pop, length -= 1).
         let data = self.data(id)?;
         let mut indices: Vec<u32> = if ((old - new) as usize) <= data.properties.len() {

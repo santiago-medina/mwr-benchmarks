@@ -6,13 +6,13 @@ use super::{
 };
 use crate::dual::Id;
 type Result<T> = std::result::Result<T, ScriptError>;
-pub(super) enum Reference {
-    Binding(Id, String),
+pub(super) enum Reference<'a> {
+    Binding(Id, &'a str),
     /// A name resolved to a `with` object environment (§9.1.1.2): the binding
     /// object, the name and strictness. Resolved once, so traps run once.
-    WithBinding(Id, String, bool),
+    WithBinding(Id, &'a str, bool),
     /// A strict-mode name that resolved nowhere before the right-hand side ran.
-    Unresolvable(String),
+    Unresolvable(&'a str),
     /// Base, key, and whether the reference is in strict mode code.
     Property(Value, Key, bool),
     /// `this`, the [[HomeObject]]'s prototype, the key and strictness.
@@ -27,22 +27,25 @@ pub(super) fn assignment_skips(op: &str, value: &Value) -> bool {
     }
 }
 impl Engine<'_> {
-    pub(super) fn eval_reference(&mut self, target: &Expr, env: Id) -> Result<Reference> {
-        match target {
-            Expr::Name(name) if self.env_strict(env) && self.unresolvable(env, name)? => {
-                Ok(Reference::Unresolvable(name.clone()))
+    /// ResolveBinding (§9.4.2) for an IdentifierReference.
+    pub(super) fn name_reference<'a>(&mut self, name: &'a str, env: Id) -> Result<Reference<'a>> {
+        let strict = self.env_strict(env);
+        Ok(match self.resolve_name(env, name, strict)? {
+            super::vm::Resolved::Unresolvable => Reference::Unresolvable(name),
+            super::vm::Resolved::With(object) => {
+                self.protect(&Value::Object(object))?;
+                Reference::WithBinding(object, name, strict)
             }
-            Expr::Name(name) => match self.with_base(env, name)? {
-                Some(object) => {
-                    self.protect(&Value::Object(object))?;
-                    Ok(Reference::WithBinding(
-                        object,
-                        name.clone(),
-                        self.env_strict(env),
-                    ))
-                }
-                None => Ok(Reference::Binding(env, name.clone())),
-            },
+            super::vm::Resolved::Found => Reference::Binding(env, name),
+        })
+    }
+    pub(super) fn eval_reference<'a>(
+        &mut self,
+        target: &'a Expr,
+        env: Id,
+    ) -> Result<Reference<'a>> {
+        match target {
+            Expr::Name(name) => self.name_reference(name, env),
             Expr::Member(base, key) => {
                 let base = self.eval(base, env)?;
                 self.protect(&base)?;
@@ -69,14 +72,14 @@ impl Engine<'_> {
             Reference::Binding(env, name) => self.lookup(*env, name),
             Reference::WithBinding(object, name, strict) => {
                 // §9.1.1.2.6 GetBindingValue steps 2-4.
-                if !self.has(*object, name)? {
+                if !self.has(*object, *name)? {
                     if *strict {
                         return self
                             .throw_error("ReferenceError", &format!("{name} is not defined"));
                     }
                     return Ok(Value::Undefined);
                 }
-                self.get_member(Value::Object(*object), name.as_str())
+                self.get_member(Value::Object(*object), *name)
             }
             Reference::Unresolvable(name) => {
                 self.throw_error("ReferenceError", &format!("{name} is not defined"))
@@ -91,7 +94,7 @@ impl Engine<'_> {
             Reference::Binding(env, name) => self.assign_binding(env, &name, value.clone())?,
             Reference::WithBinding(object, name, strict) => {
                 // §9.1.1.2.5 SetMutableBinding steps 1-3.
-                if !self.has(object, &name)? && strict {
+                if !self.has(object, name)? && strict {
                     return self.throw_error("ReferenceError", &format!("{name} is not defined"));
                 }
                 self.assign_member(Value::Object(object), name.into(), value.clone(), strict)?

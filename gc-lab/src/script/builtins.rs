@@ -1,6 +1,6 @@
 //! Explicit intrinsic table; unsupported features fail distinctly from JavaScript exceptions.
 use super::{
-    objects::{Data, Descriptor, Kind},
+    objects::{Data, Descriptor, Key, Kind},
     vm::{Engine, Object, ScriptError, Value},
 };
 use crate::dual::{Domain, Id};
@@ -998,10 +998,21 @@ impl Engine<'_> {
         }
         let id = self.object_argument(value)?;
         let length = self.length_of(id)?;
-        let mut args = vec![];
+        let mut args = Vec::with_capacity(length.min(1 << 16) as usize);
+        let mut key = Key::String(String::new());
         for index in 0..length {
             self.tick()?;
-            let value = self.get_member(Value::Object(id), index.to_string())?;
+            if let Key::String(s) = &mut key {
+                use std::fmt::Write;
+                s.clear();
+                let _ = write!(s, "{index}");
+            }
+            // Get(obj, ToString(index)) (§7.3.19 step 6.b): an own data property of an
+            // ordinary object is read in place, anything else goes through [[Get]].
+            let value = match self.plain_own_data(id, &key) {
+                Some(value) => value,
+                None => self.get_member(Value::Object(id), key.clone())?,
+            };
             self.protect(&value)?;
             args.push(value);
         }

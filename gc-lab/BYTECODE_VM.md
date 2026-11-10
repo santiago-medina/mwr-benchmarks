@@ -338,3 +338,39 @@ malloc/free about 20% (23 allocations per iteration: key strings for array indic
 `eval_reference` 6.3k and `lookup_with_base` 2.9k. Next: index keys without string
 allocation, then the resolver (slot environments) as designed above. This counts as
 fix round 1 of 3 toward the stage-2 kill line.
+
+### Stage 2, round 2 (checkpoint 23): allocations and the reference walk
+
+Same benchmark and method (callgrind, `loop_small.js`, 20k iterations):
+
+| step | loop_small | per iteration |
+|---|---:|---:|
+| part 1 (checkpoint 22) | 470.1 M | 23.5 k |
+| round 2, all steps below | 319.1 M | 16.0 k |
+
+`fib_small.js`: 111.0 M → 105.6 M.
+
+- `initialize` updates an existing binding in place, with no name allocation
+  (InitializeBinding §9.1.1.1.4 only sets the value and the initialized flag).
+- `ordinary_get` reads `plain` objects level by level in place (OrdinaryGet §10.1.8.1,
+  same proto-chain eligibility rule as `plain_set`).
+- `plain_set` takes the key by value; the `"length"` key is a thread-local constant.
+- ArraySetLength §10.4.2.4 step 19 deletes the indices ≥ newLen in one pass over the
+  own keys when more than 8 would be deleted, instead of one `[[Delete]]` per index.
+  The result is the same as the descending loop: the highest non-configurable index
+  ≥ newLen stops the deletion, everything above it goes, and `length` becomes that
+  index + 1. Deleting a configurable property of an ordinary array runs no code.
+- CreateListFromArrayLike §7.3.18 (`argument_list`) reuses one key buffer and reads
+  own data properties directly when the object is plain.
+- `eval_reference` resolves a name in one walk (`Engine::resolve_name`), replacing the
+  "unresolvable?" check followed by `with_base`. Aliases and object bindings are the
+  outermost levels, so the walk order of GetIdentifierReference §9.1.2.1 is kept.
+- `Reference<'a>` borrows the AST name instead of cloning it.
+- Number::toString §6.1.6.1.20: integers in the safe range take a digit fast path,
+  and `to_string(Number)` skips the `JsString` round trip.
+
+Kill line (≤ 15k per iteration): not met yet (16.0k). This is fix round 2 of 3.
+Remaining hot spots: `plain_set` 2.3k, `lookup_with_base` 2.0k, `initialize` 1.1k
+(link/unlink and two lookups), malloc/free about 10%. If round 3 misses 15k, the next
+step is a literature check on the environment representation, then the resolver
+(slot environments) as designed above.

@@ -123,19 +123,17 @@ impl Engine<'_> {
         let reference = self.pattern_reference(pattern, env, None)?;
         self.pattern_value(pattern, value, env, None, reference)
     }
-    fn pattern_reference(
+    fn pattern_reference<'a>(
         &mut self,
-        pattern: &Pattern,
+        pattern: &'a Pattern,
         env: Id,
         target: Option<Id>,
-    ) -> Result<Option<super::references::Reference>> {
+    ) -> Result<Option<super::references::Reference<'a>>> {
         if target.is_some() {
             return Ok(None);
         }
         match pattern {
-            Pattern::Name(name) => self
-                .eval_reference(&Expr::Name(name.clone()), env)
-                .map(Some),
+            Pattern::Name(name) => self.name_reference(name, env).map(Some),
             Pattern::Target(expression) => self.eval_reference(expression, env).map(Some),
             Pattern::Default(pattern, _) => self.pattern_reference(pattern, env, target),
             _ => Ok(None),
@@ -147,7 +145,7 @@ impl Engine<'_> {
         value: Value,
         env: Id,
         target: Option<Id>,
-        reference: Option<super::references::Reference>,
+        reference: Option<super::references::Reference<'_>>,
     ) -> Result<()> {
         self.protect(&value)?;
         match pattern {
