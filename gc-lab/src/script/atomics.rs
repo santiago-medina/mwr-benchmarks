@@ -287,6 +287,9 @@ impl Engine<'_> {
                 if buffer.borrow().shared {
                     return self.throw_error("TypeError", "cannot detach a SharedArrayBuffer");
                 }
+                if buffer.borrow().immutable {
+                    return self.throw_error("TypeError", "cannot detach an immutable ArrayBuffer");
+                }
                 Self::detach_buffer(&mut buffer.borrow_mut());
                 Ok(Value::Null)
             }
@@ -332,7 +335,7 @@ impl Engine<'_> {
             }
             "Atomics.load" => {
                 // §25.4.9 Atomics.load ( typedArray, index ).
-                let access = self.atomic_access(arg(0), arg(1), false)?;
+                let access = self.atomic_access(arg(0), arg(1), false, false)?;
                 self.revalidate_atomic_access(&access)?;
                 let size = access.kind.size();
                 let b = access.store.borrow();
@@ -342,7 +345,7 @@ impl Engine<'_> {
             }
             "Atomics.store" => {
                 // §25.4.12 Atomics.store ( typedArray, index, value ).
-                let access = self.atomic_access(arg(0), arg(1), false)?;
+                let access = self.atomic_access(arg(0), arg(1), false, true)?;
                 let v = self.atomic_operand(access.kind, arg(2))?;
                 self.revalidate_atomic_access(&access)?;
                 let bytes = access.kind.bytes(&v, true);
@@ -353,7 +356,7 @@ impl Engine<'_> {
             "Atomics.compareExchange" => {
                 // §25.4.5 Atomics.compareExchange ( typedArray, index, expectedValue,
                 // replacementValue ).
-                let access = self.atomic_access(arg(0), arg(1), false)?;
+                let access = self.atomic_access(arg(0), arg(1), false, true)?;
                 let expected = self.atomic_operand(access.kind, arg(2))?;
                 let replacement = self.atomic_operand(access.kind, arg(3))?;
                 self.revalidate_atomic_access(&access)?;
@@ -370,7 +373,7 @@ impl Engine<'_> {
             "Atomics.add" | "Atomics.and" | "Atomics.exchange" | "Atomics.or" | "Atomics.sub"
             | "Atomics.xor" => {
                 // AtomicReadModifyWrite (§25.4.3.17).
-                let access = self.atomic_access(arg(0), arg(1), false)?;
+                let access = self.atomic_access(arg(0), arg(1), false, true)?;
                 let v = self.atomic_operand(access.kind, arg(2))?;
                 self.revalidate_atomic_access(&access)?;
                 let operand = raw(&access.kind.bytes(&v, true));
@@ -401,8 +404,14 @@ impl Engine<'_> {
     }
 
     /// ValidateIntegerTypedArray (§25.4.3.1) then ValidateAtomicAccess (§25.4.3.2).
-    fn atomic_access(&mut self, typed: Value, index: Value, waitable: bool) -> Result<Access> {
-        let (id, record, length) = self.typed_record(typed)?;
+    fn atomic_access(
+        &mut self,
+        typed: Value,
+        index: Value,
+        waitable: bool,
+        write: bool,
+    ) -> Result<Access> {
+        let (id, record, length) = self.typed_record_mode(typed, write)?;
         let allowed = if waitable {
             matches!(record.kind, Element::I32 | Element::I64)
         } else {
@@ -565,7 +574,7 @@ impl Engine<'_> {
     /// Atomics.notify ( typedArray, index, count ) (§25.4.11).
     fn atomics_notify(&mut self, typed: Value, index: Value, count: Value) -> Result<Value> {
         // Step 1: ValidateAtomicAccessOnIntegerTypedArray(typedArray, index, true).
-        let access = self.atomic_access(typed, index, true)?;
+        let access = self.atomic_access(typed, index, true, false)?;
         // Steps 2-3: count undefined → +∞, else max(ToIntegerOrInfinity(count), 0).
         let c = if count == Value::Undefined {
             f64::INFINITY

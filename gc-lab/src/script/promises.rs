@@ -107,6 +107,11 @@ pub(super) enum Internal {
     CloseSyncIterator {
         iterator: Value,
     },
+    /// A wrapped function exotic object's [[WrappedTargetFunction]] (ShadowRealm §2.1);
+    /// called through `wrapped_call`, never `promise_internal`.
+    Wrapped {
+        target: Value,
+    },
     DisposeStep {
         job: Id,
         reject: bool,
@@ -132,6 +137,7 @@ impl Internal {
             Self::AsyncGeneratorReturn { generator, .. } => vec![*generator],
             Self::FromAsyncStep { job, .. } | Self::DisposeStep { job, .. } => vec![*job],
             Self::CloseSyncIterator { iterator } => iterator.id().into_iter().collect(),
+            Self::Wrapped { target } => target.id().into_iter().collect(),
         }
     }
 }
@@ -642,6 +648,7 @@ impl Engine<'_> {
             Internal::IterResult { done } => self.iterator_result(arg(0), done),
             Internal::FromAsyncStep { job, reject } => self.from_async_step(job, arg(0), reject),
             Internal::DisposeStep { job, reject } => self.dispose_step(job, arg(0), reject),
+            Internal::Wrapped { target } => self.wrapped_call(target, Value::Undefined, args),
             Internal::CloseSyncIterator { iterator } => {
                 self.close_sync_iterator_rejected(iterator, arg(0))
             }

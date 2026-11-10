@@ -102,6 +102,8 @@ pub(super) struct Data {
     pub properties: super::props::PropertyMap,
     pub extensible: bool,
     pub error_class: Option<String>,
+    /// [[IsRawJSON]] (json-parse-with-source, JSON.rawJSON).
+    pub raw_json: bool,
     pub boxed: Option<Value>,
     pub source: Option<String>,
     pub date: Option<u64>,
@@ -132,6 +134,8 @@ pub(super) struct Data {
     pub dispose: Option<super::disposal::DisposeSlot>,
     /// Module namespace exotic object (§10.4.6): the module record index.
     pub namespace: Option<usize>,
+    /// ShadowRealm [[ShadowRealm]]: the realm index (shadow_realms.rs).
+    pub shadow_realm: Option<usize>,
     #[cfg(feature = "temporal")]
     pub temporal: Option<std::rc::Rc<super::temporal::Slot>>,
 }
@@ -142,7 +146,9 @@ impl Data {
             properties: Default::default(),
             extensible: true,
             namespace: None,
+            shadow_realm: None,
             error_class: None,
+            raw_json: false,
             boxed: None,
             source: None,
             date: None,
@@ -408,11 +414,12 @@ impl Engine<'_> {
         if let Some(typed) = &self.data(id)?.typed {
             if let Some(index) = super::typed_arrays::numeric_index(&key) {
                 let value = self.typed_get(typed, index)?;
-                return Ok(if value == Value::Undefined {
-                    None
-                } else {
-                    Some(Property::data(value, true, true, true))
-                });
+                if value == Value::Undefined {
+                    return Ok(None);
+                }
+                // immutable-arraybuffer §10.4.5.1: writable/configurable = mutable.
+                let mutable = !self.typed_immutable(typed)?;
+                return Ok(Some(Property::data(value, mutable, true, mutable)));
             }
         }
         let data = self.data(id)?;
@@ -757,6 +764,10 @@ impl Engine<'_> {
             }
             if let Some(typed) = self.data(id)?.typed.clone() {
                 if let Some(index) = super::typed_arrays::numeric_index(&key) {
+                    // immutable-arraybuffer §10.4.5.5 step 1.b.ii.
+                    if self.typed_immutable(&typed)? {
+                        return Ok(false);
+                    }
                     if receiver == Value::Object(id) {
                         self.typed_write(&typed, index, value)?;
                         return Ok(true);

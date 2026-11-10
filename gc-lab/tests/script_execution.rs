@@ -64,3 +64,58 @@ fn object_results_remain_alive_during_later_argument_allocations() {
     e.release_globals();
     assert_eq!(e.live_objects(), 0);
 }
+#[test]
+fn strings_compare_by_code_units_and_key_maps_by_code_units() {
+    // §7.2.13 IsLessThan step 3: strings compare by code units, so U+FFFF (one unit 0xFFFF)
+    // sorts after U+10000 (lead 0xD800). Literature check #335.
+    let mut e = engine();
+    e.execute(
+        "const big = '\\u{10000}', top = '\\uFFFF', lone = '\\uD800';
+         const m = new Map([[lone, 1], [lone + '\\uDC00', 2]]);
+         const s = new Set([lone, '\\uD800', big, lone + '\\uDC00']);
+         const result = [top > big, big < top, lone < big, big.length, m.get('\\uD800'),
+           m.get(big), s.size, s.has('\\uD800\\uDC00'), [top, big, lone].sort().map(x => x.charCodeAt(0).toString(16)).join()].join();",
+    )
+    .unwrap();
+    assert_eq!(
+        e.binding_string("result").unwrap(),
+        "true,true,true,2,1,2,2,true,d800,d800,ffff"
+    );
+}
+#[test]
+fn sum_precise_normalize_and_restricted_function_properties() {
+    // Math.sumPrecise rounds once (exact sum), String.prototype.normalize follows UAX #15,
+    // and Function.prototype.caller/arguments are %ThrowTypeError% accessors (§10.2.4).
+    let mut e = engine();
+    e.execute(
+        "const big = Number.MAX_VALUE;
+         const d = Object.getOwnPropertyDescriptor(Function.prototype, 'caller');
+         const result = [Math.sumPrecise([1e20, 0.1, -1e20]), Math.sumPrecise([0.1, 0.2, 0.3]),
+           Math.sumPrecise([big, big, -big]), Math.sumPrecise([big, big]), Object.is(Math.sumPrecise([]), -0),
+           '\\u0041\\u030A'.normalize() === '\\u00C5', '\\uFB01'.normalize('NFKD'),
+           '\\u00C5'.normalize('NFD').length, d.get === d.set, Object.isFrozen(d.get)].join();",
+    )
+    .unwrap();
+    assert_eq!(
+        e.binding_string("result").unwrap(),
+        "0.1,0.6,1.7976931348623157e+308,Infinity,true,true,fi,2,true,true"
+    );
+    // §12.5: a hashbang is only a comment at the very start of the source text.
+    assert!(e.execute("#!/usr/bin/env js\nvar hashbang = 1;").is_ok());
+    assert!(e.execute("var x = 1; #!no").is_err());
+}
+#[test]
+fn proper_tail_calls_run_in_constant_depth() {
+    // §15.10: calls in tail position (return, ?:, &&, ||, ??, comma, tagged templates)
+    // do not grow the call depth, for calls and for [[Construct]] of a strict function.
+    let mut e = engine();
+    e.execute(
+        "'use strict';
+         function f(n) { if (n === 0) return 'done'; return n % 2 ? (0, f(n - 1)) : true && f(n - 1); }
+         const tag = (s, n) => n === 0 ? 'tag' : tag`${n - 1}`;
+         function C(n) { if (n === 0) return {made: 1}; return C(n - 1); }
+         const result = [f(100), tag`${100}`, new C(100).made].join();",
+    )
+    .unwrap();
+    assert_eq!(e.binding_string("result").unwrap(), "done,tag,1");
+}

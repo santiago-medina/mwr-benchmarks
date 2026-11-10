@@ -10,8 +10,23 @@ enum Json {
     Bool(bool),
     Number(f64),
     String(String),
-    Array(Vec<Json>),
-    Object(Vec<(String, Json)>),
+    Array(Vec<Spanned>),
+    Object(Vec<(String, Spanned)>),
+}
+/// A JSON value with the byte range of its parse node in the source text
+/// (json-parse-with-source: the `source` of a primitive's reviver context).
+struct Spanned {
+    json: Json,
+    start: usize,
+    end: usize,
+}
+/// JSON Parse Record (json-parse-with-source, CreateJSONParseRecord): the value a
+/// parse node produced, its source text when primitive, and the child records.
+struct ParseRecord {
+    value: Value,
+    source: Option<String>,
+    elements: Vec<ParseRecord>,
+    entries: Vec<(String, ParseRecord)>,
 }
 struct Reader<'a> {
     text: &'a [u8],
@@ -107,11 +122,20 @@ impl Reader<'_> {
             }
         }
     }
-    fn value(&mut self, depth: usize) -> std::result::Result<Json, &'static str> {
+    fn value(&mut self, depth: usize) -> std::result::Result<Spanned, &'static str> {
         if depth > 256 {
             return Err("JSON nesting limit");
         }
         self.ws();
+        let start = self.pos;
+        let json = self.value_kind(depth)?;
+        Ok(Spanned {
+            json,
+            start,
+            end: self.pos,
+        })
+    }
+    fn value_kind(&mut self, depth: usize) -> std::result::Result<Json, &'static str> {
         match self.text.get(self.pos).copied() {
             Some(b'"') => Ok(Json::String(self.string()?)),
             Some(b'[') => {
@@ -226,7 +250,7 @@ pub(super) fn json_validate(text: &str) -> std::result::Result<(), super::parser
         .map_err(|message| super::parser::SyntaxError { offset: 0, message })
 }
 /// The JSON text grammar (§25.5.1 step 2) over the whole input.
-fn json_read(text: &str) -> std::result::Result<Json, &'static str> {
+fn json_read(text: &str) -> std::result::Result<Spanned, &'static str> {
     let mut reader = Reader {
         text: text.as_bytes(),
         pos: 0,
@@ -282,55 +306,100 @@ struct Writer {
     stack: Vec<Id>,
 }
 impl Engine<'_> {
-    fn json_materialize(&mut self, node: Json) -> Result<Value> {
-        match node {
-            Json::Null => Ok(Value::Null),
-            Json::Bool(b) => Ok(Value::Bool(b)),
-            Json::Number(n) => Ok(Value::number(n)),
-            Json::String(s) => Ok(Value::String(s.into())),
+    /// Materializes `node`; with `records`, also builds its JSON Parse Record
+    /// (json-parse-with-source CreateJSONParseRecord). Objects keep the record of
+    /// the last pair for a duplicated name, the pair that set the property.
+    fn json_materialize(
+        &mut self,
+        node: Spanned,
+        text: &str,
+        records: bool,
+    ) -> Result<(Value, Option<ParseRecord>)> {
+        let mut record = ParseRecord {
+            value: Value::Undefined,
+            source: None,
+            elements: vec![],
+            entries: vec![],
+        };
+        let value = match node.json {
+            Json::Null => Value::Null,
+            Json::Bool(b) => Value::Bool(b),
+            Json::Number(n) => Value::number(n),
+            Json::String(s) => Value::String(s.into()),
             Json::Array(items) => {
                 let id = self.new_array(items.len() as u32)?;
                 self.protect(&Value::Object(id))?;
                 for (i, item) in items.into_iter().enumerate() {
-                    let v = self.json_materialize(item)?;
+                    let (v, child) = self.json_materialize(item, text, records)?;
                     self.put_data(id, i.to_string(), v)?;
+                    record.elements.extend(child);
                 }
-                Ok(Value::Object(id))
+                Value::Object(id)
             }
             Json::Object(items) => {
                 let id = self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;
                 self.protect(&Value::Object(id))?;
                 for (key, item) in items {
-                    let v = self.json_materialize(item)?;
-                    self.put_data(id, key, v)?;
+                    let (v, child) = self.json_materialize(item, text, records)?;
+                    self.put_data(id, key.clone(), v)?;
+                    if let Some(child) = child {
+                        record.entries.retain(|(k, _)| *k != key);
+                        record.entries.push((key, child));
+                    }
                 }
-                Ok(Value::Object(id))
+                Value::Object(id)
             }
+        };
+        if !records {
+            return Ok((value, None));
         }
+        if !matches!(value, Value::Object(_)) {
+            record.source = Some(text[node.start..node.end].to_string());
+        }
+        record.value = value.clone();
+        Ok((value, Some(record)))
     }
     fn json_revive(
         &mut self,
         holder: Id,
         key: String,
         reviver: Value,
+        record: Option<&ParseRecord>,
         depth: usize,
     ) -> Result<Value> {
+        // InternalizeJSONProperty (§25.5.1.1, as amended by json-parse-with-source).
         self.tick()?;
         if depth > 256 {
             return self.throw_error("RangeError", "JSON reviver nesting limit");
         }
         let value = self.get_member(Value::Object(holder), key.clone())?;
         self.protect(&value)?;
+        // Steps 2-4: the context object; a record whose value is still SameValue
+        // to `val` gives a primitive its `source` and the children their records.
+        let context = self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;
+        self.protect(&Value::Object(context))?;
+        let record = record.filter(|r| r.value.same_value(&value));
+        if let Some(source) = record.and_then(|r| r.source.clone()) {
+            self.put_data(context, "source", Value::String(source.into()))?;
+        }
         if let Value::Object(id) = value.clone() {
             // §25.5.1.1 InternalizeJSONProperty step 2.a: IsArray (follows proxies, §7.2.2).
-            let keys = if self.is_array(&Value::Object(id))? {
+            let array = self.is_array(&Value::Object(id))?;
+            let keys = if array {
                 let len = self.length_of(id)?;
                 (0..len).map(|i| i.to_string()).collect()
             } else {
                 self.json_keys(id)?
             };
-            for key in keys {
-                let v = self.json_revive(id, key.clone(), reviver.clone(), depth + 1)?;
+            for (index, key) in keys.into_iter().enumerate() {
+                let child = record.and_then(|r| {
+                    if array {
+                        r.elements.get(index)
+                    } else {
+                        r.entries.iter().find(|(k, _)| *k == key).map(|(_, c)| c)
+                    }
+                });
+                let v = self.json_revive(id, key.clone(), reviver.clone(), child, depth + 1)?;
                 if v == Value::Undefined {
                     self.delete(id, key)?;
                 } else {
@@ -351,7 +420,7 @@ impl Engine<'_> {
         self.invoke_this(
             reviver,
             Value::Object(holder),
-            vec![Value::String(key.into()), value],
+            vec![Value::String(key.into()), value, Value::Object(context)],
         )
     }
     fn json_keys(&mut self, id: Id) -> Result<Vec<String>> {
@@ -380,16 +449,65 @@ impl Engine<'_> {
                 }
                 Err(message) => return self.throw_error("SyntaxError", message),
             };
-            let value = self.json_materialize(node)?;
-            self.protect(&value)?;
             let reviver = args.get(1).cloned().unwrap_or(Value::Undefined);
-            if !self.callable(&reviver) {
+            let revive = self.callable(&reviver);
+            let (value, record) = self.json_materialize(node, &text, revive)?;
+            self.protect(&value)?;
+            if !revive {
                 return Ok(value);
             }
             let holder = self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;
             self.protect(&Value::Object(holder))?;
             self.put_data(holder, "", value)?;
-            return self.json_revive(holder, String::new(), reviver, 0);
+            return self.json_revive(holder, String::new(), reviver, record.as_ref(), 0);
+        }
+        if name == "JSON.rawJSON" {
+            // JSON.rawJSON (json-parse-with-source): steps 1-7.
+            let text = self.to_string(input)?;
+            let units: Vec<u16> = text.encode_utf16().collect();
+            let blank = |u: Option<&u16>| matches!(u, Some(0x09 | 0x0a | 0x0d | 0x20));
+            if units.is_empty() || blank(units.first()) || blank(units.last()) {
+                return self.throw_error("SyntaxError", "invalid raw JSON text");
+            }
+            match json_read(&text) {
+                Ok(Spanned {
+                    json: Json::Array(_) | Json::Object(_),
+                    ..
+                }) => return self.throw_error("SyntaxError", "raw JSON text must be a primitive"),
+                Ok(_) => {}
+                Err("unpaired surrogate storage unsupported") => {
+                    return Err(ScriptError::Unsupported("JSON unpaired UTF-16 surrogate"))
+                }
+                Err(message) => return self.throw_error("SyntaxError", message),
+            }
+            // Steps 4-6: OrdinaryObjectCreate(null, « [[IsRawJSON]] »), "rawJSON", frozen.
+            let id = self.new_object(None)?;
+            self.protect(&Value::Object(id))?;
+            self.define(
+                id,
+                "rawJSON",
+                super::objects::Descriptor {
+                    value: Some(Value::String(text.into())),
+                    writable: Some(false),
+                    enumerable: Some(true),
+                    configurable: Some(false),
+                    ..Default::default()
+                },
+            )?;
+            let mut data = self.data(id)?.clone();
+            data.extensible = false;
+            data.raw_json = true;
+            self.replace_data(id, data)?;
+            return Ok(Value::Object(id));
+        }
+        if name == "JSON.isRawJSON" {
+            // JSON.isRawJSON (json-parse-with-source): has [[IsRawJSON]]; proxies do not.
+            return Ok(Value::Bool(match input {
+                Value::Object(id) if !self.is_proxy(id) => {
+                    self.data(id).map(|d| d.raw_json).unwrap_or(false)
+                }
+                _ => false,
+            }));
         }
         let replacer = args.get(1).cloned().unwrap_or(Value::Undefined);
         let mut keys = None;
@@ -404,9 +522,11 @@ impl Engine<'_> {
                     self.protect(&v)?;
                     if let Value::Object(id) = v.clone() {
                         if let Some(boxed) = self.boxed_slot(id)? {
+                            // §25.5.2 step 5.b.ii.5: [[StringData]] or [[NumberData]] -> ToString(v).
                             v = match boxed {
-                                Value::String(_) => Value::String((self.to_string(v)?).into()),
-                                Value::Number(_) => Value::number(self.to_number(v)?),
+                                Value::String(_) | Value::Number(_) => {
+                                    Value::String((self.to_string(v)?).into())
+                                }
                                 _ => Value::Undefined,
                             };
                         }
@@ -492,6 +612,11 @@ impl Engine<'_> {
             self.protect(&value)?;
         }
         if let Value::Object(id) = value.clone() {
+            // SerializeJSONProperty step 4.a (json-parse-with-source): [[IsRawJSON]].
+            if !self.is_proxy(id) && self.data(id)?.raw_json {
+                let raw = self.get_member(value, "rawJSON")?;
+                return Ok(Some(self.to_string(raw)?));
+            }
             if let Some(boxed) = self.boxed_slot(id)? {
                 value = match boxed {
                     Value::Number(_) => Value::number(self.to_number(value)?),
@@ -527,7 +652,8 @@ impl Engine<'_> {
                 if writer.stack.contains(&id) {
                     return self.throw_error("TypeError", "cyclic JSON value");
                 }
-                let array = self.data(id)?.array;
+                // SerializeJSONProperty step 10: IsArray(value) (follows proxies, §7.2.2).
+                let array = self.is_array(&Value::Object(id))?;
                 let keys = if array {
                     let len = self.length_of(id)?;
                     (0..len).map(|i| i.to_string()).collect()

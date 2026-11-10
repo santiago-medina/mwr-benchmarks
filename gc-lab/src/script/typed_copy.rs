@@ -66,6 +66,13 @@ impl Engine<'_> {
     ) -> Result<Value> {
         let arg = |i| args.get(i).cloned().unwrap_or(Value::Undefined);
         let (id, typed) = self.typed_raw(receiver.clone())?;
+        // ValidateTypedArray(O, seq-cst, write) for copyWithin/fill/reverse, and
+        // %TypedArray%.prototype.set step 3 (immutable-arraybuffer §23.2.3.26).
+        if matches!(method, "set" | "reverse" | "fill" | "copyWithin")
+            && self.typed_immutable(&typed)?
+        {
+            return self.throw_error("TypeError", "cannot write to an immutable ArrayBuffer");
+        }
         if method == "subarray" {
             let length = self.typed_length(&typed)?.unwrap_or(0) as u64;
             let start = self.relative_index(arg(0), length)?;
@@ -83,7 +90,7 @@ impl Engine<'_> {
                 arguments.push(Value::number(end.saturating_sub(start) as f64));
             }
             return self
-                .typed_species(id, typed.kind, arguments, None)
+                .typed_species(id, typed.kind, arguments, None, false)
                 .map(|(value, _)| value);
         }
         if method == "set" {
@@ -156,6 +163,7 @@ impl Engine<'_> {
                     typed.kind,
                     vec![Value::number(count as f64)],
                     Some(count),
+                    true,
                 )?;
                 if count != 0 {
                     let (_, _, current) = self.typed_record(receiver)?;
@@ -324,7 +332,8 @@ impl Engine<'_> {
         };
         let output = self.construct(constructor, vec![Value::number(length as f64)])?;
         self.protect(&output)?;
-        let (_, typed, size) = self.typed_record(output.clone())?;
+        // TypedArrayCreateFromConstructor(C, « len », write) (immutable-arraybuffer §23.2.4.2).
+        let (_, typed, size) = self.typed_record_mode(output.clone(), true)?;
         if (size as u64) < length {
             return self.throw_error(
                 "TypeError",

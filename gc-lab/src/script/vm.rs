@@ -222,6 +222,22 @@ pub struct Engine<'host> {
     pub(super) pending_release: Vec<u64>,
     pub(super) private_symbols: HashSet<u64>,
     pub(super) pending_construct: Option<(Value, Value)>,
+    /// Proper tail calls (§15.10.3 PrepareForTailCall): true while the running function body
+    /// is strict ordinary code whose `return` may hand its call back to `invoke_this`.
+    pub(super) tail_ok: bool,
+    /// Nesting of statements whose body is not in tail position here (try blocks, catch
+    /// with finally, for-in/of bodies, blocks with `using`). See TAIL_CALLS.md.
+    pub(super) non_tail: u32,
+    /// The call a tail-position `return` deferred to the caller's trampoline.
+    pub(super) tail_call: Option<TailCall>,
+}
+
+/// A deferred tail call; `roots` keep its values alive after the callee's frame is gone.
+pub(super) struct TailCall {
+    pub(super) callee: Value,
+    pub(super) receiver: Value,
+    pub(super) args: Vec<Value>,
+    pub(super) roots: Vec<ExternalRoot>,
 }
 
 impl<'host> Engine<'host> {
@@ -271,6 +287,9 @@ impl<'host> Engine<'host> {
             pending_release: vec![],
             private_symbols: HashSet::new(),
             pending_construct: None,
+            tail_ok: false,
+            non_tail: 0,
+            tail_call: None,
         })
     }
     // Move all VM state while changing only the lifetime of the borrowed host.
@@ -322,6 +341,9 @@ impl<'host> Engine<'host> {
             pending_release: self.pending_release,
             private_symbols: self.private_symbols,
             pending_construct: self.pending_construct,
+            tail_ok: self.tail_ok,
+            non_tail: self.non_tail,
+            tail_call: self.tail_call,
             adapter,
         };
         engine.flush_network();

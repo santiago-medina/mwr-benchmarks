@@ -73,6 +73,30 @@ impl Engine<'_> {
         }
         self.throw_error("TypeError", "receiver is not a typed array")
     }
+    /// IsImmutableBuffer(O.[[ViewedArrayBuffer]]) (immutable-arraybuffer §25.1.3.4).
+    pub(super) fn typed_immutable(&self, typed: &Typed) -> Result<bool> {
+        self.buffer_immutable(typed.view.buffer)
+    }
+    /// ValidateTypedArray(O, order, accessMode) (immutable-arraybuffer §23.2.4.4): the
+    /// write-mode immutable check comes after RequireInternalSlot and before the
+    /// out-of-bounds check.
+    pub(super) fn typed_record_mode(
+        &mut self,
+        value: Value,
+        write: bool,
+    ) -> Result<(Id, Typed, usize)> {
+        if write {
+            if let Value::Object(id) = value {
+                if let Some(typed) = self.data(id).ok().and_then(|d| d.typed.clone()) {
+                    if self.typed_immutable(&typed)? {
+                        return self
+                            .throw_error("TypeError", "cannot write to an immutable ArrayBuffer");
+                    }
+                }
+            }
+        }
+        self.typed_record(value)
+    }
     pub(super) fn typed_get(&self, typed: &Typed, index: f64) -> Result<Value> {
         let valid = self.typed_valid(typed, index)?;
         if !valid {
@@ -119,6 +143,21 @@ impl Engine<'_> {
         index: f64,
         descriptor: Descriptor,
     ) -> Result<bool> {
+        // [[DefineOwnProperty]] (immutable-arraybuffer §10.4.5.3): an immutable element
+        // is { value, writable: false, enumerable: true, configurable: false }, and
+        // ValidateAndApplyPropertyDescriptor only accepts a compatible redefinition.
+        if self.typed_valid(typed, index)? && self.typed_immutable(typed)? {
+            let current = self.typed_get(typed, index)?;
+            return Ok(descriptor.configurable != Some(true)
+                && descriptor.enumerable != Some(false)
+                && descriptor.get.is_none()
+                && descriptor.set.is_none()
+                && descriptor.writable != Some(true)
+                && descriptor
+                    .value
+                    .as_ref()
+                    .is_none_or(|v| v.same_value(&current)));
+        }
         if !self.typed_valid(typed, index)?
             || descriptor.get.is_some()
             || descriptor.set.is_some()

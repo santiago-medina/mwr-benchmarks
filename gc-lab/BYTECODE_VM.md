@@ -1,8 +1,8 @@
 # Bytecode VM and interpreter throughput (roadmap B)
 
 Status: design note, 2026-11-10. Nothing in it is implemented yet.
-Before implementation starts it needs a literature check (Literature Review (#82)) and a
-second opinion (`taskygpt`).
+Gates: literature check #336 (Literature Review (#82)) returned ADOPT. The `taskygpt` second
+opinion was waived by Santiago on 2026-11-10, so stage 3 is unblocked.
 
 ## Problem (measured)
 
@@ -428,3 +428,29 @@ timeouts need more than another 1.1x: they need stage 3 (register bytecode, targ
 iteration), which waits on the literature check and the second opinion. The resolver with
 slot environments (above) stays the first stage 3 prerequisite: bytecode operands need
 `(hops, slot)` resolution.
+
+### Property-escape timeouts re-measured (2026-11-10, after checkpoint 30)
+
+Question: is the RegExp matcher or the interpreter what keeps 54 `property-escapes/generated`
+cases at the 10 s timeout under 2 workers (t262-full37)?
+
+- Split on `\P{ASCII}` (2,162,560 code units): `buildString` from `regExpUtils.js` takes
+  **8,639 ms**, the `^\P{ASCII}+$` `test` takes **35 ms**. The matcher's `Star` loop is not the
+  bottleneck; the 1.1 M-iteration JS loop in `buildString` is (99.6 %).
+- Loop shapes (wall, 1.1 M iterations, machine load ~13): empty `let` loop 3.3 s, `var` loop
+  3.0 s, the `buildString` body (`a[l++] = i` plus the chunk reset) 7.4 s.
+  `String.fromCodePoint.apply` on 10,000 args ×110 is 0.5 s; 110 rope appends are 0.1 s.
+- Callgrind, `function f() { let a = []; for (let l = 0, i = 0; i < 100000; i++) { a[l++] = i; … } }`:
+  1,259 M Ir, **12.6 k per iteration**. Self cost is spread out: `scan_level` 9.5 %,
+  `eval_inner` 7.5 %, `reference_set` 6.6 %, per-iteration environment `initialize` 4.4 % and
+  `Frame::drop` 3.8 %, `PropertyMap::position` 4.3 %, String-keyed hashbrown lookups ~6 %,
+  and `Expr::Number` re-parsing its literal text on every evaluation (`dec2flt` 1.6 %,
+  `execute.rs` `Expr::Number(n) => n.parse()`). No single function goes above 10 %.
+- Fixed set of 10 timed-out cases (pe-bench in the task workspace): 76.8 s wall alone, all
+  passing, 3.6 to 11.5 s each.
+
+Conclusion: no regex-matcher work is warranted. The cases need roughly 3x to 5x on the plain loop to be
+stable under parallel load, which is the stage 3 target (≤ 5 k per iteration) and not another
+round of stage 2 fixes (whose kill line was met at checkpoint 24). Number literals should be
+parsed once at parse time as part of stage 3's constant pool. Stage 3 was gated on a
+second opinion (taskygpt HTTP 429, no credits); Santiago waived that gate on 2026-11-10.

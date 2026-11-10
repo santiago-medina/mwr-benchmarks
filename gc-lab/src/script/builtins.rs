@@ -36,7 +36,7 @@ const METHODS: &[(&str, &[&str])] = &[
     ("Error", &["isError"]),
     ("Map", &["groupBy"]),
     ("Proxy", &["revocable"]),
-    ("JSON", &["parse", "stringify"]),
+    ("JSON", &["parse", "stringify", "rawJSON", "isRawJSON"]),
     (
         "Number",
         &["isNaN", "isFinite", "isInteger", "isSafeInteger"],
@@ -234,9 +234,16 @@ impl Engine<'_> {
             "get __proto__"
         } else if name == "Object.prototype.__proto__.set" {
             "set __proto__"
+        } else if name == "Error.prototype.stack.get" {
+            "get stack"
+        } else if name == "Error.prototype.stack.set" {
+            "set stack"
         } else if matches!(name, "Array.species" | "Promise.species") {
             "get [Symbol.species]"
-        } else if name == "Function.prototype" || name == "%ProxyRevoke%" {
+        } else if matches!(
+            name,
+            "Function.prototype" | "%ProxyRevoke%" | "%ThrowTypeError%"
+        ) {
             ""
         } else {
             name.rsplit('.').next().unwrap()
@@ -246,9 +253,10 @@ impl Engine<'_> {
             | "Symbol.prototype.toString"
             | "Symbol.prototype.valueOf" => 0,
             "BigInt.asIntN" | "BigInt.asUintN" => 2,
-            "BigInt.prototype.valueOf" | "%ProxyRevoke%" => 0,
+            "BigInt.prototype.valueOf" | "%ProxyRevoke%" | "%ThrowTypeError%" => 0,
             "Proxy" | "Proxy.revocable" => 2,
-            "Object.prototype.__proto__.get" => 0,
+            "Object.prototype.__proto__.get" | "Error.prototype.stack.get" => 0,
+            "Error.prototype.stack.set" => 1,
             "Object.prototype.__defineGetter__" | "Object.prototype.__defineSetter__" => 2,
             "SuppressedError" => 3,
             "AggregateError"
@@ -274,20 +282,21 @@ impl Engine<'_> {
             | "String.prototype.toLocaleLowerCase"
             | "String.prototype.toLocaleUpperCase"
             | "String.prototype.isWellFormed"
-            | "String.prototype.toWellFormed" => 0,
+            | "String.prototype.toWellFormed"
+            | "String.prototype.normalize" => 0,
             "String.prototype.slice"
             | "String.prototype.substring"
             | "String.prototype.replace"
             | "String.prototype.replaceAll"
             | "String.prototype.split" => 2,
             "Math.atan2" | "Math.hypot" | "Math.imul" | "Math.max" | "Math.min" | "Math.pow" => 2,
-            "Array.prototype.slice"
-            | "Array.prototype.splice"
-            | "Array.prototype.copyWithin"
-            | "Array.prototype.lastIndexOf"
-            | "Array.prototype.includes" => 2,
+            "Array.prototype.slice" | "Array.prototype.splice" | "Array.prototype.copyWithin" => 2,
+            // §23.1.3.16 / §23.1.3.20: includes and lastIndexOf have length 1.
+            "Array.prototype.lastIndexOf" | "Array.prototype.includes" => 1,
             "Array.from" | "Array.fromAsync" => 1,
             "Array.of" | "Array.prototype.shift" | "Array.prototype.reverse" => 0,
+            // §23.1.3.13: flat ( [ depth ] ) has length 0.
+            "Array.prototype.flat" => 0,
             "JSON.parse"
             | "Reflect.construct"
             | "Function.prototype.apply"
@@ -354,6 +363,23 @@ impl Engine<'_> {
                 ..Descriptor::default()
             },
         )?;
+        if name == "%ThrowTypeError%" {
+            // §10.2.4.1 %ThrowTypeError%: "length" and "name" are non-configurable and
+            // [[Extensible]] is false.
+            for key in ["length", "name"] {
+                self.define(
+                    id,
+                    key,
+                    Descriptor {
+                        configurable: Some(false),
+                        ..Descriptor::default()
+                    },
+                )?;
+            }
+            let mut d = self.data(id)?.clone();
+            d.extensible = false;
+            self.replace_data(id, d)?;
+        }
         Ok(id)
     }
     pub(super) fn bootstrap(&mut self, env: Id) -> Result<()> {
@@ -421,6 +447,7 @@ impl Engine<'_> {
             "WeakSet",
             "WeakRef",
             "FinalizationRegistry",
+            "ShadowRealm",
             "Symbol",
             "parseInt",
             "parseFloat",
@@ -515,6 +542,23 @@ impl Engine<'_> {
         }
         objects.insert("Object.prototype".into(), object);
         objects.insert("Function.prototype".into(), function);
+        // §10.2.4 AddRestrictedFunctionProperties(%Function.prototype%, realm): "caller" and
+        // "arguments" are accessors whose get and set are this realm's %ThrowTypeError%.
+        let thrower =
+            Value::Object(self.intrinsics.as_ref().unwrap().functions["%ThrowTypeError%"]);
+        for key in ["caller", "arguments"] {
+            self.define(
+                function,
+                key,
+                Descriptor {
+                    get: Some(thrower.clone()),
+                    set: Some(thrower.clone()),
+                    enumerable: Some(false),
+                    configurable: Some(true),
+                    ..Descriptor::default()
+                },
+            )?;
+        }
         for name in ERRORS {
             let parent = if *name == "Error" {
                 object
@@ -540,6 +584,7 @@ impl Engine<'_> {
         }
         self.bootstrap_collections(env, &mut objects, iterator)?;
         self.bootstrap_weak(env, &mut objects)?;
+        self.bootstrap_shadow_realm(env, &mut objects)?;
         self.bootstrap_math(env, &mut objects)?;
         self.bootstrap_strings(env, &mut objects, iterator)?;
         self.bootstrap_symbols(env, &mut objects)?;
@@ -626,6 +671,24 @@ impl Engine<'_> {
             Descriptor {
                 get: Some(Value::Object(proto_get)),
                 set: Some(Value::Object(proto_set)),
+                enumerable: Some(false),
+                configurable: Some(true),
+                ..Descriptor::default()
+            },
+        )?;
+        // Error.prototype.stack (error-stack-accessor proposal): an accessor
+        // { [[Enumerable]]: false, [[Configurable]]: true }; instances own no "stack".
+        let stack_get =
+            self.intrinsic_function(env, "Error.prototype.stack.get", Some(function))?;
+        let stack_set =
+            self.intrinsic_function(env, "Error.prototype.stack.set", Some(function))?;
+        let error_prototype = self.intrinsics.as_ref().unwrap().errors["Error"];
+        self.define(
+            error_prototype,
+            "stack",
+            Descriptor {
+                get: Some(Value::Object(stack_get)),
+                set: Some(Value::Object(stack_set)),
                 enumerable: Some(false),
                 configurable: Some(true),
                 ..Descriptor::default()
@@ -1144,6 +1207,9 @@ impl Engine<'_> {
         if name.starts_with("JSON.") {
             return self.json_builtin(name, args);
         }
+        if name == "ShadowRealm" || name.starts_with("ShadowRealm.") {
+            return self.shadow_realm_builtin(name, receiver, args);
+        }
         if name == "WeakRef"
             || name == "FinalizationRegistry"
             || name.starts_with("WeakRef.")
@@ -1416,6 +1482,67 @@ impl Engine<'_> {
                     brand.into()
                 };
                 return Ok(Value::String((format!("[object {brand}]")).into()));
+            }
+            // get Error.prototype.stack (error-stack-accessor) steps 1-4. The string is
+            // implementation-defined; this engine records no frames, so it is the
+            // error's class and own data "message", read without running user code.
+            "Error.prototype.stack.get" => {
+                let Value::Object(id) = receiver else {
+                    return self.throw_error(
+                        "TypeError",
+                        "Error.prototype.stack getter called on non-object",
+                    );
+                };
+                if self.is_proxy(id) {
+                    return Ok(Value::Undefined);
+                }
+                let Some(class) = self.data(id)?.error_class.clone() else {
+                    return Ok(Value::Undefined);
+                };
+                let message = match self
+                    .data(id)?
+                    .properties
+                    .get(&super::objects::Key::from("message"))
+                {
+                    Some(super::objects::Property {
+                        kind:
+                            super::objects::Kind::Data {
+                                value: Value::String(m),
+                                ..
+                            },
+                        ..
+                    }) => m.text()?.to_string(),
+                    _ => String::new(),
+                };
+                return Ok(Value::String(
+                    if message.is_empty() {
+                        format!("{class}\n    at <anonymous>")
+                    } else {
+                        format!("{class}: {message}\n    at <anonymous>")
+                    }
+                    .into(),
+                ));
+            }
+            // set Error.prototype.stack (error-stack-accessor) steps 1-5.
+            "Error.prototype.stack.set" => {
+                if !matches!(receiver, Value::Object(_)) {
+                    return self.throw_error(
+                        "TypeError",
+                        "Error.prototype.stack setter called on non-object",
+                    );
+                }
+                let v = arg(0);
+                if !matches!(v, Value::String(_)) {
+                    return self
+                        .throw_error("TypeError", "Error.prototype.stack value must be a string");
+                }
+                let home = self.intrinsics.as_ref().unwrap().errors["Error"];
+                return self.setter_ignoring_prototype(
+                    receiver,
+                    home,
+                    super::objects::Key::from("stack"),
+                    v,
+                );
             }
             // Annex B §B.2.2.1.1 get Object.prototype.__proto__
             "Object.prototype.__proto__.get" => {

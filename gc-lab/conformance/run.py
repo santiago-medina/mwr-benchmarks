@@ -30,6 +30,7 @@ def main():
     p.add_argument('--binary',type=Path,default=HERE.parent/'target/release/js_check')
     p.add_argument('--output',type=Path,default=None)
     p.add_argument('--record-baseline',action='store_true')
+    p.add_argument('--retry-timeouts',type=int,default=0,metavar='W',help='rerun runner timeouts afterwards with W workers and the same 10 s budget (load noise, not a larger budget)')
     p.add_argument('--check-baseline',action='store_true',help='gate on lost passes and newly failing cases; known failures stay reported')
     args=p.parse_args(); binary=args.binary.resolve(); root=args.source.resolve()/'test'
     assert (args.source/'.revision').read_text().strip()==REVISION, 'Use the pinned verified source from fetch.py'
@@ -63,6 +64,13 @@ def main():
         except (subprocess.TimeoutExpired,ValueError,AssertionError) as e:
             return dict(result,status='failed',reason='runner: '+str(e),assertions=0)
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool: results=list(pool.map(run,cases))
+    retry=dict(workers=args.retry_timeouts,timeouts=0,passed=0)
+    if args.retry_timeouts:
+        # A timeout under full load can be load noise: rerun those cases with fewer workers, same budget.
+        slow=[i for i,r in enumerate(results) if r['status']=='failed' and r['reason'].startswith('runner: Command') and 'timed out' in r['reason']]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.retry_timeouts) as pool: again=list(pool.map(run,[root/results[i]['path'] for i in slow]))
+        for i,r in zip(slow,again): results[i]=dict(r,retried=True)
+        retry.update(timeouts=len(slow),passed=sum(r['status']=='passed' for r in again))
     counts=dict(collections.Counter(r['status'] for r in results)); passing=sorted(r['path'] for r in results if r['status']=='passed')
     baseline=HERE/('required-pass'+suffix+'.json'); required=json.loads(baseline.read_text()) if baseline.exists() else []
     regressions=sorted(set(required)-set(passing))
@@ -72,7 +80,7 @@ def main():
     implementation=hashlib.sha256()
     for path in sorted((HERE.parent/'src').rglob('*.rs')):
         implementation.update(path.relative_to(HERE.parent).as_posix().encode()+b'\0'+path.read_bytes())
-    summary=dict(revision=REVISION,archive_sha256='01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb',implementation_sha256=implementation.hexdigest(),runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),new_failures=new_failures,variant='scripts: strict prefix, or sloppy for noStrict/raw; modules (full profile): includes as scripts, then the module record; original test body',profile=args.profile,scopes=scopes,total=len(results),counts=counts,assertions=sum(r['assertions'] for r in results),regressions=regressions,unsupported_reasons=dict(collections.Counter(r['reason'] for r in results if r['status']=='unsupported')),failures=[r for r in results if r['status']=='failed'])
+    summary=dict(revision=REVISION,archive_sha256='01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb',implementation_sha256=implementation.hexdigest(),runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),new_failures=new_failures,variant='scripts: strict prefix, or sloppy for noStrict/raw; modules (full profile): includes as scripts, then the module record; original test body',profile=args.profile,retry_timeouts=retry,scopes=scopes,total=len(results),counts=counts,assertions=sum(r['assertions'] for r in results),regressions=regressions,unsupported_reasons=dict(collections.Counter(r['reason'] for r in results if r['status']=='unsupported')),failures=[r for r in results if r['status']=='failed'])
     args.output.mkdir(parents=True,exist_ok=True)
     (args.output/'cases.json').write_text(json.dumps(results,indent=2)+'\n')
     (args.output/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')

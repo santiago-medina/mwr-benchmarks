@@ -144,6 +144,15 @@ impl Engine<'_> {
     /// test262 `$262.createRealm()` (INTERPRETING.md; InitializeHostDefinedRealm §9.6):
     /// a new realm with fresh intrinsics and global object. Returns its `$262`.
     pub(super) fn create_realm(&mut self) -> Result<Value> {
+        let k = self.new_realm()?;
+        self.in_realm(k, |e| {
+            let global = e.intrinsics.as_ref().unwrap().global;
+            e.get_member(Value::Object(global), "$262")
+        })
+    }
+    /// InitializeHostDefinedRealm (§9.6): a new realm with fresh intrinsics and global
+    /// object; the running realm is unchanged. Returns the realm's index.
+    pub(super) fn new_realm(&mut self) -> Result<usize> {
         if self.realms.is_empty() {
             let env = self
                 .global
@@ -169,10 +178,7 @@ impl Engine<'_> {
         self.realms[previous].intrinsics = self.intrinsics.take();
         self.current_realm = k;
         self.global = Some(root);
-        let result = self.bootstrap(env).and_then(|_| {
-            let global = self.intrinsics.as_ref().unwrap().global;
-            self.get_member(Value::Object(global), "$262")
-        });
+        let result = self.bootstrap(env);
         if self.intrinsics.is_none() {
             // Bootstrap failed before installing intrinsics: drop the half-made realm.
             self.realms.pop();
@@ -180,10 +186,10 @@ impl Engine<'_> {
             self.current_realm = previous;
             self.intrinsics = self.realms[previous].intrinsics.take();
             self.global = Some(self.realms[previous].env);
-            return result;
+            return result.map(|_| k);
         }
         self.enter_realm(previous);
-        result
+        result.map(|_| k)
     }
     /// test262 `$262.evalScript(source)`: ParseScript + ScriptEvaluation (§16.1.6) in the
     /// running realm (the call switched to the `$262`'s realm).

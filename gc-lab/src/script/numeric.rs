@@ -29,10 +29,43 @@ use std::{
 };
 type Result<T> = std::result::Result<T, ScriptError>;
 pub(super) const MATH_METHODS: &[&str] = &[
-    "abs", "acos", "acosh", "asin", "asinh", "atan", "atanh", "atan2", "cbrt", "ceil", "clz32",
-    "cos", "cosh", "exp", "expm1", "floor", "fround", "f16round", "hypot", "imul", "log", "log1p",
-    "log2", "log10", "max", "min", "pow", "random", "round", "sign", "sin", "sinh", "sqrt", "tan",
-    "tanh", "trunc",
+    "abs",
+    "acos",
+    "acosh",
+    "asin",
+    "asinh",
+    "atan",
+    "atanh",
+    "atan2",
+    "cbrt",
+    "ceil",
+    "clz32",
+    "cos",
+    "cosh",
+    "exp",
+    "expm1",
+    "floor",
+    "fround",
+    "f16round",
+    "hypot",
+    "imul",
+    "log",
+    "log1p",
+    "log2",
+    "log10",
+    "max",
+    "min",
+    "pow",
+    "random",
+    "round",
+    "sign",
+    "sin",
+    "sinh",
+    "sqrt",
+    "tan",
+    "tanh",
+    "trunc",
+    "sumPrecise",
 ];
 thread_local! {static RANDOM: (RandomState,Cell<u64>) = (RandomState::new(),Cell::new(0));}
 fn random() -> f64 {
@@ -190,6 +223,7 @@ impl Engine<'_> {
                 return Ok(Value::Bool(yes));
             }
             "Math.random" => return Ok(Value::number(random())),
+            "Math.sumPrecise" => return self.sum_precise(arg(0)),
             "Math.max" | "Math.min" | "Math.hypot" => {
                 let mut numbers = vec![];
                 for v in args {
@@ -337,5 +371,182 @@ pub(super) fn decimal_number(text: &str) -> f64 {
         f64::NAN
     } else {
         text.parse().unwrap_or(f64::NAN)
+    }
+}
+
+/// The exact sum of finite Numbers for Math.sumPrecise: a two's complement fixed-point integer
+/// in units of 2^-1074 (the smallest subnormal). Every finite double is an integer multiple of
+/// that unit below 2^2098, and at most 2^53 addends fit in 2^(2098+53+1) bits, so 36 limbs hold
+/// any reachable sum exactly; the only rounding is the final one to a Number.
+pub(super) struct ExactSum {
+    limbs: [u64; 36],
+}
+impl ExactSum {
+    pub(super) fn new() -> Self {
+        Self { limbs: [0; 36] }
+    }
+    /// Adds a finite double exactly.
+    pub(super) fn add(&mut self, x: f64) {
+        let bits = x.to_bits();
+        let exponent = ((bits >> 52) & 0x7ff) as usize;
+        let fraction = bits & ((1 << 52) - 1);
+        let (mantissa, shift) = if exponent == 0 {
+            (fraction, 0)
+        } else {
+            (fraction | 1 << 52, exponent - 1)
+        };
+        if mantissa == 0 {
+            return;
+        }
+        // x = mantissa * 2^(shift - 1074): place mantissa << shift as a 128-bit window.
+        let (limb, offset) = (shift / 64, shift % 64);
+        let wide = (mantissa as u128) << offset;
+        let parts = [wide as u64, (wide >> 64) as u64];
+        if bits >> 63 == 0 {
+            let mut carry = false;
+            for (i, part) in parts.iter().enumerate() {
+                let (a, c1) = self.limbs[limb + i].overflowing_add(*part);
+                let (b, c2) = a.overflowing_add(carry as u64);
+                self.limbs[limb + i] = b;
+                carry = c1 || c2;
+            }
+            let mut i = limb + 2;
+            while carry && i < self.limbs.len() {
+                let (a, c) = self.limbs[i].overflowing_add(1);
+                self.limbs[i] = a;
+                carry = c;
+                i += 1;
+            }
+        } else {
+            let mut borrow = false;
+            for (i, part) in parts.iter().enumerate() {
+                let (a, b1) = self.limbs[limb + i].overflowing_sub(*part);
+                let (b, b2) = a.overflowing_sub(borrow as u64);
+                self.limbs[limb + i] = b;
+                borrow = b1 || b2;
+            }
+            let mut i = limb + 2;
+            while borrow && i < self.limbs.len() {
+                let (a, b) = self.limbs[i].overflowing_sub(1);
+                self.limbs[i] = a;
+                borrow = b;
+                i += 1;
+            }
+        }
+    }
+    /// The sum rounded to the nearest Number, ties to even (§6.1.6.1 "the Number value for").
+    /// A zero sum is +0 (the caller handles the all-minus-zero case).
+    pub(super) fn round(&self) -> f64 {
+        let mut magnitude = self.limbs;
+        let negative = magnitude[35] >> 63 == 1;
+        if negative {
+            let mut carry = true;
+            for limb in magnitude.iter_mut() {
+                let (a, c) = (!*limb).overflowing_add(carry as u64);
+                *limb = a;
+                carry = c;
+            }
+        }
+        let Some(top) = (0..36).rev().find(|&i| magnitude[i] != 0) else {
+            return 0.0;
+        };
+        let bit_length = top * 64 + 64 - magnitude[top].leading_zeros() as usize;
+        let bit = |i: usize| (magnitude[i / 64] >> (i % 64)) & 1;
+        let result = if bit_length <= 53 {
+            // Exactly representable: below 2^53 units is a subnormal or the smallest binade.
+            (magnitude[0] as f64) * f64::from_bits(1)
+        } else {
+            let shift = bit_length - 53;
+            let mut mantissa = 0u64;
+            for i in (shift..bit_length).rev() {
+                mantissa = mantissa << 1 | bit(i);
+            }
+            let guard = bit(shift - 1) == 1;
+            let sticky = (0..shift - 1).any(|i| bit(i) == 1);
+            let mut exponent = shift as i32 - 1074;
+            if guard && (sticky || mantissa & 1 == 1) {
+                mantissa += 1;
+                if mantissa == 1 << 53 {
+                    mantissa >>= 1;
+                    exponent += 1;
+                }
+            }
+            // mantissa * 2^exponent with exponent >= -1021: normal, so only overflow rounds.
+            let mut value = mantissa as f64;
+            let mut e = exponent;
+            while e > 1000 {
+                value *= 2f64.powi(1000);
+                e -= 1000;
+            }
+            value * 2f64.powi(e)
+        };
+        if negative {
+            -result
+        } else {
+            result
+        }
+    }
+}
+impl Engine<'_> {
+    /// Math.sumPrecise ( items ) (ES2026 §21.3.2.34).
+    fn sum_precise(&mut self, items: Value) -> Result<Value> {
+        // 1. Perform ? RequireObjectCoercible(items).
+        if matches!(items, Value::Null | Value::Undefined) {
+            return self.throw_error("TypeError", "Math.sumPrecise called on null or undefined");
+        }
+        #[derive(PartialEq)]
+        enum State {
+            MinusZero,
+            Finite,
+            PlusInfinity,
+            MinusInfinity,
+            NotANumber,
+        }
+        let mut state = State::MinusZero;
+        let mut sum = ExactSum::new();
+        let mut count: u64 = 0;
+        // 2-5. GetIterator(items, sync), then IteratorStepValue until done; an abrupt
+        // completion from the loop body closes the iterator.
+        self.consume_iterable(items, |e, value| {
+            count += 1;
+            if count >= 1 << 53 {
+                return e.throw_error("RangeError", "too many values for Math.sumPrecise");
+            }
+            let Value::Number(bits) = value else {
+                return e.throw_error("TypeError", "Math.sumPrecise requires Number values");
+            };
+            let n = f64::from_bits(bits);
+            if state != State::NotANumber {
+                if n.is_nan() {
+                    state = State::NotANumber;
+                } else if n == f64::INFINITY {
+                    state = if state == State::MinusInfinity {
+                        State::NotANumber
+                    } else {
+                        State::PlusInfinity
+                    };
+                } else if n == f64::NEG_INFINITY {
+                    state = if state == State::PlusInfinity {
+                        State::NotANumber
+                    } else {
+                        State::MinusInfinity
+                    };
+                } else if !(n == 0.0 && n.is_sign_negative())
+                    && matches!(state, State::MinusZero | State::Finite)
+                {
+                    state = State::Finite;
+                    sum.add(n);
+                }
+            }
+            Ok(())
+        })?;
+        // 6-10.
+        Ok(Value::number(match state {
+            State::NotANumber => f64::NAN,
+            State::PlusInfinity => f64::INFINITY,
+            State::MinusInfinity => f64::NEG_INFINITY,
+            State::MinusZero => -0.0,
+            State::Finite => sum.round(),
+        }))
     }
 }

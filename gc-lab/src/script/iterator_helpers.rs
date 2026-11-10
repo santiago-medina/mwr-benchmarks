@@ -362,10 +362,12 @@ impl Engine<'_> {
             )),
             "Iterator.prototype.get.toStringTag" => Ok(Value::String("Iterator".into())),
             "Iterator.prototype.set.constructor" => {
-                self.setter_ignoring_prototype(receiver, Key::from("constructor"), arg(0))
+                let home = self.intrinsics.as_ref().unwrap().collection["Iterator"];
+                self.setter_ignoring_prototype(receiver, home, Key::from("constructor"), arg(0))
             }
             "Iterator.prototype.set.toStringTag" => {
-                self.setter_ignoring_prototype(receiver, Key::Symbol(1), arg(0))
+                let home = self.intrinsics.as_ref().unwrap().collection["Iterator"];
+                self.setter_ignoring_prototype(receiver, home, Key::Symbol(1), arg(0))
             }
             "Iterator.prototype.dispose" => {
                 // Steps 1-3: GetMethod(O, "return"); if present, Call it.
@@ -406,14 +408,20 @@ impl Engine<'_> {
         }
     }
 
-    /// SetterThatIgnoresPrototypeProperties (§27.1.4.1.2 / §27.1.4.14.2 helper).
-    fn setter_ignoring_prototype(&mut self, this: Value, p: Key, v: Value) -> Result<Value> {
+    /// SetterThatIgnoresPrototypeProperties (this, home, p, v) (§27.1.4.1.2 /
+    /// §27.1.4.14.2 helper; also set Error.prototype.stack).
+    pub(super) fn setter_ignoring_prototype(
+        &mut self,
+        this: Value,
+        home: Id,
+        p: Key,
+        v: Value,
+    ) -> Result<Value> {
         let Value::Object(id) = this else {
             return self.throw_error("TypeError", "setter called on non-object");
         };
-        let home = self.intrinsics.as_ref().unwrap().collection["Iterator"];
         if id == home {
-            return self.throw_error("TypeError", "cannot set property on Iterator.prototype");
+            return self.throw_error("TypeError", "cannot set property on its home prototype");
         }
         if self.own(id, p.clone())?.is_none() {
             let ok = self.define(

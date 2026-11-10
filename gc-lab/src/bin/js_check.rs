@@ -189,6 +189,11 @@ fn main() {
         // INTERPRETING.md: includes are evaluated as global scripts before the module.
         e.execute(&format!("{ASSERT_GLOBALS}{includes}"))
             .and_then(|_| e.execute_module(&root, &source, 0))
+    } else if source.starts_with("#!") {
+        // §12.5: a HashbangComment is only valid at the start of the source text, so a case
+        // that opens with `#!` (always `raw`) runs as its own Script after the helper globals.
+        e.execute(&format!("{prefix}{ASSERT_GLOBALS}{includes}"))
+            .and_then(|_| e.execute(&source))
     } else {
         e.execute(&full)
     };
@@ -344,4 +349,30 @@ function compareArray(a, b) {
   return true;
 }
 compareArray.format = function (arrayLike) { return "[" + Array.prototype.map.call(arrayLike, String).join(", ") + "]"; };
+function formatIdentityFreeValue(value) {
+  switch (value === null ? 'null' : typeof value) {
+    case 'string':
+      return typeof JSON !== "undefined" ? JSON.stringify(value) : '"' + value + '"';
+    case 'bigint':
+      return String(value) + "n";
+    case 'number':
+      if (isNegativeZero(value)) return '-0';
+    case 'boolean':
+    case 'undefined':
+    case 'null':
+      return String(value);
+  }
+}
+function formatSimpleValue(value) {
+  var basic = formatIdentityFreeValue(value);
+  if (basic) return basic;
+  try {
+    return String(value);
+  } catch (err) {
+    if (err.name === 'TypeError') {
+      return Object.prototype.toString.call(value);
+    }
+    throw err;
+  }
+}
 "#;

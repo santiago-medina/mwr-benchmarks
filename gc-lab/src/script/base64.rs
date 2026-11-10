@@ -250,6 +250,11 @@ impl Engine<'_> {
             }
             "Uint8Array.prototype.setFromBase64" | "Uint8Array.prototype.setFromHex" => {
                 let (_, typed) = self.validate_uint8(&receiver)?;
+                // ValidateUint8Array(into, write) (immutable-arraybuffer §23.3.3.1).
+                if self.typed_immutable(&typed)? {
+                    return self
+                        .throw_error("TypeError", "cannot write to an immutable ArrayBuffer");
+                }
                 let Value::String(string) = arg(0) else {
                     return self.throw_error("TypeError", "the input must be a string");
                 };

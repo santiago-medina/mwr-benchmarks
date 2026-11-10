@@ -32,6 +32,23 @@ impl Engine<'_> {
             env = (*parent)?;
         }
     }
+    /// The binding `slot` of the nearest environment that binds `name` itself: the class
+    /// scope that declared private name `name`. Slots of enclosing classes that declare
+    /// the same name are shadowed (§15.7.14 step 7, one PrivateEnvironment per class).
+    fn private_slot(&self, mut env: Id, name: &str, slot: &str) -> Option<Value> {
+        loop {
+            let Some(Object::Environment {
+                parent, bindings, ..
+            }) = self.objects.get(&env)
+            else {
+                return None;
+            };
+            if bindings.contains_key(name) {
+                return bindings.get(slot).cloned().flatten();
+            }
+            env = (*parent)?;
+        }
+    }
     fn define_or_throw(&mut self, id: Id, key: Key, d: Descriptor) -> Result<()> {
         if self.define(id, key, d)? {
             Ok(())
@@ -125,9 +142,14 @@ impl Engine<'_> {
             .collect();
         let scope = self.new_environment(Some(env), &declarations, false)?;
         self.protect(&Value::Object(scope))?;
+        // §15.7.14 step 7: a fresh PrivateEnvironment holds one Private Name per
+        // PrivateBoundIdentifier of this class (a getter/setter pair shares one). Names of
+        // enclosing classes are shadowed, never reused.
+        let mut declared: Vec<&str> = vec![];
         for member in &class.members {
             if let ClassKey::Private(n) = &member.key {
-                if self.binding_opt(scope, n).is_none() {
+                if !declared.contains(&n.as_str()) {
+                    declared.push(n);
                     let symbol = self.new_symbol(Some(n.clone()))?;
                     if let Value::Symbol(id) = symbol {
                         self.private_symbols.insert(id);
@@ -347,13 +369,15 @@ impl Engine<'_> {
         let fields = if instance.is_empty() {
             Value::Undefined
         } else {
-            self.make_function(scope, None, &[], &instance, FunctionKind::Method, false)?
+            let fenv = self.field_initializer_env(scope)?;
+            self.make_function(fenv, None, &[], &instance, FunctionKind::Method, false)?
         };
         self.initialize(scope, "%fields", fields)?;
         for (key, property) in static_private {
             self.private_add(fid, key, property)?;
         }
         for (index, (key, kind)) in statics.into_iter().enumerate() {
+            let is_field = matches!(kind, MemberKind::Field(_));
             let body = match (key, kind) {
                 (None, MemberKind::Block(b)) => b.clone(),
                 (Some(key), MemberKind::Field(init)) => {
@@ -384,12 +408,25 @@ impl Engine<'_> {
                 }
                 _ => unreachable!(),
             };
-            let init =
-                self.make_function(static_scope, None, &[], &body, FunctionKind::Method, false)?;
+            let parent = if is_field {
+                self.field_initializer_env(static_scope)?
+            } else {
+                static_scope
+            };
+            let init = self.make_function(parent, None, &[], &body, FunctionKind::Method, false)?;
             self.protect(&init)?;
             self.invoke_this(init, f.clone(), vec![])?;
         }
         Ok(f)
+    }
+    /// The parent environment of a field initializer function: it marks the function as
+    /// having a [[ClassFieldInitializerName]] (§15.7.10), which direct eval reads for the
+    /// §19.2.1.2 `arguments` early error.
+    fn field_initializer_env(&mut self, scope: Id) -> Result<Id> {
+        let fenv = self.new_environment(Some(scope), &[], false)?;
+        self.protect(&Value::Object(fenv))?;
+        self.initialize(fenv, "%fieldinit", Value::Bool(true))?;
+        Ok(fenv)
     }
     pub(super) fn eval_class_init(&mut self, init: &ClassInit, env: Id) -> Result<Value> {
         let this = self.lookup(env, "this")?;
@@ -435,16 +472,16 @@ impl Engine<'_> {
             ClassInit::PrivateMethod(n) => {
                 let symbol = self.lookup(env, n)?;
                 let key = self.to_key(symbol)?;
-                let property = if let Some(m) = self.binding_opt(env, &format!("%pm:{n}")) {
+                let property = if let Some(m) = self.private_slot(env, n, &format!("%pm:{n}")) {
                     Property::data(m, false, false, false)
                 } else {
                     Property {
                         kind: Kind::Accessor {
                             get: self
-                                .binding_opt(env, &format!("%pg:{n}"))
+                                .private_slot(env, n, &format!("%pg:{n}"))
                                 .unwrap_or(Value::Undefined),
                             set: self
-                                .binding_opt(env, &format!("%ps:{n}"))
+                                .private_slot(env, n, &format!("%ps:{n}"))
                                 .unwrap_or(Value::Undefined),
                         },
                         enumerable: false,

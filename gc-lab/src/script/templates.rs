@@ -99,6 +99,10 @@ impl Engine<'_> {
         self.replace_data(id, data)
     }
     pub(super) fn eval_template(&mut self, t: &Template, env: Id) -> Result<Value> {
+        self.eval_template_in(t, env, false)
+    }
+    /// `tail`: the tagged call is in tail position (§15.10.2, MemberExpression TemplateLiteral).
+    pub(super) fn eval_template_in(&mut self, t: &Template, env: Id, tail: bool) -> Result<Value> {
         if let Some(tag) = &t.tag {
             let (receiver, callee) = self.call_target(tag, env)?;
             self.protect(&receiver)?;
@@ -109,6 +113,9 @@ impl Engine<'_> {
                 let value = self.eval(expression, env)?;
                 self.protect(&value)?;
                 args.push(value);
+            }
+            if tail {
+                return self.defer_tail_call(callee, receiver, args);
             }
             self.invoke_this(callee, receiver, args)
         } else {

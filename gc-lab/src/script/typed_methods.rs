@@ -96,6 +96,7 @@ impl Engine<'_> {
         kind: Element,
         args: Vec<Value>,
         minimum: Option<usize>,
+        write: bool,
     ) -> Result<(Value, Typed)> {
         let name = NAMES.iter().find(|(_, k)| *k == kind).unwrap().0;
         let default = Value::Object(self.intrinsics.as_ref().unwrap().functions[name]);
@@ -117,7 +118,9 @@ impl Engine<'_> {
         self.protect(&constructor)?;
         let result = self.construct(constructor, args)?;
         self.protect(&result)?;
-        let (_, typed, length) = self.typed_record(result.clone())?;
+        // TypedArrayCreateFromConstructor(constructor, argumentList, accessMode)
+        // (immutable-arraybuffer §23.2.4.2).
+        let (_, typed, length) = self.typed_record_mode(result.clone(), write)?;
         if typed.kind.big() != kind.big() {
             return self.throw_error("TypeError", "typed-array species content type differs");
         }
@@ -263,6 +266,7 @@ impl Engine<'_> {
                         typed.kind,
                         vec![Value::number(length as f64)],
                         Some(length),
+                        true,
                     )?)
                 } else {
                     None
@@ -315,6 +319,7 @@ impl Engine<'_> {
                         typed.kind,
                         vec![Value::number(selected.len() as f64)],
                         Some(selected.len()),
+                        true,
                     )?;
                     for (index, value) in selected.into_iter().enumerate() {
                         self.tick()?;
@@ -380,6 +385,11 @@ impl Engine<'_> {
                 let callback = arg(0);
                 if callback != Value::Undefined && !self.callable(&callback) {
                     return self.throw_error("TypeError", "typed-array comparator is not callable");
+                }
+                // ValidateTypedArray(obj, seq-cst, write) (immutable-arraybuffer §23.2.3.29).
+                if method == "sort" && self.typed_immutable(&typed)? {
+                    return self
+                        .throw_error("TypeError", "cannot write to an immutable ArrayBuffer");
                 }
                 let output = if method == "toSorted" {
                     self.typed_default(typed.kind, len)?

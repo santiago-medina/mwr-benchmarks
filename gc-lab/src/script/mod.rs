@@ -31,6 +31,8 @@ pub use parser::ImportPhase;
 
 mod collections;
 mod disposal;
+mod shadow_realms;
+mod tail_calls;
 mod weak;
 
 mod array_methods;
@@ -41,6 +43,8 @@ mod number_format;
 mod numeric;
 
 mod js_string;
+mod normalization;
+mod normalization_tables;
 mod string_search;
 mod strings;
 

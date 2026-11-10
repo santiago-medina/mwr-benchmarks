@@ -22,6 +22,9 @@ pub(super) struct Buffer {
     /// IsSharedArrayBuffer (§25.2.2.2): set for SharedArrayBuffer stores, which never
     /// detach. Only one agent exists today (SHARED_MEMORY.md), so the bytes stay a Vec.
     pub shared: bool,
+    /// [[ArrayBufferIsImmutable]] (proposal-immutable-arraybuffer §25.1.7): the bytes
+    /// never change after AllocateImmutableArrayBuffer and the buffer never detaches.
+    pub immutable: bool,
     budget: Rc<Cell<usize>>,
 }
 impl Drop for Buffer {
@@ -142,12 +145,21 @@ impl Engine<'_> {
             maximum,
             detached: false,
             shared,
+            immutable: false,
             budget: self.buffer_bytes.clone(),
         }));
         let mut data = self.data(id)?.clone();
         data.buffer = Some(buffer);
         self.replace_data(id, data)?;
         Ok(Value::Object(id))
+    }
+    /// IsImmutableBuffer (immutable-arraybuffer §25.1.3.4) for the buffer object `buffer`.
+    pub(super) fn buffer_immutable(&self, buffer: Id) -> Result<bool> {
+        Ok(self
+            .data(buffer)?
+            .buffer
+            .as_ref()
+            .is_some_and(|b| b.borrow().immutable))
     }
     pub(super) fn detach_buffer(buffer: &mut Buffer) {
         buffer
@@ -290,7 +302,13 @@ impl Engine<'_> {
                 },
             )?;
             let getters: &[&str] = if name == "ArrayBuffer" {
-                &["byteLength", "detached", "maxByteLength", "resizable"]
+                &[
+                    "byteLength",
+                    "detached",
+                    "immutable",
+                    "maxByteLength",
+                    "resizable",
+                ]
             } else if name == "SharedArrayBuffer" {
                 &["byteLength", "growable", "maxByteLength"]
             } else {
@@ -331,6 +349,8 @@ impl Engine<'_> {
                     ("resize".into(), 1),
                     ("transfer".into(), 0),
                     ("transferToFixedLength".into(), 0),
+                    ("transferToImmutable".into(), 0),
+                    ("sliceToImmutable".into(), 2),
                 ]
             } else if name == "SharedArrayBuffer" {
                 vec![("grow".into(), 1), ("slice".into(), 2)]
@@ -427,6 +447,10 @@ impl Engine<'_> {
                 } as f64));
             }
             let set = method.starts_with("set");
+            // SetViewValue step 3 (immutable-arraybuffer §25.3.1.6): before ToIndex.
+            if set && buffer.borrow().immutable {
+                return self.throw_error("TypeError", "cannot write to an immutable ArrayBuffer");
+            }
             let kind = ELEMENTS
                 .iter()
                 .find(|(name, _)| *name == &method[3..])
@@ -468,6 +492,11 @@ impl Engine<'_> {
                 let detached = buffer.borrow().detached;
                 Ok(Value::Bool(detached))
             }
+            // get ArrayBuffer.prototype.immutable (immutable-arraybuffer §25.1.6.1).
+            "immutable" => {
+                let immutable = buffer.borrow().immutable;
+                Ok(Value::Bool(immutable))
+            }
             "resizable" => {
                 let resizable = buffer.borrow().maximum.is_some();
                 Ok(Value::Bool(resizable))
@@ -504,7 +533,8 @@ impl Engine<'_> {
                 b.bytes = bytes;
                 Ok(Value::Undefined)
             }
-            "transfer" | "transferToFixedLength" => {
+            // ArrayBufferCopyAndDetach (immutable-arraybuffer §25.1.3.3).
+            "transfer" | "transferToFixedLength" | "transferToImmutable" => {
                 let old = buffer.borrow().bytes.len();
                 let length = if arg(0) == Value::Undefined {
                     old as u64
@@ -513,6 +543,9 @@ impl Engine<'_> {
                 };
                 if buffer.borrow().detached {
                     return self.throw_error("TypeError", "detached buffer");
+                }
+                if buffer.borrow().immutable {
+                    return self.throw_error("TypeError", "cannot detach an immutable ArrayBuffer");
                 }
                 if length > MAX_BYTES as u64 {
                     return self.throw_error("RangeError", "host buffer allocation limit");
@@ -527,7 +560,37 @@ impl Engine<'_> {
                 let mut source = buffer.borrow_mut();
                 let count = source.bytes.len().min(length as usize);
                 target.borrow_mut().bytes[..count].copy_from_slice(&source.bytes[..count]);
+                target.borrow_mut().immutable = method == "transferToImmutable";
                 Self::detach_buffer(&mut source);
+                Ok(output)
+            }
+            // ArrayBuffer.prototype.sliceToImmutable (immutable-arraybuffer §25.1.6.8).
+            "sliceToImmutable" => {
+                if buffer.borrow().detached {
+                    return self.throw_error("TypeError", "detached buffer");
+                }
+                let length = buffer.borrow().bytes.len() as u64;
+                // ResolveBounds (§7.1).
+                let first = self.relative_index(arg(0), length)?;
+                let end = if arg(1) == Value::Undefined {
+                    length
+                } else {
+                    self.relative_index(arg(1), length)?
+                };
+                let count = end.saturating_sub(first) as usize;
+                if buffer.borrow().detached {
+                    return self.throw_error("TypeError", "detached buffer");
+                }
+                if (buffer.borrow().bytes.len() as u64) < end {
+                    return self.throw_error("RangeError", "buffer shrank below the slice end");
+                }
+                // AllocateImmutableArrayBuffer (§25.1.3.2).
+                let output = self.new_buffer(count, None, None)?;
+                let target = self.buffer_slot(output.clone())?;
+                let first = first as usize;
+                let mut t = target.borrow_mut();
+                t.bytes[..count].copy_from_slice(&buffer.borrow().bytes[first..first + count]);
+                t.immutable = true;
                 Ok(output)
             }
             "slice" => {
@@ -564,9 +627,11 @@ impl Engine<'_> {
                 let output = self.construct(constructor, vec![Value::number(count as f64)])?;
                 self.protect(&output)?;
                 let target = self.buffer_receiver(output.clone(), false)?;
+                if target.borrow().detached || target.borrow().immutable {
+                    return self.throw_error("TypeError", "invalid buffer species result");
+                }
                 if output == source
                     || Rc::ptr_eq(&target, &buffer)
-                    || target.borrow().detached
                     || target.borrow().bytes.len() < count as usize
                 {
                     return self.throw_error("TypeError", "invalid buffer species result");

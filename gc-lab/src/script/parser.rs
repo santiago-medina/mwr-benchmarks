@@ -331,6 +331,12 @@ struct Parser<'a> {
     /// The [Await] grammar parameter (§13.1, §15.8, §15.7.1): async function parameters and
     /// body, module top level and class static blocks, where `await` is not an identifier.
     await_kw: bool,
+    /// The [~In] grammar parameter (§14.7.4 for-statement init): the token index where the
+    /// region starts. `in` is not a binary operator at bracket depth 0 within it.
+    no_in: Option<usize>,
+    /// Token index where the current AssignmentExpression starts: an ArrowFunction is an
+    /// AssignmentExpression, never an operand (§15.3), so it may only start there.
+    arrow_at: usize,
 }
 pub(super) fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
     tokenize_legacy(source).map(|(tokens, _)| tokens)
@@ -445,6 +451,23 @@ pub(super) fn tokenize_legacy(
                 let (n, _) = super::identifiers::identifier(&mut chars, first, offset)?;
                 Token::PrivateName(format!("#{n}"))
             }
+            // §12.5 HashbangComment: `#!` only at the very start of a Script or Module source
+            // text (also eval's Script, §19.2.1.1); the comment runs to the line terminator.
+            '#' if offset == 0 && chars.peek().is_some_and(|(_, c)| *c == '!') => {
+                while chars
+                    .peek()
+                    .is_some_and(|(_, c)| !matches!(c, '\n' | '\r' | '\u{2028}' | '\u{2029}'))
+                {
+                    chars.next();
+                }
+                continue;
+            }
+            // `#` that starts neither a hashbang at offset 0 nor a PrivateIdentifier is not a
+            // token of the grammar (§12): an early SyntaxError. `#\` (escaped private names)
+            // stays unsupported below.
+            '#' if !chars.peek().is_some_and(|(_, c)| *c == '\\') => {
+                return Err(error("Invalid or unexpected token"));
+            }
             '0'..='9' | '.'
                 if c != '.' || chars.peek().is_some_and(|(_, c)| c.is_ascii_digit()) =>
             {
@@ -481,6 +504,13 @@ pub(super) fn tokenize_legacy(
                     if chars.peek().is_some_and(|(_, c)| *c == 'n') {
                         raw.push(chars.next().unwrap().1);
                     }
+                }
+                // §12.9.3: the SourceCharacter immediately following a NumericLiteral must not
+                // be an IdentifierStart or DecimalDigit (`3in []` is an early error).
+                if chars.peek().is_some_and(|(_, c)| {
+                    c.is_ascii_digit() || super::identifiers::starts_identifier(*c)
+                }) {
+                    return Err(error("Invalid or unexpected token"));
                 }
                 let big = raw.ends_with('n');
                 if big {
@@ -636,7 +666,7 @@ pub(super) fn tokenize_legacy(
     Ok(tokens)
 }
 pub fn parse(source: &str) -> Result<Vec<Stmt>, SyntaxError> {
-    parse_eval(source, false, false, false)
+    parse_eval(source, false, false, false, false, &[], false)
 }
 /// Script grammar with the context of a direct eval: inherited strictness and
 /// whether `super.x` / `super()` are allowed.
@@ -645,14 +675,33 @@ pub(super) fn parse_eval(
     strict: bool,
     super_property: bool,
     super_call: bool,
+    new_target: bool,
+    private_names: &[String],
+    field_initializer: bool,
 ) -> Result<Vec<Stmt>, SyntaxError> {
     let (tokens, legacy) = tokenize_legacy(source)?;
     let mut p = Parser::new(tokens, legacy, source, strict);
+    // §19.2.1.1 steps 5-6 and 11: inside a class, direct eval code may name the private
+    // identifiers of the caller's PrivateEnvironment chain (AllPrivateIdentifiersValid).
+    if !private_names.is_empty() {
+        p.private_refs.push(vec![]);
+    }
     p.super_property = super_property;
     p.super_call = super_call;
+    // §16.1.6 / §19.2.1.1: `new.target` in a Script, or in eval code outside functions,
+    // is an early SyntaxError.
+    p.new_target = new_target;
+    // §19.2.1.2: eval code in a class field initializer must not contain `arguments`
+    // (ContainsArguments looks through arrows but not through other functions).
+    p.no_arguments = field_initializer;
     p.prologue(0)?;
     let mut body = p.statements(false)?;
     p.legacy_check()?;
+    if let Some(refs) = p.private_refs.pop() {
+        if refs.iter().any(|r| !private_names.contains(r)) {
+            return Err(p.error("undeclared private name"));
+        }
+    }
     // §14.3.1.1: a Script (and eval code) has no top-level UsingDeclaration.
     if has_direct_using(&body) {
         return Err(SyntaxError {
@@ -691,7 +740,26 @@ impl<'a> Parser<'a> {
             new_target: true,
             yield_kw: false,
             await_kw: false,
+            no_in: None,
+            arrow_at: usize::MAX,
         }
+    }
+    /// Is `in` excluded here by an enclosing [~In] parameter (unbracketed in a for init)?
+    fn in_forbidden(&self) -> bool {
+        let Some(start) = self.no_in else {
+            return false;
+        };
+        let mut depth = 0isize;
+        for (token, _) in &self.tokens[start..self.cursor] {
+            match token {
+                Token::Punct('(' | '[' | '{') => depth += 1,
+                Token::Punct(')' | ']' | '}') => depth -= 1,
+                Token::Template { start, tail, .. } if *start && !*tail => depth += 1,
+                Token::Template { start, tail, .. } if !*start && *tail => depth -= 1,
+                _ => {}
+            }
+        }
+        depth <= 0
     }
     pub(super) fn legacy_check(&self) -> Result<(), SyntaxError> {
         match self.legacy_hit {
@@ -861,6 +929,13 @@ impl Parser<'_> {
     /// `reserved(n)` refined by the [Yield] / [Await] context and strictness.
     fn reserved_here(&self, n: &str) -> bool {
         reserved(n) && !self.contextual_identifier(n)
+    }
+    /// IdentifierName after `.` (§13.3): a string or numeric literal is not one.
+    fn identifier_name(&mut self) -> Result<String, SyntaxError> {
+        match self.current() {
+            Token::Name(_) | Token::EscapedName(_) => self.key(),
+            _ => Err(self.error("unexpected token after '.'")),
+        }
     }
     fn key(&mut self) -> Result<String, SyntaxError> {
         match self.take() {
@@ -1200,6 +1275,9 @@ impl Parser<'_> {
             if computed.is_some()
                 || !identifier
                 || (reserved(&key) && !matches!(key.as_str(), "await" | "let"))
+                // §13.2.5.1: an IdentifierReference shorthand takes the [Await] parameter
+                // (`static { ({ await }); }`).
+                || (key == "await" && !self.contextual_identifier("await"))
                 || (self.strict && (strict_future_reserved(&key) || key == "let"))
             {
                 return Err(self.error("invalid shorthand property"));
@@ -1299,7 +1377,7 @@ impl Parser<'_> {
                 Box::new(Expr::PrivateName(name)),
             ));
         }
-        Ok(Expr::Member(Box::new(e), self.key()?))
+        Ok(Expr::Member(Box::new(e), self.identifier_name()?))
     }
     /// A class's BindingIdentifier is strict mode code (§11.2.2), so `let`,
     /// `yield` and `static` are reserved there even in sloppy scripts.
@@ -1641,8 +1719,16 @@ impl Parser<'_> {
                     }
                     head.super_property = self.super_property;
                     head.super_call = self.super_call;
+                    head.new_target = self.new_target;
+                    head.yield_kw = self.yield_kw;
+                    head.await_kw = self.await_kw;
+                    head.module = self.module;
                     if let Ok(expression) = head.sequence() {
-                        if head.current() == &Token::End {
+                        // The head is a LeftHandSideExpression, not an assignment
+                        // (`for (a = 0 in {})` is an early error, §14.7.5).
+                        let assignment =
+                            matches!(expression, Expr::Assign(..) | Expr::Destructure(..));
+                        if head.current() == &Token::End && !assignment {
                             if let Ok(pattern) = head.assignment_pattern(expression) {
                                 if let (Some(outer), Some(inner)) =
                                     (self.private_refs.last_mut(), head.private_refs.pop())
@@ -1968,6 +2054,33 @@ impl Parser<'_> {
                 if is_using(kind) && self.current() == &Token::Name("in".into()) {
                     return Err(self.error("for-in cannot declare using bindings"));
                 }
+                // Annex B.3.5: sloppy `for (var x = init in obj)`. The Initializer is
+                // evaluated and assigned before the head, so it lowers to the iterable
+                // `(x = init, obj)`.
+                if let (Pattern::Name(name), "var", false, Token::Op(op)) =
+                    (&binding, kind, self.strict, self.current())
+                {
+                    if op == "=" {
+                        let save = self.cursor;
+                        self.take();
+                        let no_in = self.no_in.replace(self.cursor);
+                        let init = self.expression();
+                        self.no_in = no_in;
+                        if init.is_ok() && self.word("in") {
+                            let assign =
+                                Expr::Assign(Box::new(Expr::Name(name.clone())), Box::new(init?));
+                            let iterable = Expr::Sequence(vec![assign, self.sequence()?]);
+                            self.expect(')')?;
+                            return Ok(Stmt::ForIn {
+                                kind: kind.into(),
+                                binding,
+                                iterable,
+                                body: Box::new(self.sub_statement(false)?),
+                            });
+                        }
+                        self.cursor = save;
+                    }
+                }
                 if self.word("in") {
                     let iterable = self.sequence()?;
                     self.expect(')')?;
@@ -1989,13 +2102,27 @@ impl Parser<'_> {
                         asynchronous,
                     });
                 }
-                let stmt = self.declaration_tail(kind, binding)?;
+                let no_in = self.no_in.replace(self.cursor);
+                let stmt = self.declaration_tail(kind, binding);
+                self.no_in = no_in;
+                let stmt = stmt?;
                 self.expect(';')?;
                 Some(Box::new(stmt))
             } else if self.punct(';') {
                 None
             } else if let Some((binding, enumeration)) = {
                 let let_start = self.current() == &Token::Name("let".into());
+                // `for (async of` is excluded too (it would read as an async arrow head);
+                // `for await (async of x)` is allowed.
+                if !asynchronous
+                    && self.current() == &Token::Name("async".into())
+                    && self.tokens.get(self.cursor + 1).map(|t| &t.0)
+                        == Some(&Token::Name("of".into()))
+                    && self.tokens.get(self.cursor + 2).map(|t| &t.0)
+                        != Some(&Token::Op("=>".into()))
+                {
+                    return Err(self.error("for-of left side cannot start with async of"));
+                }
                 let head = self.iteration_assignment_head()?;
                 // §14.7.5 `for ( [lookahead ∉ { let, async of }] LeftHandSideExpression of`.
                 if let_start && matches!(head, Some((_, false))) {
@@ -2027,7 +2154,10 @@ impl Parser<'_> {
                     }
                 });
             } else {
-                let value = self.sequence()?;
+                let no_in = self.no_in.replace(self.cursor);
+                let value = self.sequence();
+                self.no_in = no_in;
+                let value = value?;
                 self.expect(';')?;
                 Some(Box::new(Stmt::Expr(value)))
             };
@@ -2278,9 +2408,13 @@ impl Parser<'_> {
         }
 
         let covered = matches!(self.current(), Token::Punct('('));
+        self.arrow_at = self.cursor;
         let mut a = self.binary(1)?;
         if self.punct('?') {
-            let yes = self.expression()?;
+            let no_in = self.no_in.take();
+            let yes = self.expression();
+            self.no_in = no_in;
+            let yes = yes?;
             self.expect(':')?;
             let no = self.expression()?;
             a = Expr::Conditional(Box::new(a), Box::new(yes), Box::new(no));
@@ -2402,10 +2536,10 @@ impl Parser<'_> {
                         property => (PatternKey::Static(key), property),
                     };
                     match property {
-                        Property::CoverDefault(name, default) => patterns.push((
-                            key,
-                            Pattern::Default(Box::new(Pattern::Name(name)), default),
-                        )),
+                        Property::CoverDefault(name, default) => patterns.push((key, {
+                            self.strict_target(&Expr::Name(name.clone()))?;
+                            Pattern::Default(Box::new(Pattern::Name(name)), default)
+                        })),
                         Property::Value(expression) | Property::Prototype(expression) => {
                             patterns.push((key, self.assignment_pattern(expression)?))
                         }
@@ -2442,10 +2576,33 @@ impl Parser<'_> {
         let unary_left = matches!(self.current(), Token::Op(s) if matches!(s.as_str(), "+"|"-"|"!"|"~"))
             || matches!(self.current(), Token::Name(s) if matches!(s.as_str(), "typeof"|"void"|"delete"))
             || (self.await_kw && self.current() == &Token::Name("await".into()));
-        let mut a = self.unary()?;
+        // §13.10 RelationalExpression : PrivateIdentifier in ShiftExpression. The private
+        // name is only a left operand of `in` at relational precedence.
+        let private = match self.current() {
+            Token::PrivateName(name)
+                if min <= 7
+                    && self.tokens.get(self.cursor + 1).map(|t| &t.0)
+                        == Some(&Token::Name("in".into())) =>
+            {
+                Some(name.clone())
+            }
+            _ => None,
+        };
+        let mut a = if let Some(name) = private {
+            self.take();
+            if self.in_forbidden() {
+                return Err(self.error("unexpected private name"));
+            }
+            self.private_reference(&name)?;
+            Expr::PrivateName(name)
+        } else {
+            self.unary()?
+        };
+        let mut private_left = matches!(a, Expr::PrivateName(_));
         loop {
             let op = match self.current() {
                 Token::Op(s) => s.clone(),
+                Token::Name(s) if s == "in" && self.in_forbidden() => break,
                 Token::Name(s) if s == "in" || s == "instanceof" => s.clone(),
                 _ => break,
             };
@@ -2463,9 +2620,10 @@ impl Parser<'_> {
                 "**" => 11,
                 _ => break,
             };
-            if p < min {
+            if p < min || private_left && op != "in" {
                 break;
             }
+            private_left = false;
             if op == "**" && unary_left {
                 return Err(self.error("unparenthesized unary exponentiation operand"));
             }
@@ -2720,6 +2878,10 @@ impl Parser<'_> {
         Ok(Expr::ImportCall(Box::new(specifier), options, phase))
     }
     fn primary(&mut self) -> Result<Expr, SyntaxError> {
+        // §15.3 / §15.9: arrows are AssignmentExpressions, so `class extends () => {} {}`
+        // and `#x in () => {}` are early errors.
+        let arrow_ok = self.cursor == self.arrow_at;
+        let not_operand = |p: &Self| Err(p.error("arrow function is not an operand"));
         if matches!(self.current(), Token::Template { start: true, .. }) {
             return self.template(None);
         }
@@ -2741,6 +2903,9 @@ impl Parser<'_> {
                             .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
                 })
         {
+            if !arrow_ok {
+                return not_operand(self);
+            }
             self.take();
             let name = self.name_in(false, true)?;
             self.op("=>");
@@ -2760,6 +2925,9 @@ impl Parser<'_> {
                             .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
                 })
         {
+            if !arrow_ok {
+                return not_operand(self);
+            }
             let name = self.name()?;
             self.op("=>");
             let body = self.arrow_body()?;
@@ -2805,6 +2973,9 @@ impl Parser<'_> {
                 });
             }
             if self.is_arrow() {
+                if !arrow_ok {
+                    return not_operand(self);
+                }
                 // §15.9 AsyncArrowHead: ArrowFormalParameters[~Yield, +Await].
                 let saved = (self.yield_kw, self.await_kw);
                 (self.yield_kw, self.await_kw) = (false, true);
@@ -2849,6 +3020,9 @@ impl Parser<'_> {
             });
         }
         if self.current() == &Token::Punct('(') && self.is_arrow() {
+            if !arrow_ok {
+                return not_operand(self);
+            }
             let params = self.params()?;
             if std::mem::take(&mut self.duplicates) {
                 return Err(self.error("duplicate parameter"));
@@ -2877,7 +3051,7 @@ impl Parser<'_> {
                 return Err(self.error("super property outside method"));
             }
             if self.punct('.') {
-                return Ok(Expr::SuperMember(self.key()?));
+                return Ok(Expr::SuperMember(self.identifier_name()?));
             }
             if self.punct('[') {
                 let key = self.sequence()?;
@@ -2886,12 +3060,7 @@ impl Parser<'_> {
             }
             return Err(self.error("invalid super expression"));
         }
-        if let Token::PrivateName(name) = self.current().clone() {
-            if self.tokens.get(self.cursor + 1).map(|t| &t.0) == Some(&Token::Name("in".into())) {
-                self.take();
-                self.private_reference(&name)?;
-                return Ok(Expr::PrivateName(name));
-            }
+        if let Token::PrivateName(_) = self.current() {
             return Err(self.error("unexpected private name"));
         }
         match self.take() {
@@ -2960,7 +3129,12 @@ impl Parser<'_> {
             Token::Punct('(') => {
                 let e = self.sequence()?;
                 self.expect(')')?;
-                Ok(e)
+                // §13.15.1: a parenthesized literal is not an AssignmentPattern. A one-item
+                // Sequence evaluates the same but is no destructuring target.
+                Ok(match e {
+                    Expr::Array(_) | Expr::Object(_) => Expr::Sequence(vec![e]),
+                    e => e,
+                })
             }
             Token::Punct('[') => {
                 let mut elements = vec![];
@@ -2978,6 +3152,11 @@ impl Parser<'_> {
                         break;
                     }
                     self.expect(',')?;
+                    // §13.15.5: an AssignmentRestElement takes no trailing comma (`[...x,]`).
+                    if let Some(Some(Expr::Spread(inner))) = elements.last_mut() {
+                        let e = std::mem::replace(&mut **inner, Expr::Undefined);
+                        **inner = Expr::Sequence(vec![e]);
+                    }
                 }
                 Ok(Expr::Array(elements))
             }
@@ -2991,6 +3170,11 @@ impl Parser<'_> {
                             break;
                         }
                         self.expect(',')?;
+                        // §13.15.5: neither does an AssignmentRestProperty (`{...x,}`).
+                        if let Some((_, Property::Spread(e))) = props.last_mut() {
+                            let inner = std::mem::replace(e, Expr::Undefined);
+                            *e = Expr::Sequence(vec![inner]);
+                        }
                         if self.punct('}') {
                             break;
                         }
@@ -3118,7 +3302,8 @@ fn never_starts_expression(token: &Token) -> bool {
         Token::Punct(c) => matches!(c, ';' | ')' | ']' | '}' | ',' | ':' | '?' | '.'),
         Token::Op(op) => matches!(
             op.as_str(),
-            "=" | "=="
+            "=" | "..."
+                | "=="
                 | "==="
                 | "!="
                 | "!=="

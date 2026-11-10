@@ -8,7 +8,8 @@ type Result<T> = std::result::Result<T, ScriptError>;
 impl Engine<'_> {
     pub(super) fn integer(&mut self, value: Value) -> Result<f64> {
         let n = self.to_number(value)?;
-        Ok(if n.is_nan() { 0.0 } else { n.trunc() })
+        // §7.1.5 ToIntegerOrInfinity: mathematical truncation, so -0 and (-1, 0) give +0.
+        Ok(if n.is_nan() { 0.0 } else { n.trunc() + 0.0 })
     }
     pub(super) fn relative_index(&mut self, value: Value, len: u64) -> Result<u64> {
         let n = self.integer(value)?;
@@ -81,8 +82,10 @@ impl Engine<'_> {
                 },
             )?
         } else {
-            let n = u32::try_from(len)
-                .map_err(|_| ScriptError::Runtime("Array.from output length limit"))?;
+            // §23.1.2.1 step 12.b / §23.1.2.3 step 5: ArrayCreate(len) throws above 2^32 - 1.
+            let Ok(n) = u32::try_from(len) else {
+                return self.throw_error("RangeError", "invalid array length");
+            };
             Value::Object(self.new_array(n)?)
         };
         self.protect(&result)?;
@@ -151,9 +154,7 @@ impl Engine<'_> {
                     self.relative_index(arg(1), len)?
                 };
                 let count = end.saturating_sub(start);
-                let n = u32::try_from(count)
-                    .map_err(|_| ScriptError::Runtime("slice output length limit"))?;
-                let out = self.array_species_create(id, n)?;
+                let out = self.array_species_create_len(id, count)?;
                 self.protect(&Value::Object(out))?;
                 for offset in 0..count {
                     self.tick()?;
@@ -180,9 +181,7 @@ impl Engine<'_> {
                 if length > 9007199254740991 {
                     return self.throw_error("TypeError", "splice length exceeds safe integer");
                 }
-                let n = u32::try_from(deleted)
-                    .map_err(|_| ScriptError::Runtime("splice output length limit"))?;
-                let out = self.array_species_create(id, n)?;
+                let out = self.array_species_create_len(id, deleted)?;
                 self.protect(&Value::Object(out))?;
                 for k in 0..deleted {
                     self.tick()?;
@@ -497,9 +496,11 @@ impl Engine<'_> {
                 1
             });
         }
-        let a = self.to_string(a.clone())?;
-        let b = self.to_string(b.clone())?;
-        Ok(match a.encode_utf16().cmp(b.encode_utf16()) {
+        // SortCompare (§23.1.3.30.2) steps 5-9: IsLessThan on ToString results, i.e. by
+        // code units, so ill-formed strings (lone surrogates) compare too.
+        let a = self.to_js_string(a.clone())?;
+        let b = self.to_js_string(b.clone())?;
+        Ok(match a.units().cmp(&b.units()) {
             std::cmp::Ordering::Less => -1,
             std::cmp::Ordering::Equal => 0,
             std::cmp::Ordering::Greater => 1,

@@ -688,7 +688,8 @@ impl Engine<'_> {
         }
         let scope = self.new_using_scope()?;
         self.initialize(env, "%dispose", scope.clone())?;
-        let outcome = f(self);
+        // DisposeResources runs after the body's `return`: keep its calls ordinary.
+        let outcome = self.non_tail_scope(f);
         self.dispose_scope_outcome(&scope, outcome)
     }
     /// A fresh hidden capability for a block with `using` declarations.

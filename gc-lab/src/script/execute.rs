@@ -176,15 +176,8 @@ impl Engine<'_> {
                 },
             )),
         )?;
-        self.define(
-            id,
-            "name",
-            Descriptor {
-                value: Some(Value::String(name.unwrap_or("").into())),
-                configurable: Some(true),
-                ..Descriptor::default()
-            },
-        )?;
+        // §10.2.3 step 22 (SetFunctionLength) precedes SetFunctionName (§10.2.9), so
+        // "length" is the first own key, then "name", then "prototype".
         self.define(
             id,
             "length",
@@ -195,6 +188,15 @@ impl Engine<'_> {
                         .take_while(|p| p.default.is_none() && !p.rest)
                         .count() as f64,
                 )),
+                configurable: Some(true),
+                ..Descriptor::default()
+            },
+        )?;
+        self.define(
+            id,
+            "name",
+            Descriptor {
+                value: Some(Value::String(name.unwrap_or("").into())),
                 configurable: Some(true),
                 ..Descriptor::default()
             },
@@ -225,6 +227,24 @@ impl Engine<'_> {
                     ..Descriptor::default()
                 },
             )?;
+        }
+        if kind == FunctionKind::Ordinary && matches!(body.first(), Some(Stmt::Sloppy)) {
+            // §17.1 Forbidden Extensions allow own "caller"/"arguments" on non-strict ordinary
+            // functions if their value is never a strict function. Like web engines we define
+            // them read-only, here as undefined (caller tracking is not implemented; test262's
+            // `caller` cases read undefined as "extension not supported"), so sloppy `f.caller`
+            // does not reach %Function.prototype%'s %ThrowTypeError% accessors (§10.2.4),
+            // which strict functions do inherit.
+            for key in ["caller", "arguments"] {
+                self.define(
+                    id,
+                    key,
+                    Descriptor {
+                        value: Some(Value::Undefined),
+                        ..Descriptor::default()
+                    },
+                )?;
+            }
         }
         if kind == FunctionKind::Ordinary {
             let p = self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;
@@ -426,9 +446,12 @@ impl Engine<'_> {
             }
             Stmt::Var(n, x) => {
                 if let Some(x) = x {
+                    // §14.3.2.1: ResolveBinding before the initializer, then PutValue. The
+                    // name can resolve to a `with` object or (Annex B.3.4) a catch
+                    // parameter rather than the hoisted var binding.
+                    let reference = self.name_reference(n, env)?;
                     let v = self.eval_named(x, env, n)?;
-                    let local = self.var_environment(env)?;
-                    self.initialize(local, n, v)?;
+                    self.reference_set(reference, v)?;
                 }
             }
             Stmt::Break(None) => return Err(ScriptError::LoopBreak),
@@ -453,13 +476,25 @@ impl Engine<'_> {
                 iterable,
                 body,
                 ..
-            } => return self.for_of(kind, binding, iterable, body, env, can_return, false),
+            } => {
+                // Not in tail position here: the loop still closes the iterator after a
+                // `return` (§14.7.5.7 step 6.l), so deferring the call would reorder it.
+                return self.non_tail_scope(|e| {
+                    e.for_of(kind, binding, iterable, body, env, can_return, false)
+                });
+            }
             Stmt::ForIn {
                 kind,
                 binding,
                 iterable,
                 body,
-            } => return self.for_of(kind, binding, iterable, body, env, can_return, true),
+            } => {
+                // Not in tail position here: the loop still closes the iterator after a
+                // `return` (§14.7.5.7 step 6.l), so deferring the call would reorder it.
+                return self.non_tail_scope(|e| {
+                    e.for_of(kind, binding, iterable, body, env, can_return, true)
+                });
+            }
             Stmt::Function(..) | Stmt::AsyncFunction(..) | Stmt::GeneratorFunction(..) => {}
             Stmt::Expr(x) => {
                 let value = self.eval(x, env)?;
@@ -468,6 +503,9 @@ impl Engine<'_> {
             Stmt::Return(x) => {
                 if !can_return {
                     return Err(ScriptError::Runtime("return outside function"));
+                }
+                if self.tail_ok && self.non_tail == 0 {
+                    return Ok(Some(self.eval_tail(x, env)?));
                 }
                 return Ok(Some(self.eval(x, env)?));
             }
@@ -498,8 +536,12 @@ impl Engine<'_> {
                 catch,
                 finally,
             } => {
-                let mut pending = self.scoped(body, env, can_return);
+                // §15.10.2: only the Catch (without Finally) and the Finally are in tail
+                // position.
+                let mut pending = self.non_tail_scope(|e| e.scoped(body, env, can_return));
                 if let (Err(ScriptError::Thrown(ex)), Some((pattern, b))) = (&pending, catch) {
+                    let guard = finally.is_some() as u32;
+                    self.non_tail += guard;
                     let value = ex.value.clone();
                     self.protect(&value)?;
                     pending = (|| {
@@ -518,6 +560,7 @@ impl Engine<'_> {
                         }
                         self.scoped(b, local, can_return)
                     })();
+                    self.non_tail -= guard;
                 }
                 if matches!(
                     pending,
@@ -976,6 +1019,18 @@ impl Engine<'_> {
         Ok(())
     }
     fn eval_call(&mut self, f: &Expr, args: &[Expr], env: Id, new: bool) -> Result<Value> {
+        self.eval_call_in(f, args, env, new, false)
+    }
+    /// `tail`: the call is in tail position (§15.10.2), so it is handed to the caller's
+    /// trampoline in `invoke_this` instead of growing the Rust stack (§13.3.6.1 step 6).
+    pub(super) fn eval_call_in(
+        &mut self,
+        f: &Expr,
+        args: &[Expr],
+        env: Id,
+        new: bool,
+        tail: bool,
+    ) -> Result<Value> {
         let (receiver, callee) = if new {
             (Value::Undefined, self.eval(f, env)?)
         } else {
@@ -1000,6 +1055,8 @@ impl Engine<'_> {
         }
         if new {
             self.construct(callee, values)
+        } else if tail {
+            self.defer_tail_call(callee, receiver, values)
         } else {
             self.invoke_this(callee, receiver, values)
         }
@@ -1020,19 +1077,42 @@ impl Engine<'_> {
         self.call_depth += 1;
         // Function bodies do not contribute to an enclosing eval's completion value.
         let completion = self.completion.take();
-        let r = self.frame(|e| {
-            e.protect(&f)?;
-            e.protect(&receiver)?;
-            for a in &args {
-                e.protect(a)?;
+        let tail_state = (self.tail_ok, self.non_tail);
+        let (mut f, mut receiver, mut args) = (f, receiver, args);
+        let r = loop {
+            self.tail_ok = false;
+            self.non_tail = 0;
+            let r = self.frame(|e| {
+                e.protect(&f)?;
+                e.protect(&receiver)?;
+                for a in &args {
+                    e.protect(a)?;
+                }
+                if e.realms.is_empty() {
+                    e.invoke_inner(f, receiver, args)
+                } else {
+                    let callee = f.clone();
+                    e.in_realm_of(&callee, |e| e.invoke_inner(f, receiver, args))
+                }
+            });
+            // §15.10.3 PrepareForTailCall: the callee's frame is gone; run the deferred
+            // call at this depth.
+            match (r, self.tail_call.take()) {
+                (Ok(_), Some(call)) => {
+                    (f, receiver, args) = self.release_tail_call(call);
+                    if let Err(e) = self.tick() {
+                        break Err(e);
+                    }
+                }
+                (r, call) => {
+                    if let Some(call) = call {
+                        self.release_tail_call(call);
+                    }
+                    break r;
+                }
             }
-            if e.realms.is_empty() {
-                e.invoke_inner(f, receiver, args)
-            } else {
-                let callee = f.clone();
-                e.in_realm_of(&callee, |e| e.invoke_inner(f, receiver, args))
-            }
-        });
+        };
+        (self.tail_ok, self.non_tail) = tail_state;
         self.call_depth -= 1;
         self.completion = completion;
         match r {
@@ -1089,7 +1169,9 @@ impl Engine<'_> {
                 if name == "%ProxyRevoke%" {
                     return self.proxy_revoke(id);
                 }
-                if let Some(action) = data.internal {
+                if let Some(super::promises::Internal::Wrapped { target }) = data.internal {
+                    self.wrapped_call(target, receiver, args)
+                } else if let Some(action) = data.internal {
                     self.promise_internal(action, args)
                 } else {
                     self.builtin(&name, receiver, args)
@@ -1158,7 +1240,14 @@ impl Engine<'_> {
                     receiver,
                     &args,
                 )?;
-                let result = self.block(&body, local, true)?;
+                // §15.10.1 IsInTailPosition: strict FunctionBody or ConciseBody, not a
+                // generator or async body (those return above). Derived constructors check
+                // their result in this frame, so they keep ordinary calls.
+                self.tail_ok = kind != FunctionKind::DerivedConstructor
+                    && !matches!(body.first(), Some(Stmt::Sloppy));
+                let result = self.block(&body, local, true);
+                self.tail_ok = false;
+                let result = result?;
                 if kind == FunctionKind::DerivedConstructor {
                     // §10.2.2 steps 10-12 run after the callee context is popped, so their
                     // errors belong to the caller's realm.
@@ -1211,6 +1300,7 @@ impl Engine<'_> {
                             | "WeakSet"
                             | "WeakRef"
                             | "FinalizationRegistry"
+                            | "ShadowRealm"
                             | "Object"
                             | "Function"
                             | "AsyncFunction"
@@ -1324,6 +1414,9 @@ impl Engine<'_> {
 
                 if self.intrinsics.as_ref().unwrap().errors.contains_key(&name) {
                     return self.error_constructor(&name, args, Some(new_target));
+                }
+                if name == "ShadowRealm" {
+                    return self.construct_shadow_realm(new_target);
                 }
                 if name == "WeakRef" || name == "FinalizationRegistry" {
                     return self.construct_weak(&name, new_target, args);

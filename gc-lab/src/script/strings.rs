@@ -42,6 +42,7 @@ pub(super) const METHODS: &[&str] = &[
     "localeCompare",
     "isWellFormed",
     "toWellFormed",
+    "normalize",
     "trim",
     "trimEnd",
     "trimStart",
@@ -222,7 +223,8 @@ impl Engine<'_> {
             self.replace_data(id, data)?;
             return Ok(Value::Object(id));
         }
-        let units: Vec<u16> = text.units().into_owned();
+        // Borrowed: `units()` is cached on the string, so a method call is not O(n).
+        let units = text.units();
         let len = units.len() as u64;
         let method = name.strip_prefix("String.prototype.").unwrap_or(name);
         match method {
@@ -368,9 +370,11 @@ impl Engine<'_> {
                     .take((length - len) as usize)
                     .collect();
                 let result = if method == "padStart" {
-                    fill.into_iter().chain(units).collect::<Vec<_>>()
+                    fill.into_iter()
+                        .chain(units.iter().copied())
+                        .collect::<Vec<_>>()
                 } else {
-                    units.into_iter().chain(fill).collect::<Vec<_>>()
+                    units.iter().copied().chain(fill).collect::<Vec<_>>()
                 };
                 string(&result)
             }
@@ -384,16 +388,38 @@ impl Engine<'_> {
                 Some(t) => Ok(Value::String(t.to_uppercase().into())),
                 None => string(&map_runs(&units, str::to_uppercase)),
             },
-            // §22.1.3.12: implementation-defined order; here code-unit order, the
-            // same order as IsLessThan on strings. Canonical equivalence (step 5's
-            // requirement) needs Unicode normalization data, not available yet.
+            // §22.1.3.12: implementation-defined order; here code-unit order of the NFC
+            // forms, so canonically equivalent strings compare as 0 (as step 5 requires).
             "localeCompare" => {
+                use super::normalization::{normalize, Form};
                 let that: Vec<u16> = self.to_js_string(arg(0))?.units().into_owned();
-                Ok(Value::number(match units.cmp(&that) {
+                let (this, that) = (normalize(&units, Form::Nfc), normalize(&that, Form::Nfc));
+                Ok(Value::number(match this.cmp(&that) {
                     std::cmp::Ordering::Less => -1.0,
                     std::cmp::Ordering::Equal => 0.0,
                     std::cmp::Ordering::Greater => 1.0,
                 }))
+            }
+            // §22.1.3.15 String.prototype.normalize ( [ form ] ).
+            "normalize" => {
+                use super::normalization::{normalize, Form};
+                let form = if arg(0) == Value::Undefined {
+                    Form::Nfc
+                } else {
+                    match self.to_js_string(arg(0))?.as_str() {
+                        Some("NFC") => Form::Nfc,
+                        Some("NFD") => Form::Nfd,
+                        Some("NFKC") => Form::Nfkc,
+                        Some("NFKD") => Form::Nfkd,
+                        _ => {
+                            return self.throw_error(
+                                "RangeError",
+                                "The normalization form should be one of NFC, NFD, NFKC, NFKD.",
+                            )
+                        }
+                    }
+                };
+                string(&normalize(&units, form))
             }
             // §22.1.3.10 isWellFormed, §22.1.3.32 toWellFormed.
             "isWellFormed" => Ok(Value::Bool(text.is_well_formed())),

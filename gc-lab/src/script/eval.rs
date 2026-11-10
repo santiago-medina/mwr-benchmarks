@@ -53,6 +53,42 @@ impl Engine<'_> {
         }
         false
     }
+    /// The private identifiers bound along `env`'s chain (§19.2.1.1 step 5: the names of
+    /// the running PrivateEnvironment and its outer environments).
+    fn private_names(&self, mut env: Id) -> Vec<String> {
+        let mut names = vec![];
+        while let Some(Object::Environment {
+            bindings, parent, ..
+        }) = self.objects.get(&env)
+        {
+            names.extend(bindings.keys().filter(|k| k.starts_with('#')).cloned());
+            match parent {
+                Some(p) => env = *p,
+                None => break,
+            }
+        }
+        names
+    }
+    /// §19.2.1.1 step 5.b-c: whether the nearest non-arrow function environment around
+    /// `env` belongs to a class field initializer (marked by `%fieldinit` on its parent).
+    fn in_class_field_initializer(&self, mut env: Id) -> bool {
+        while let Some(Object::Environment {
+            bindings, parent, ..
+        }) = self.objects.get(&env)
+        {
+            if bindings.contains_key("%newtarget") {
+                return parent.is_some_and(|p| {
+                    matches!(self.objects.get(&p), Some(Object::Environment { bindings, .. })
+                        if bindings.contains_key("%fieldinit"))
+                });
+            }
+            match parent {
+                Some(p) => env = *p,
+                None => return false,
+            }
+        }
+        false
+    }
     /// PerformEval; `caller` is the calling environment for a direct eval.
     pub(super) fn perform_eval(&mut self, source: Value, caller: Option<Id>) -> Result<Value> {
         let Value::String(text) = source else {
@@ -64,15 +100,30 @@ impl Engine<'_> {
         let global = self.runtime.resolve(global)?;
         let env = caller.unwrap_or(global);
         let caller_strict = caller.is_some() && self.env_strict(env);
-        let (super_property, super_call) = match caller {
-            Some(env) => (self.env_binds(env, "%home"), self.env_binds(env, "%func")),
-            None => (false, false),
+        let (super_property, super_call, new_target) = match caller {
+            Some(env) => (
+                self.env_binds(env, "%home"),
+                self.env_binds(env, "%func"),
+                self.env_binds(env, "%newtarget"),
+            ),
+            None => (false, false, false),
         };
-        let program =
-            match parser::parse_eval(text.text()?, caller_strict, super_property, super_call) {
-                Ok(program) => program,
-                Err(error) => return self.throw_error("SyntaxError", error.message),
-            };
+        let private_names = caller
+            .map(|env| self.private_names(env))
+            .unwrap_or_default();
+        let field_initializer = caller.is_some_and(|env| self.in_class_field_initializer(env));
+        let program = match parser::parse_eval(
+            text.text()?,
+            caller_strict,
+            super_property,
+            super_call,
+            new_target,
+            &private_names,
+            field_initializer,
+        ) {
+            Ok(program) => program,
+            Err(error) => return self.throw_error("SyntaxError", error.message),
+        };
         let strict = !matches!(program.first(), Some(Stmt::Sloppy));
         self.frame(|e| {
             let scope = e.new_environment(Some(env), &program, strict)?;

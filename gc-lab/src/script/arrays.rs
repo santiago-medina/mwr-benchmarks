@@ -237,6 +237,10 @@ impl Engine<'_> {
         Ok(Value::Object(id))
     }
     pub(super) fn array_species_create(&mut self, original: Id, len: u32) -> Result<Id> {
+        self.array_species_create_len(original, len as u64)
+    }
+    /// §10.4.2.3 ArraySpeciesCreate(originalArray, length) for any length ≤ 2^53 - 1.
+    pub(super) fn array_species_create_len(&mut self, original: Id, len: u64) -> Result<Id> {
         let mut constructor = Value::Undefined;
         // §10.4.2.3 ArraySpeciesCreate step 3: IsArray(originalArray) (follows proxies).
         if self.is_array(&Value::Object(original))? {
@@ -260,6 +264,10 @@ impl Engine<'_> {
             }
         }
         if constructor == Value::Undefined {
+            // Step 4 / 6: ArrayCreate(length) throws a RangeError above 2^32 - 1.
+            let Ok(len) = u32::try_from(len) else {
+                return self.throw_error("RangeError", "invalid array length");
+            };
             return self.new_array(len);
         }
         let value = self.construct(constructor, vec![Value::number(len as f64)])?;
@@ -268,7 +276,52 @@ impl Engine<'_> {
         };
         Ok(id)
     }
-    fn next_present_index(&self, mut id: Id, start: u64, end: u64) -> Result<Option<u64>> {
+    /// Smallest index in `start..end` for which HasProperty(O, index) is true. Ordinary
+    /// objects are scanned through their stored keys; an exotic object on the chain
+    /// (TypedArray §10.4.5.2, Proxy §10.5.7, module namespace) has no stored index keys,
+    /// so it takes the per-index HasProperty path the spec algorithms describe.
+    fn next_present_index(&mut self, id: Id, start: u64, end: u64) -> Result<Option<u64>> {
+        if start >= end {
+            return Ok(None);
+        }
+        let first = self.data(id)?;
+        if !self.is_proxy(id) && first.namespace.is_none() {
+            if let Some(typed) = first.typed.clone() {
+                // §10.4.5.2: a canonical numeric key never reaches the prototype.
+                let length = self.typed_length(&typed)?.unwrap_or(0) as u64;
+                return Ok((start < length.min(end)).then_some(start));
+            }
+        }
+        if self.chain_is_exotic(id)? {
+            let mut index = start;
+            while index < end {
+                if self.has(id, index.to_string())? {
+                    return Ok(Some(index));
+                }
+                self.tick()?;
+                index += 1;
+            }
+            return Ok(None);
+        }
+        self.next_stored_index(id, start, end)
+    }
+    fn chain_is_exotic(&self, mut id: Id) -> Result<bool> {
+        for _ in 0..10000 {
+            if self.is_proxy(id) {
+                return Ok(true);
+            }
+            let data = self.data(id)?;
+            if data.typed.is_some() || data.namespace.is_some() {
+                return Ok(true);
+            }
+            match data.prototype {
+                Some(p) => id = p,
+                None => return Ok(false),
+            }
+        }
+        Err(ScriptError::Runtime("prototype traversal limit"))
+    }
+    fn next_stored_index(&self, mut id: Id, start: u64, end: u64) -> Result<Option<u64>> {
         let mut found = None;
         for _ in 0..10000 {
             let data = self.data(id)?;
@@ -385,6 +438,13 @@ impl Engine<'_> {
             }
             _ => {}
         }
+        // §23.1.3.30 / §23.1.3.34 step 1: comparefn is checked before ToObject(this value).
+        if matches!(name, "Array.prototype.sort" | "Array.prototype.toSorted")
+            && arg(0) != Value::Undefined
+            && !self.callable(&arg(0))
+        {
+            return self.throw_error("TypeError", "sort comparison is not callable");
+        }
         let id = self.array_receiver(receiver)?;
         self.protect(&Value::Object(id))?;
         let length = self.length_of(id)?;
@@ -483,14 +543,8 @@ impl Engine<'_> {
                 }
                 let produces = matches!(name, "Array.prototype.map" | "Array.prototype.filter");
                 let output = if produces {
-                    let len = if name.ends_with("map") {
-                        u32::try_from(length).map_err(|_| {
-                            ScriptError::Unsupported("map output length exceeds array range")
-                        })?
-                    } else {
-                        0
-                    };
-                    let out = self.array_species_create(id, len)?;
+                    let len = if name.ends_with("map") { length } else { 0 };
+                    let out = self.array_species_create_len(id, len)?;
                     self.protect(&Value::Object(out))?;
                     Some(out)
                 } else {

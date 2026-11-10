@@ -175,3 +175,43 @@ Verdict: adopt with corrections (report: task #2438, docs/literature-check-js-du
   (correct without canonicality, at the cost of `encode_utf16` when hashing `Utf8`).
 - Host boundary (roadmap C): decide throw vs U+FFFD per API, matching SpiderMonkey's lossy
   UTF-8 conversion and Stylo's replacement policy.
+
+## Hardening and perf controls (2026-11-10, after literature check #335)
+
+Invariant and equality:
+- `Repr::Units` has one constructor (`JsString::ill_formed`), which `debug_assert!`s that the
+  units are ill-formed. `Eq`/`Hash` are now hand-written over the canonical (flat) form,
+  because of ropes (below).
+- Property test `equality_and_hash_follow_code_units`: 4000 random sequences over a pool
+  biased to surrogates (lead, trail, U+FFFF, NUL), split at every seam and rejoined through
+  `concat` and `Builder`; checks equality, equal hashes and `HashSet` agreement with
+  `Vec<u16>` keys. `ropes_are_canonical_and_shallow_to_drop` does the same across rope seams.
+- JS-level test `strings_compare_by_code_units_and_key_maps_by_code_units`: U+FFFF > U+10000
+  (§7.2.13 IsLessThan step 3, by code units), Map/Set keys with lone surrogates and pairs
+  formed by concatenation, default sort. It found a real gap: `Array.prototype.sort`'s default
+  SortCompare (§23.1.3.30.2) went through `to_string`, so a lone surrogate made sort report
+  Unsupported. It now compares `to_js_string(..).units()`.
+
+Perf controls (`vm-bench/str_append_1m.js`, `vm-bench/str_index_nonascii.js`) showed both
+pre-decided mitigations were needed:
+- Indexing: `len_units` and `unit_at` re-encoded the whole `Utf8` text on each call (O(n), even
+  for ASCII), and every `String.prototype` call copied all code units (`into_owned`). `Utf8`
+  now caches its unit length (ASCII ⇔ length equals byte length, O(1) `unit_at`) and builds
+  its code units once in a `OnceCell` on first `units()`; `strings.rs` borrows the `Cow`.
+  Memory cost: a string read by code units keeps both forms (2 extra bytes per unit).
+- `+=`: in-place append is not possible, since `compound()` roots the old value (`protect`) and the binding
+  still holds it, so the `Rc` is never unique. Instead, a concatenation of 256 or more storage
+  bytes is a `Repr::Rope` node (cached length and size), flattened once into a `OnceCell` on
+  first read with an explicit stack, with an iterative `Drop` (a 1M-iteration loop makes a
+  1M-deep chain). `len_units`, `size`, `is_empty` and `concat` do not flatten.
+
+Release `js_check`, `vm-bench/run.sh`, wall seconds (foreign load average 7-9 on the machine,
+so the small cases are noisy):
+
+| case | before (HEAD a2e69fc) | indexing cache | + ropes |
+|---|---|---|---|
+| str_append_1m | 111.75 | 73.78 | 3.58 |
+| str_index_nonascii | 69.39 | 1.29 | 0.83 |
+| strings | 2.19 | 0.34 | 0.24 |
+| loop_let / fib / objects / closures | 1.24 / 1.21 / 1.28 / 1.63 | 1.14 / 0.74 / 0.98 / 1.25 | 0.78 / 0.49 / 0.63 / 1.14 |
+| pe-manichaean (A/B interleaved, median) | 4.53 | 5.25 (vs 5.69 base, same batch) | 4.43 |

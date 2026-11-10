@@ -101,5 +101,24 @@ the test harness `$262`.
 - No behaviour change with one realm: no table entries, no switches. Checked with the
   checkpoint full run (expected 0 lost outside the bucket).
 - Kill line: 3 fix rounds on the createRealm + evalScript bucket.
-- ShadowRealm stays out (it needs the wrapped-function boundary, §3 of the proposal); its
-  cases keep failing on "ShadowRealm is not defined" until it is implemented.
+- ShadowRealm was implemented later (checkpoint 30); see the next section.
+
+## ShadowRealm (proposal, Stage 2.7; `src/script/shadow_realms.rs`)
+
+- `new ShadowRealm()` builds a full realm with `new_realm()` (split out of `create_realm`)
+  and stores its slot in `Data.shadow_realm`.
+- `evaluate(source)` is PerformShadowRealmEval: the source is parsed in the caller's realm (a
+  parse error is the caller's SyntaxError), evaluated as an indirect eval in the shadow realm,
+  and an abrupt completion becomes a TypeError of the caller's realm. The result passes
+  through GetWrappedValue.
+- GetWrappedValue: primitives cross unchanged, callables become wrapped function exotic
+  objects (WrappedFunctionCreate + CopyNameAndLength), other objects throw TypeError.
+  A wrapped function's [[Call]] (`Internal::Wrapped`, dispatched in `invoke_inner`) wraps
+  each argument into the target realm and the result back, and turns a throw into the
+  caller-realm TypeError.
+- Not done: `importValue` (it needs HostLoadImportedModule without a referrer from the
+  module loader); its 6 cases stay Unsupported.
+- Servo path: each ShadowRealm is a full realm with its own intrinsics. The realm count cap
+  (64) is a test guard and must be revisited when this reaches Servo.
+- Smoke: built-ins/ShadowRealm 58/64 (6 importValue unsupported), 0 regressions over 1721
+  neighbour cases against full36.
