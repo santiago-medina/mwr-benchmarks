@@ -710,6 +710,28 @@ impl<'host> Engine<'host> {
     /// A declarative environment holding uninitialized mutable `let` bindings for
     /// `names`; the same as `new_environment(parent, [let n; ...], false)` without
     /// building statements or walking a body.
+    /// A block environment (§14.2.3 BlockDeclarationInstantiation) child of `parent` with
+    /// uninitialized bindings for `names`, immutable where marked constant.
+    pub(super) fn lexical_environment(
+        &mut self,
+        parent: Id,
+        names: &[(String, bool)],
+    ) -> Result<Id> {
+        let all: Vec<String> = names.iter().map(|(n, _)| n.clone()).collect();
+        let id = self.let_environment(Some(parent), &all)?;
+        if let Some(Object::Environment {
+            mutable, constants, ..
+        }) = self.objects.get_mut(&id)
+        {
+            for (name, constant) in names {
+                if *constant {
+                    mutable.remove(name);
+                    constants.insert(name.clone());
+                }
+            }
+        }
+        Ok(id)
+    }
     pub(super) fn let_environment(&mut self, parent: Option<Id>, names: &[String]) -> Result<Id> {
         let mut bindings: NameMap<Option<Value>> =
             names.iter().map(|n| (n.clone(), None)).collect();

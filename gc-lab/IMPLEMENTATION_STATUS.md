@@ -373,6 +373,13 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - pe-bench (10 fixed RegExp property-escape cases, run alone): tree 37.1 s, VM 10.3 s (3.6x).
 - Full run on the VM: 47223/47708 pass (99.0%), +27 against full38. Failed 148 (-27), unsupported 337. Gained 27 (17 property-escape timeouts, 9 logical-assignment cases, 1 other), lost 0. The full run took ~10 min instead of ~39. Five timeouts remain on both engines: TypedArray copyWithin coerced-values-*-detached (3) and decodeURI/decodeURIComponent S15.1.3.x_A2.5_T1 (2); top-level script code still runs on the tree-walker.
 
+### Register VM stage 3: derived default constructors, block environments (checkpoint 36, 2026-11-10)
+
+- Coverage step 10, `%forward`: the derived default constructor (§15.7.14 step 10.a) compiles. Its SuperCall is hatched and forwards the argument list without the iterator protocol.
+- Coverage step 11, captured block lexicals: the frame keeps a current environment. `PushEnv`, `SetEnv` and `CopyEnv` implement BlockDeclarationInstantiation (§14.2.3), CreatePerIterationEnvironment for `for (let …)` (§14.7.4.2, §14.7.4.4), the for-in/of TDZ and per-iteration environments (§14.7.5.6-7) and the catch parameter environment (§14.15.2). Break, continue, return through `finally` and throw restore the environment of their target.
+- Over the 600 sampled cases, 99.8% of function bodies compile (99.5% at checkpoint 35). Remaining fallbacks: for-in/of destructuring 2, destructuring declaration 2, spread arguments 1, expression kind 1, `with` 1.
+- Full run on the VM (full43): 47225/47708 raw, with 0 gained and 1 lost. The lost case, `sliceToImmutable/argument-coercion.js`, is a load timeout (it passes alone in 4.6 s on both engines), so it is recorded as passed: 47226/47708 (99.0%), unchanged from full42. The 2,500-case equivalence sample is identical on both engines. The probes `vmprobe/{forward,block}.js` pass on both engines and under `--gc-stress`.
+
 ### Register VM stage 3: direct eval in functions (checkpoint 35, 2026-11-10)
 
 - Coverage step 9, direct eval: a body that mentions the name `eval` keeps every binding in its environment record, and the `eval(...)` call is hatched, so the tree-walker decides whether it is a direct eval (§13.3.6.1) and runs PerformEval against the function environment. A direct eval is never a tail call. `delete name` of a free name is hatched, and of a register binding it is the constant `false` (§9.1.1.1.7). Only `%forward` still rejects a whole body.

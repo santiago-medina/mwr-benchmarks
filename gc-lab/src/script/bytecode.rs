@@ -327,6 +327,24 @@ pub(super) enum Insn {
         iter: Reg,
         exc: Reg,
     },
+    /// BlockDeclarationInstantiation (§14.2.3) of the environment-resident lexicals of a
+    /// block, catch clause or loop head: a new declarative environment, child of the
+    /// current one, with the uninitialized bindings of `layouts[layout]`. It becomes the
+    /// current environment; `dst` keeps it alive and restorable.
+    PushEnv {
+        dst: Reg,
+        layout: u32,
+    },
+    /// The current environment becomes the one in `src` (`NO_REG`: the function's).
+    SetEnv {
+        src: Reg,
+    },
+    /// CreatePerIterationEnvironment (§14.7.4.4) of the current environment (the `let`
+    /// names of `layouts[layout]`), which becomes current and is stored in `dst`.
+    CopyEnv {
+        dst: Reg,
+        layout: u32,
+    },
 }
 
 pub(super) struct Chunk {
@@ -343,6 +361,8 @@ pub(super) struct Chunk {
     /// Top-level function declarations, instantiated in the function environment at entry
     /// (§10.2.11 step 36).
     pub(super) hoist: Vec<Stmt>,
+    /// Block environment layouts of `PushEnv`/`CopyEnv`: (name index, constant).
+    pub(super) layouts: Vec<Vec<(u32, bool)>>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -352,6 +372,9 @@ pub(super) struct Handler {
     pub(super) target: u32,
     pub(super) exc: Reg,
     pub(super) kind: Option<Reg>,
+    /// The register holding the environment current at `target` (`NO_REG`: the
+    /// function's): a throw out of a block environment restores it.
+    pub(super) env: Reg,
 }
 
 /// A try statement with a finally whose try block or catch is being compiled: a `return`
@@ -360,6 +383,8 @@ struct Finally {
     kind: Reg,
     val: Reg,
     jumps: Vec<usize>,
+    /// `envs.len()` at the try statement: a `return` restores that environment.
+    env_depth: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -382,6 +407,8 @@ struct Control {
     iterator: Option<Reg>,
     /// A switch statement: the target of an unlabeled `break`, not of `continue`.
     switch: bool,
+    /// `envs.len()` at the statement: a break or continue restores that environment.
+    env_depth: usize,
 }
 
 struct Compiler {
@@ -406,17 +433,23 @@ struct Compiler {
     /// Function-level names a closure may capture: they live in the function environment
     /// record, not in registers (BYTECODE_VM.md, stage 3 coverage step 3).
     captured: HashSet<String>,
+    /// Registers holding the block environments around the current code, innermost
+    /// last (stage 3 coverage step 11); empty: the function environment is current.
+    envs: Vec<Reg>,
+    /// Per `enter_scope`: whether it pushed a block environment.
+    entered: Vec<bool>,
+    layouts: Vec<Vec<(u32, bool)>>,
 }
 
 /// The register limit of one function (u16 operands in the design; checked here).
 const MAX_REGISTERS: u32 = 4096;
 
 pub(super) fn compile(params: &[Param], body: &[Stmt]) -> CResult<Chunk> {
-    // `%forward` is the derived default constructor's argument forwarding: it stays on
-    // the tree-walker.
-    if mentions(&[&params, &body], &["%forward"]) {
-        return Err("vm: %forward");
-    }
+    // `%forward` is the derived default constructor's argument forwarding
+    // (§15.7.14 ClassDefinitionEvaluation step 14.a: `super(...args)` over the argument
+    // list). `arguments_needed` keeps the arguments object for such a body, so it is
+    // environment-resident, and the `SuperCall` is hatched: the tree-walker's
+    // `super_call` reads the forwarded values from it (BYTECODE_VM.md, coverage step 10).
     // A direct eval (§19.2.1.1 PerformEval) reads and writes any binding by name, and a
     // sloppy one adds `var`s to the function's variable environment
     // (§19.2.1.3 EvalDeclarationInstantiation). Every binding of such a body is then
@@ -441,6 +474,9 @@ pub(super) fn compile(params: &[Param], body: &[Stmt]) -> CResult<Chunk> {
         finally: vec![],
         non_tail: 0,
         captured: HashSet::new(),
+        envs: vec![],
+        entered: vec![],
+        layouts: vec![],
     };
     let mut all = vec![];
     // FunctionDeclarationInstantiation (§10.2.11 steps 24-28) runs on the tree-walker
@@ -515,6 +551,7 @@ pub(super) fn compile(params: &[Param], body: &[Stmt]) -> CResult<Chunk> {
         params: param_regs,
         handlers,
         hoist,
+        layouts: c.layouts,
     })
 }
 
@@ -689,9 +726,40 @@ impl Compiler {
 
     // ----- scopes and statements -----
 
+    fn current_env(&self) -> Reg {
+        self.envs.last().copied().unwrap_or(NO_REG)
+    }
+    /// A new block environment for `names` (name, constant), made current.
+    fn push_env(&mut self, names: &[(String, bool)]) -> CResult<Reg> {
+        let dst = self.alloc()?;
+        let layout = self.layouts.len() as u32;
+        let entries = names.iter().map(|(n, c)| (self.name(n), *c)).collect();
+        self.layouts.push(entries);
+        self.emit(Insn::PushEnv { dst, layout });
+        self.envs.push(dst);
+        Ok(dst)
+    }
+    /// Leave the innermost block environment.
+    fn pop_env(&mut self) {
+        self.envs.pop();
+        let src = self.current_env();
+        self.emit(Insn::SetEnv { src });
+    }
+    /// Make the environment of depth `depth` current (a jump out of blocks).
+    fn restore_env(&mut self, depth: usize) {
+        if self.envs.len() > depth {
+            let src = if depth == 0 {
+                NO_REG
+            } else {
+                self.envs[depth - 1]
+            };
+            self.emit(Insn::SetEnv { src });
+        }
+    }
     fn enter_scope(&mut self, body: &[Stmt], function: bool) -> CResult<Reg> {
         let mark = self.next;
         let mut scope = HashMap::new();
+        let mut env_names = vec![];
         for statement in parser::direct_statements(body) {
             let (name, constant) = match statement {
                 Stmt::Let(name, _) => (name, false),
@@ -719,8 +787,9 @@ impl Compiler {
                 if function {
                     continue;
                 }
-                // A block (or loop iteration) environment per evaluation: not yet.
-                return Err("vm: captured block lexical");
+                // Environment-resident: a block environment per evaluation.
+                env_names.push((name.clone(), constant));
+                continue;
             }
             let reg = self.alloc()?;
             scope.insert(
@@ -733,10 +802,17 @@ impl Compiler {
             );
         }
         self.scopes.push(scope);
+        self.entered.push(!env_names.is_empty());
+        if !env_names.is_empty() {
+            self.push_env(&env_names)?;
+        }
         Ok(mark)
     }
     fn leave_scope(&mut self, mark: Reg) {
         self.scopes.pop();
+        if self.entered.pop() == Some(true) {
+            self.pop_env();
+        }
         if self.next > mark {
             self.emit(Insn::Clear {
                 from: mark,
@@ -878,6 +954,18 @@ impl Compiler {
                     }
                     None => None,
                 };
+                // §14.7.4.2 ForLoopEvaluation: with environment-resident `let` names in
+                // the head, CreatePerIterationEnvironment runs after the initializer and
+                // after each body, before the update (ForBodyEvaluation steps 2, 3.e).
+                let per_iteration = match init.as_deref() {
+                    Some(init) if self.entered.last() == Some(&true) && is_let(init) => {
+                        let dst = self.current_env();
+                        let layout = self.layouts.len() as u32 - 1;
+                        self.emit(Insn::CopyEnv { dst, layout });
+                        Some((dst, layout))
+                    }
+                    _ => None,
+                };
                 let top = self.here();
                 let exit = match test {
                     Some(test) => Some(self.test(test)?),
@@ -885,6 +973,9 @@ impl Compiler {
                 };
                 self.loop_body(None, body)?;
                 let continue_at = self.here();
+                if let Some((dst, layout)) = per_iteration {
+                    self.emit(Insn::CopyEnv { dst, layout });
+                }
                 if let Some(update) = update {
                     let mark = self.next;
                     let dst = self.alloc()?;
@@ -911,6 +1002,7 @@ impl Compiler {
                     finally_depth: self.finally.len(),
                     iterator: None,
                     switch: false,
+                    env_depth: self.envs.len(),
                 });
                 self.statement(body)?;
                 let control = self.controls.pop().unwrap();
@@ -991,6 +1083,7 @@ impl Compiler {
         }
         let lexical = kind != "var" && kind != "assignment";
         let mark = self.next;
+        let mut env_iteration = false;
         let target = match binding {
             Pattern::Name(name) => Expr::Name(name.clone()),
             Pattern::Target(target)
@@ -1006,21 +1099,34 @@ impl Compiler {
             let Expr::Name(name) = &target else {
                 unreachable!("lexical names")
             };
-            if self.captured.contains(name) {
-                return Err("vm: captured block lexical");
-            }
-            let reg = self.alloc()?;
             let mut scope = HashMap::new();
-            scope.insert(
-                name.clone(),
-                Binding {
-                    reg,
-                    constant: kind == "const",
-                    ready: false,
-                },
-            );
+            if self.captured.contains(name) {
+                // Environment-resident: the TDZ environment around the iterable
+                // (§14.7.5.6 steps 2-5), then a fresh one per iteration (§14.7.5.7 step 6.g).
+                env_iteration = true;
+            } else {
+                let reg = self.alloc()?;
+                scope.insert(
+                    name.clone(),
+                    Binding {
+                        reg,
+                        constant: kind == "const",
+                        ready: false,
+                    },
+                );
+            }
             self.scopes.push(scope);
         }
+        let outer_env = self.current_env();
+        let env_reg = if env_iteration {
+            let Expr::Name(name) = &target else {
+                unreachable!("lexical names")
+            };
+            let reg = self.push_env(&[(name.clone(), kind == "const")])?;
+            Some((reg, self.layouts.len() as u32 - 1))
+        } else {
+            None
+        };
         let iter = self.alloc()?;
         let next = self.alloc()?;
         let src = self.alloc()?;
@@ -1032,6 +1138,10 @@ impl Compiler {
             enumeration,
         });
         self.constant(Value::Undefined, src);
+        if env_reg.is_some() {
+            self.envs.pop();
+            self.emit(Insn::SetEnv { src: outer_env });
+        }
         let top = self.here();
         let value = self.alloc()?;
         let exit = self.emit(Insn::IterNext {
@@ -1041,6 +1151,10 @@ impl Compiler {
             to: 0,
         });
         let start = self.here();
+        if let Some((dst, layout)) = env_reg {
+            self.emit(Insn::PushEnv { dst, layout });
+            self.envs.push(dst);
+        }
         // The tree-walker keeps both loops out of tail position (the iterator closes
         // after a `return`), and so does this.
         self.non_tail += 1;
@@ -1049,6 +1163,10 @@ impl Compiler {
         result?;
         let end = self.here();
         let continue_at = end;
+        if env_reg.is_some() {
+            self.envs.pop();
+            self.emit(Insn::SetEnv { src: outer_env });
+        }
         self.emit(Insn::Loop { to: top });
         if !enumeration {
             let exc = self.alloc()?;
@@ -1060,9 +1178,14 @@ impl Compiler {
                 target,
                 exc,
                 kind: None,
+                env: outer_env,
             });
         }
         self.close_loop(continue_at, Some(exit));
+        if env_reg.is_some() {
+            // A `break` leaves from the iteration environment.
+            self.emit(Insn::SetEnv { src: outer_env });
+        }
         if lexical {
             self.scopes.pop();
         }
@@ -1084,6 +1207,12 @@ impl Compiler {
         enumeration: bool,
     ) -> CResult<()> {
         match target {
+            Expr::Name(name)
+                if (kind == "let" || kind == "const") && self.resolve(name).is_none() =>
+            {
+                let name = self.name(name);
+                self.emit(Insn::InitName { name, src: value });
+            }
             Expr::Name(name) if kind == "let" || kind == "const" => {
                 self.mark_ready(name);
                 let reg = self.resolve(name).unwrap().reg;
@@ -1129,6 +1258,7 @@ impl Compiler {
             finally_depth: self.finally.len(),
             iterator: (!enumeration).then_some(iter),
             switch: false,
+            env_depth: self.envs.len(),
         });
         self.statement(body)
     }
@@ -1183,7 +1313,8 @@ impl Compiler {
             self.emit(Insn::Return { src });
             return;
         };
-        let (kind, val) = (ctx.kind, ctx.val);
+        let (kind, val, depth) = (ctx.kind, ctx.val, ctx.env_depth);
+        self.restore_env(depth);
         if val != src {
             self.emit(Insn::Move { dst: val, src });
         }
@@ -1203,9 +1334,6 @@ impl Compiler {
         if let Some((param, catch_body)) = catch {
             match param {
                 None => {}
-                Some(Pattern::Name(name)) if self.captured.contains(name) => {
-                    return Err("vm: captured block lexical");
-                }
                 Some(Pattern::Name(name)) => {
                     // Annex B.3.4 (a `var` redeclaring the catch parameter) stays on the
                     // tree-walker.
@@ -1226,12 +1354,14 @@ impl Compiler {
                     kind,
                     val,
                     jumps: vec![],
+                    env_depth: self.envs.len(),
                 });
                 Some((kind, val))
             }
             None => None,
         };
         let first_handler = self.handlers.len();
+        let outer_env = self.current_env();
         let start = self.here();
         self.non_tail += 1;
         let result = self.block_body(body, false);
@@ -1251,9 +1381,24 @@ impl Compiler {
                 target: catch_start,
                 exc,
                 kind: None,
+                env: outer_env,
             });
             let mut scope = HashMap::new();
-            if let Some(Pattern::Name(name)) = param {
+            let mut catch_env = false;
+            if let Some(Pattern::Name(name)) = param
+                .as_ref()
+                .filter(|p| matches!(p, Pattern::Name(n) if self.captured.contains(n)))
+            {
+                // §14.15.2 CatchClauseEvaluation steps 2-4: an environment for the
+                // environment-resident parameter.
+                self.push_env(&[(name.clone(), false)])?;
+                let index = self.name(name);
+                self.emit(Insn::InitName {
+                    name: index,
+                    src: exc,
+                });
+                catch_env = true;
+            } else if let Some(Pattern::Name(name)) = param {
                 scope.insert(
                     name.clone(),
                     Binding {
@@ -1271,6 +1416,9 @@ impl Compiler {
             self.scopes.pop();
             self.non_tail -= guard;
             result?;
+            if catch_env {
+                self.pop_env();
+            }
             if let Some((kind, val)) = fin {
                 to_finally.push(self.handlers.len());
                 self.handlers.push(Handler {
@@ -1279,6 +1427,7 @@ impl Compiler {
                     target: 0,
                     exc: val,
                     kind: Some(kind),
+                    env: outer_env,
                 });
             }
         } else if let Some((kind, val)) = fin {
@@ -1289,6 +1438,7 @@ impl Compiler {
                 target: 0,
                 exc: val,
                 kind: Some(kind),
+                env: outer_env,
             });
         }
         debug_assert!(self.handlers[first_handler..]
@@ -1364,6 +1514,7 @@ impl Compiler {
             finally_depth: self.finally.len(),
             iterator: None,
             switch: true,
+            env_depth: self.envs.len(),
         });
         let mut entries = vec![];
         for (test, _) in cases {
@@ -1421,6 +1572,7 @@ impl Compiler {
         for iter in open {
             self.emit(Insn::IterClose { iter });
         }
+        self.restore_env(self.controls[index].env_depth);
         let mark = self.controls[index].mark;
         if self.next > mark {
             self.emit(Insn::Clear {
@@ -1459,6 +1611,7 @@ impl Compiler {
             finally_depth: self.finally.len(),
             iterator: None,
             switch: false,
+            env_depth: self.envs.len(),
         });
         self.statement(body)
     }
@@ -2332,7 +2485,9 @@ fn reference_registers(
                 | Insn::New { dst, .. }
                 | Insn::NewArray { dst }
                 | Insn::NewObject { dst }
-                | Insn::IterNext { dst, .. } => Some(dst),
+                | Insn::IterNext { dst, .. }
+                | Insn::PushEnv { dst, .. }
+                | Insn::CopyEnv { dst, .. } => Some(dst),
                 Insn::GetIterator { iter, next, .. } => {
                     changed |= mark(&mut refs, next);
                     Some(iter)
@@ -2358,7 +2513,8 @@ fn reference_registers(
                 | Insn::DefineField { .. }
                 | Insn::InitName { .. }
                 | Insn::IterClose { .. }
-                | Insn::IterCloseThrow { .. } => None,
+                | Insn::IterCloseThrow { .. }
+                | Insn::SetEnv { .. } => None,
             };
             if let Some(reg) = written {
                 changed |= mark(&mut refs, reg);
@@ -2422,6 +2578,16 @@ fn finish(
         })
         .collect();
     (code, handlers)
+}
+
+/// A `let` declaration (the for-head kind with per-iteration bindings, §14.7.4.2 step 2).
+fn is_let(init: &Stmt) -> bool {
+    match init {
+        Stmt::Let(..) => true,
+        Stmt::Bind { kind, .. } => kind == "let",
+        Stmt::Declarations(items) => items.first().is_some_and(is_let),
+        _ => false,
+    }
 }
 
 /// Literals compile to constants even where the tree-walker could evaluate them.

@@ -143,8 +143,11 @@ impl Engine<'_> {
         let strict = self.env_strict(local);
         let loop_mark = self.roots_mark();
         let mut pc = 0usize;
+        // The current environment: `local`, or a block environment held in a register
+        // (`PushEnv`; stage 3 coverage step 11).
+        let mut env = local;
         loop {
-            match self.execute_from(chunk, local, base, strict, loop_mark, &mut pc) {
+            match self.execute_from(chunk, &mut env, local, base, strict, loop_mark, &mut pc) {
                 // §14.15.3: a throw completion inside a try block (or a catch with a finally)
                 // goes to its handler; other abrupt completions (limits, Unsupported, host
                 // errors) are not catchable, as in the tree-walker.
@@ -154,6 +157,7 @@ impl Engine<'_> {
                     else {
                         return Err(ScriptError::Thrown(ex));
                     };
+                    env = self.env_in(base, handler.env, local);
                     self.set_reg(base, handler.exc, ex.value);
                     if let Some(kind) = handler.kind {
                         self.set_reg(base, kind, Value::number(1.0));
@@ -166,10 +170,29 @@ impl Engine<'_> {
     }
 
     /// The dispatch loop from `*pc`; a throw leaves `*pc` one past the faulting instruction.
+    /// The environment in register `reg` (`NO_REG`: the function environment `local`).
+    fn env_in(&self, base: usize, reg: u32, local: Id) -> Id {
+        if reg == NO_REG {
+            return local;
+        }
+        match self.reg(base, reg) {
+            Value::Object(id) => id,
+            _ => unreachable!("environment register"),
+        }
+    }
+    fn block_env(&mut self, parent: Id, layout: &[(u32, bool)], chunk: &Chunk) -> Result<Id> {
+        let names: Vec<(String, bool)> = layout
+            .iter()
+            .map(|(name, constant)| (chunk.names[*name as usize].clone(), *constant))
+            .collect();
+        self.lexical_environment(parent, &names)
+    }
+    #[allow(clippy::too_many_arguments)]
     fn execute_from(
         &mut self,
         chunk: &Chunk,
-        local: Id,
+        env: &mut Id,
+        function_env: Id,
         base: usize,
         strict: bool,
         loop_mark: usize,
@@ -200,18 +223,18 @@ impl Engine<'_> {
                     return self.throw_error("TypeError", "assignment to constant")
                 }
                 Insn::GetName { dst, name } => {
-                    let value = self.lookup(local, &chunk.names[name as usize])?;
+                    let value = self.lookup(*env, &chunk.names[name as usize])?;
                     self.set_reg(base, dst, value);
                 }
                 Insn::GetCallee { dst, this, name } => {
                     let (value, object) =
-                        self.lookup_with_base(local, &chunk.names[name as usize])?;
+                        self.lookup_with_base(*env, &chunk.names[name as usize])?;
                     self.set_reg(base, dst, value);
                     let receiver = object.map(Value::Object).unwrap_or(Value::Undefined);
                     self.set_reg(base, this, receiver);
                 }
                 Insn::TypeofName { dst, name } => {
-                    let value = match self.lookup(local, &chunk.names[name as usize]) {
+                    let value = match self.lookup(*env, &chunk.names[name as usize]) {
                         Err(ScriptError::Thrown(ex))
                             if ex.name.as_deref() == Some("ReferenceError")
                                 && ex.message.ends_with(" is not defined") =>
@@ -226,7 +249,7 @@ impl Engine<'_> {
                 }
                 Insn::ResolveName { dst, name } => {
                     let encoded =
-                        match self.resolve_name(local, &chunk.names[name as usize], strict)? {
+                        match self.resolve_name(*env, &chunk.names[name as usize], strict)? {
                             super::vm::Resolved::With(object) => Value::Object(object),
                             super::vm::Resolved::Found => Value::Bool(true),
                             super::vm::Resolved::Unresolvable => Value::Bool(false),
@@ -239,7 +262,7 @@ impl Engine<'_> {
                     name,
                 } => {
                     let encoded = self.reg(base, reference);
-                    let r = self.reference_of(&encoded, &chunk.names[name as usize], local, strict);
+                    let r = self.reference_of(&encoded, &chunk.names[name as usize], *env, strict);
                     let value = self.reference_get(&r)?;
                     self.set_reg(base, dst, value);
                 }
@@ -249,7 +272,7 @@ impl Engine<'_> {
                     src,
                 } => {
                     let encoded = self.reg(base, reference);
-                    let r = self.reference_of(&encoded, &chunk.names[name as usize], local, strict);
+                    let r = self.reference_of(&encoded, &chunk.names[name as usize], *env, strict);
                     let value = self.reg(base, src);
                     self.reference_set(r, value)?;
                 }
@@ -261,11 +284,11 @@ impl Engine<'_> {
                 } => {
                     let e = &chunk.exprs[expr as usize];
                     let value = if name != u32::MAX {
-                        self.eval_named(e, local, &chunk.names[name as usize])?
+                        self.eval_named(e, *env, &chunk.names[name as usize])?
                     } else if tail && self.tail_ok && self.non_tail == 0 {
-                        self.eval_tail(e, local)?
+                        self.eval_tail(e, *env)?
                     } else {
-                        self.eval(e, local)?
+                        self.eval(e, *env)?
                     };
                     self.set_reg(base, dst, value);
                 }
@@ -338,7 +361,7 @@ impl Engine<'_> {
                     let Expr::Template(t) = &chunk.exprs[expr as usize] else {
                         return Err(ScriptError::Runtime("vm: template site"));
                     };
-                    let value = self.template_object(t, local)?;
+                    let value = self.template_object(t, *env)?;
                     self.set_reg(base, dst, value);
                 }
                 Insn::TemplateConcat { dst, src, part } => {
@@ -522,9 +545,25 @@ impl Engine<'_> {
                     let id = self.new_object(Some(prototype))?;
                     self.set_reg(base, dst, Value::Object(id));
                 }
+                Insn::PushEnv { dst, layout } => {
+                    let new = self.block_env(*env, &chunk.layouts[layout as usize], chunk)?;
+                    self.set_reg(base, dst, Value::Object(new));
+                    *env = new;
+                }
+                Insn::SetEnv { src } => *env = self.env_in(base, src, function_env),
+                Insn::CopyEnv { dst, layout } => {
+                    let names: Vec<String> = chunk.layouts[layout as usize]
+                        .iter()
+                        .filter(|(_, constant)| !constant)
+                        .map(|(name, _)| chunk.names[*name as usize].clone())
+                        .collect();
+                    let new = self.clone_iteration(*env, &names)?;
+                    self.set_reg(base, dst, Value::Object(new));
+                    *env = new;
+                }
                 Insn::InitName { name, src } => {
                     let value = self.reg(base, src);
-                    self.initialize(local, chunk.names[name as usize].as_str(), value)?;
+                    self.initialize(*env, chunk.names[name as usize].as_str(), value)?;
                 }
                 Insn::GetIterator {
                     iter,

@@ -643,7 +643,7 @@ exit:
   runs B, as the tree-walker does.
 - Bindings: a `let`/`const` name gets a register scope pushed before the iterable is compiled, so
   `for (let x of x)` reads hit `Tdz` (§14.7.5.6 step 2). Each iteration writes the register, which
-  is the per-iteration copy, because a captured name is rejected (`captured block lexical`).
+  is the per-iteration copy, and a captured name gets a fresh environment per iteration (step 11).
   - `var` and assignment names go through `store_name`: a register Move, or ResolveName/SetRef
     after the value, as in step 6.h.i.
   - Member and computed assignment targets evaluate their reference after IteratorValue.
@@ -771,3 +771,61 @@ verdicts on both engines: 413 passed. The 13 failures were already failing in t2
 600-case sample now compiles **99.5 %** of bodies. Remaining reasons: `%forward` 10,
 `captured block lexical` 5, `for-in/of destructuring` 2, `destructuring declaration` 2,
 `spread arguments` 1, `with` 1, other 1.
+
+### Stage 3, coverage steps 10-11: `%forward` and block environments (2026-11-10)
+
+**Step 10, the derived default constructor.** `constructor(...args) { super(...args); }`
+(§15.7.14 step 10.a) is no longer rejected. The SuperCall is hatched, `arguments_needed` keeps
+`arguments` environment-resident, and the tree-walker's `super_call` forwards it the same way as
+before. It does not use the iterator protocol, because the spec forwards the argument list as it is
+(test262 `default-constructor-spread-override.js`). `vmprobe/forward.js` (24 checks) covers
+`extends null`, `Reflect.construct` with a new.target, builtin parents and an overridden
+`Array.prototype[Symbol.iterator]`.
+
+**Step 11, captured block lexicals.** The frame now keeps a *current environment* (`env` in
+`execute_from`). It starts as the function environment and can be changed by three instructions:
+- `PushEnv { dst, layout }` creates a declarative environment whose parent is the current one, with
+  the layout's names uninitialized (`const` names are immutable; BlockDeclarationInstantiation,
+  §14.2.3). It stores the environment in `dst` and makes it current.
+- `SetEnv { src }` makes the environment in `src` current. NO_REG means the function environment.
+- `CopyEnv { dst, layout }` performs CreatePerIterationEnvironment (§14.7.4.4). It copies the
+  current environment's mutable bindings into a new environment with the same parent.
+
+Every name lookup that the dispatch loop used to do against the function environment (GetName,
+ResolveName, references, the hatches, direct eval, template objects) now uses the current
+environment. So a closure created inside a block captures the block's environment. Register
+bindings are unaffected: only the names that a closure mentions are environment-resident.
+
+The compiler tracks an environment stack (`envs`, with the register that holds each one), and
+every `Control` and `Finally` records the depth at which it was opened. Leaving a scope by any
+path restores the right environment:
+- falling through emits `SetEnv` to the enclosing environment;
+- `break`/`continue` (`exit_to`) and `return` through a `finally` restore the target's depth;
+- a throw restores the environment saved in the handler (`Handler.env`), before the catch or
+  finally body runs.
+
+The environment registers are references to the GC (`reference_registers`), so the Clears that
+the liveness pass emits for them are kept, and the frame roots them through vm_seeds.
+
+Loops and catch:
+- `for (let …; …; …)`, ForLoopEvaluation §14.7.4.2: the init runs in a block environment. A
+  `CopyEnv` follows the init and is emitted again at the continue point, before the update, so each
+  iteration's closures keep their own copy. `const` heads need no copy (§14.7.4.2 step 3.a).
+- `for (let/const x in/of …)` with a captured `x`: the TDZ environment of
+  ForIn/OfHeadEvaluation (§14.7.5.6 step 2) is pushed around the iterable and dropped after
+  GetIterator. Every iteration pushes a fresh environment (§14.7.5.7 step 6.g) with the same
+  register and layout, and `InitName` binds the value. The loop's handler restores the outer
+  environment before IteratorClose.
+- `catch (e)` with a captured `e` (CatchClauseEvaluation, §14.15.2): the parameter gets its own
+  environment, initialized from the exception register. The check that rejects `var e` redeclaring
+  a catch parameter is kept.
+
+Gate (`c36_gate.sh`, `c37_gate.sh`): `vmprobe/block.js` passes on the tree-walker, on the VM and
+under `--gc-stress`. It covers blocks, for-let closures in the init and the update, for-const,
+for-of/in closures and the TDZ, catch parameters, shadowing, environment restore on
+break/continue/throw/return through `finally`, switch, nested loops, and direct eval inside a
+block. All earlier probes still pass. The `statements/{block,for,let,const,try,for-in}`
+directories give 1002/1007 on both engines, and the 2,500-case equivalence sample is identical
+(`passed=2236`). The 600-case sample now compiles **99.8 %** of bodies. Remaining reasons:
+`for-in/of destructuring` 2, `destructuring declaration` 2, `spread arguments` 1,
+`expression kind` 1, `with` 1.
