@@ -44,7 +44,7 @@ impl Engine<'_> {
                 Some(value) => Ok(value),
                 None => self.throw_error("RangeError", "number is not a finite integer"),
             },
-            Value::String(text) => match self.big_parse(&text)? {
+            Value::String(text) => match self.big_parse(&text.lossy())? {
                 Some(value) => Ok(value),
                 None => self.throw_error("SyntaxError", "invalid BigInt string"),
             },
@@ -180,8 +180,12 @@ impl Engine<'_> {
     pub(super) fn big_order(&mut self, a: Value, b: Value) -> Result<Option<Ordering>> {
         match (a, b) {
             (Value::BigInt(a), Value::BigInt(b)) => Ok(Some(a.compare(&b))),
-            (Value::BigInt(a), Value::String(b)) => Ok(self.big_parse(&b)?.map(|b| a.compare(&b))),
-            (Value::String(a), Value::BigInt(b)) => Ok(self.big_parse(&a)?.map(|a| a.compare(&b))),
+            (Value::BigInt(a), Value::String(b)) => {
+                Ok(self.big_parse(&b.lossy())?.map(|b| a.compare(&b)))
+            }
+            (Value::String(a), Value::BigInt(b)) => {
+                Ok(self.big_parse(&a.lossy())?.map(|a| a.compare(&b)))
+            }
             (Value::BigInt(a), b) => Ok(Self::compare_big_float(&a, self.to_number(b)?)),
             (a, Value::BigInt(b)) => {
                 Ok(Self::compare_big_float(&b, self.to_number(a)?).map(Ordering::reverse))
@@ -200,7 +204,7 @@ impl Engine<'_> {
         }
         match (a, b) {
             (Value::BigInt(a), Value::String(b)) | (Value::String(b), Value::BigInt(a)) => {
-                Ok(self.big_parse(&b)?.is_some_and(|b| *a == b))
+                Ok(self.big_parse(&b.lossy())?.is_some_and(|b| *a == b))
             }
             (Value::BigInt(a), Value::Number(b)) | (Value::Number(b), Value::BigInt(a)) => {
                 Ok(Big::from_float(f64::from_bits(b)).is_some_and(|b| *a == b))
@@ -321,6 +325,7 @@ impl Engine<'_> {
         if !(2.0..=36.0).contains(&radix) {
             return self.throw_error("RangeError", "invalid BigInt radix");
         }
-        self.big_string(&value, radix as u32).map(Value::String)
+        self.big_string(&value, radix as u32)
+            .map(|s| Value::String(s.into()))
     }
 }

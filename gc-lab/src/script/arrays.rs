@@ -1,4 +1,5 @@
 //! Array exotics share descriptor validation and transactional GC edges with ordinary objects.
+use super::js_string::{Builder, JsString};
 use super::{
     objects::{Descriptor, Key, Kind, Property},
     vm::{Engine, ScriptError, Value},
@@ -44,88 +45,112 @@ impl Engine<'_> {
                 desc.value = Some(Value::number(uint as f64));
             }
         }
-        let mut data = self.data(id)?.clone();
-        let length = data.own("length").unwrap().clone();
-        let Kind::Data {
+        if let Some(index) = key.index() {
+            // ArraySetLength is not involved (§10.4.2.1 step 2): one key plus `length`.
+            let Some(Kind::Data {
+                value: Value::Number(old),
+                writable,
+            }) = self.data(id)?.own("length").map(|p| p.kind.clone())
+            else {
+                unreachable!()
+            };
+            let old = f64::from_bits(old) as u32;
+            if index >= old && !writable {
+                return Ok(false);
+            }
+            if !self.define_in_place(id, key, desc)? {
+                return Ok(false);
+            }
+            if index >= old {
+                if let Some(p) = self.data_mut(id)?.properties.get_mut(&Key::from("length")) {
+                    p.kind = Kind::Data {
+                        value: Value::number(index as f64 + 1.0),
+                        writable,
+                    };
+                }
+            }
+            return Ok(true);
+        }
+        if key != Key::from("length") {
+            return self.define_in_place(id, key, desc);
+        }
+        // ArraySetLength (§10.4.2.4), stored in place: no Data clone per write.
+        let Some(Kind::Data {
             value: Value::Number(old),
             writable,
-        } = length.kind
+        }) = self.data(id)?.own("length").map(|p| p.kind.clone())
         else {
             unreachable!()
         };
         let old = f64::from_bits(old) as u32;
-        let mut accepted = true;
-        if key == Key::from("length") {
-            let new = if let Some(Value::Number(n)) = desc.value {
-                f64::from_bits(n) as u32
-            } else {
-                old
-            };
-            if new < old {
-                if !writable {
-                    return Ok(false);
-                }
-                let final_readonly = desc.writable == Some(false);
-                if final_readonly {
-                    desc.writable = Some(true);
-                }
-                if !data.apply(key.clone(), desc) {
-                    return Ok(false);
-                }
-                let mut indices: Vec<_> = data
-                    .properties
-                    .iter()
-                    .filter_map(|(k, _)| k.index().filter(|i| *i >= new).map(|i| (i, k.clone())))
-                    .collect();
-                indices.sort_by(|a, b| b.0.cmp(&a.0));
-                for (index, k) in indices {
-                    if !data.own(&k).unwrap().configurable {
-                        data.apply(
-                            Key::from("length"),
-                            Descriptor {
-                                value: Some(Value::number(index as f64 + 1.0)),
-                                ..Descriptor::default()
-                            },
-                        );
-                        accepted = false;
-                        break;
-                    }
-                    data.properties.retain(|(key, _)| *key != k);
-                }
-                if final_readonly {
-                    data.apply(
-                        Key::from("length"),
-                        Descriptor {
-                            writable: Some(false),
-                            ..Descriptor::default()
-                        },
-                    );
-                }
-            } else if !data.apply(key, desc) {
-                return Ok(false);
-            }
+        let new = if let Some(Value::Number(n)) = desc.value {
+            f64::from_bits(n) as u32
         } else {
-            if let Some(index) = key.index() {
-                if index >= old && !writable {
-                    return Ok(false);
-                }
-                if !data.apply(key, desc) {
-                    return Ok(false);
-                }
-                if index >= old {
-                    data.apply(
-                        Key::from("length"),
-                        Descriptor {
-                            value: Some(Value::number(index as f64 + 1.0)),
-                            ..Descriptor::default()
-                        },
-                    );
-                }
-            } else if !data.apply(key, desc) {
-                return Ok(false);
-            }
+            old
+        };
+        // Steps 12-13: newLen >= oldLen is OrdinaryDefineOwnProperty.
+        if new >= old {
+            return self.define_in_place(id, key, desc);
         }
-        self.replace_data(id, data)?;
+        // Step 14.
+        if !writable {
+            return Ok(false);
+        }
+        // Steps 15-16.
+        let final_readonly = desc.writable == Some(false);
+        if final_readonly {
+            desc.writable = Some(true);
+        }
+        // Steps 17-18.
+        if !self.define_in_place(id, key, desc)? {
+            return Ok(false);
+        }
+        // Step 19: delete own array indices >= newLen, descending. Probe the
+        // range directly when it is shorter than the property list (pop, length -= 1).
+        let data = self.data(id)?;
+        let mut indices: Vec<u32> = if ((old - new) as usize) <= data.properties.len() {
+            (new..old)
+                .rev()
+                .filter(|i| data.properties.get(&Key::String(i.to_string())).is_some())
+                .collect()
+        } else {
+            let mut v: Vec<u32> = data
+                .properties
+                .iter()
+                .filter_map(|(k, _)| k.index().filter(|i| *i >= new))
+                .collect();
+            v.sort_by(|a, b| b.cmp(a));
+            v
+        };
+        let mut accepted = true;
+        for index in indices.drain(..) {
+            let k = Key::String(index.to_string());
+            if !self.data(id)?.own(&k).unwrap().configurable {
+                // Step 19.d.iii.
+                self.define_in_place(
+                    id,
+                    Key::from("length"),
+                    Descriptor {
+                        value: Some(Value::number(index as f64 + 1.0)),
+                        ..Descriptor::default()
+                    },
+                )?;
+                accepted = false;
+                break;
+            }
+            self.remove_in_place(id, &k)?;
+        }
+        // Step 20 (and 19.d.iii.2).
+        if final_readonly {
+            self.define_in_place(
+                id,
+                Key::from("length"),
+                Descriptor {
+                    writable: Some(false),
+                    ..Descriptor::default()
+                },
+            )?;
+        }
         Ok(accepted)
     }
     pub(super) fn length_of(&mut self, id: Id) -> Result<u64> {
@@ -360,32 +385,32 @@ impl Engine<'_> {
             }
             "Array.prototype.toLocaleString" => self.locale_join(id, length as u64),
             "Array.prototype.join" => {
-                let separator = if arg(0) == Value::Undefined {
+                let separator: JsString = if arg(0) == Value::Undefined {
                     ",".into()
                 } else {
-                    self.to_string(arg(0))?
+                    self.to_js_string(arg(0))?
                 };
                 if self.join_stack.contains(&id) {
-                    return Ok(Value::String(String::new()));
+                    return Ok(Value::String(String::new().into()));
                 }
                 self.join_stack.push(id);
                 let result = (|| {
-                    let mut output = String::new();
+                    let mut output = Builder::default();
                     for index in 0..length {
                         self.tick()?;
                         if index > 0 {
-                            output.push_str(&separator);
+                            output.push(&separator);
                         }
                         let v = self.get_member(Value::Object(id), index.to_string())?;
                         self.protect(&v)?;
                         if !matches!(v, Value::Null | Value::Undefined) {
-                            output.push_str(&self.to_string(v)?);
+                            output.push(&self.to_js_string(v)?);
                         }
-                        if output.len() > 1_048_576 {
+                        if output.size() > 1_048_576 {
                             return Err(ScriptError::Runtime("string size limit"));
                         }
                     }
-                    Ok(Value::String(output))
+                    Ok(Value::String(output.finish()))
                 })();
                 self.join_stack.pop();
                 result
@@ -464,7 +489,7 @@ impl Engine<'_> {
     /// The separator is the implementation-defined list separator ",".
     pub(super) fn locale_join(&mut self, id: Id, length: u64) -> Result<Value> {
         if self.join_stack.contains(&id) {
-            return Ok(Value::String(String::new()));
+            return Ok(Value::String(String::new().into()));
         }
         self.join_stack.push(id);
         let result = (|| {
@@ -488,7 +513,7 @@ impl Engine<'_> {
                     return Err(ScriptError::Runtime("string size limit"));
                 }
             }
-            Ok(Value::String(output))
+            Ok(Value::String(output.into()))
         })();
         self.join_stack.pop();
         result

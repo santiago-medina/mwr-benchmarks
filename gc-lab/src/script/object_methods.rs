@@ -4,7 +4,6 @@ use super::{
     objects::Key,
     vm::{Engine, ScriptError, Value},
 };
-use crate::dual::Id;
 type Result<T> = std::result::Result<T, ScriptError>;
 impl Engine<'_> {
     pub(super) fn object_extended(&mut self, name: &str, args: Vec<Value>) -> Result<Value> {
@@ -65,7 +64,7 @@ impl Engine<'_> {
                 let value = if name == "Object.entries" {
                     let pair = e.new_array(2)?;
                     e.protect(&Value::Object(pair))?;
-                    e.put_data(pair, "0", Value::String(key))?;
+                    e.put_data(pair, "0", Value::String(key.into()))?;
                     e.put_data(pair, "1", value)?;
                     Value::Object(pair)
                 } else {

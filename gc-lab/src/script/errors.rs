@@ -35,7 +35,7 @@ impl Engine<'_> {
         let message = args.get(offset).cloned().unwrap_or(Value::Undefined);
         if message != Value::Undefined {
             let message = self.to_string(message)?;
-            self.hidden(id, "message", Value::String(message))?;
+            self.hidden(id, "message", Value::String(message.into()))?;
         }
         if name == "SuppressedError" {
             // Steps 4-5: CreateNonEnumerableDataPropertyOrThrow "error", "suppressed".
@@ -82,11 +82,11 @@ impl Engine<'_> {
             self.to_string(message)?
         };
         Ok(Value::String(if name.is_empty() {
-            message
+            message.into()
         } else if message.is_empty() {
-            name
+            name.into()
         } else {
-            format!("{name}: {message}")
+            (format!("{name}: {message}")).into()
         }))
     }
 }

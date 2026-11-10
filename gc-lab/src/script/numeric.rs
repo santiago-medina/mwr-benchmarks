@@ -170,8 +170,8 @@ impl Engine<'_> {
         let arg = |i| args.get(i).cloned().unwrap_or(Value::Undefined);
         match name {
             "parseFloat" => {
-                let s = self.to_string(arg(0))?;
-                return Ok(Value::number(parse_float(&s)));
+                let s = self.to_js_string(arg(0))?;
+                return Ok(Value::number(parse_float(&s.scalar_prefix())));
             }
             "isNaN" => return Ok(Value::Bool(self.to_number(arg(0))?.is_nan())),
             "isFinite" => return Ok(Value::Bool(self.to_number(arg(0))?.is_finite())),

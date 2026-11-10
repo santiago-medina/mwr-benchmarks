@@ -271,3 +271,12 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Host API: `ModuleRequest.phase` and `ModuleLoad::ModuleSource { url, class_name, host_defined }` (additive).
 - Full run: 45832/47708 pass (96.1%), +523 vs checkpoint 18. Failed 715 (+1), unsupported 1161 (-524). Lost 3, all runner timeouts under load (TypedArray set resizable-buffer, encodeURI/encodeURIComponent A2.5_T1); each passes alone in under 5 s.
 - Largest remaining buckets: unpaired UTF-16 strings 442, createRealm 181, test262 agents 109, import attributes 64 + 19 strict + 15 negative parse, ShadowRealm 57 + 64 non-pass in its dir, runner timeouts 68, await expression shape 46, "unsupported character" 70, call depth limit 34.
+
+### Gap 20: ill-formed UTF-16 strings + in-place property writes (checkpoint 20, 2026-11-10)
+
+- Strings are `Utf8` or `Units` (ill-formed UTF-16). RegExp runs over code units, and lone surrogates flow through String methods, JSON, URI and keys. Design: STRINGS.md.
+- Own properties: `PropertyMap` (insertion order + hash index above 8 keys), in-place [[DefineOwnProperty]] / delete / ArraySetLength. Writes and deletes are linear now (push x8000 8554 → 54-82 ms). Design and numbers: PROPERTIES.md.
+- Full run: 45897/47708 pass (96.2%), +65 vs checkpoint 19. Failed 1104 (+389), unsupported 707 (-454). Lost 0. The new failures are mostly runner timeouts (457) of RegExp cases that were unsupported before: interpreter throughput.
+- After the run: exact lone-surrogate handling in decodeURI/decodeURIComponent and parseInt/parseFloat (20 cases out of the 29 left).
+- Largest remaining buckets: runner timeouts 457 (roadmap B trigger), createRealm 181, test262 agents 109, import attributes 64 + 19 strict, ShadowRealm 57, await expression shape 46, "unsupported character" 44 + 26, call depth limit 34.
+- Next gap: roadmap B, the bytecode VM design note (resolved binding slots, dense elements, shapes).

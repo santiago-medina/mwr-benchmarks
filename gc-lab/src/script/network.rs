@@ -248,7 +248,7 @@ impl Engine<'_> {
         result: std::result::Result<String, String>,
     ) -> Result<bool> {
         self.complete_network(serial, true, |e| match result {
-            Ok(body) => Ok((Value::String(body), false)),
+            Ok(body) => Ok((Value::String(body.into()), false)),
             Err(message) => Ok((e.error_value("TypeError", &message)?, true)),
         })
     }
@@ -294,7 +294,7 @@ impl Engine<'_> {
             return match name {
                 "Response.status" => Ok(Value::number(response.headers.status as f64)),
                 "Response.ok" => Ok(Value::Bool((200..300).contains(&response.headers.status))),
-                "Response.url" => Ok(Value::String(response.headers.url)),
+                "Response.url" => Ok(Value::String(response.headers.url.into())),
                 "Response.bodyUsed" => Ok(Value::Bool(response.used)),
                 _ => Err(ScriptError::Unsupported("Response operation")),
             };
@@ -349,7 +349,7 @@ impl Engine<'_> {
                 return Ok(cap.promise);
             }
             if !response.headers.has_body {
-                self.invoke(cap.resolve, vec![Value::String(String::new())])?;
+                self.invoke(cap.resolve, vec![Value::String(String::new().into())])?;
                 return Ok(cap.promise);
             }
             let serial = self.request(cap.clone(), Some(receiver))?;

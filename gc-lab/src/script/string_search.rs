@@ -83,23 +83,23 @@ impl Engine<'_> {
                 return self.invoke_this(hook, search, vec![receiver, second]);
             }
         }
-        let text = self.to_string(receiver)?;
-        let units: Vec<u16> = text.encode_utf16().collect();
+        let text = self.to_js_string(receiver)?;
+        let units: Vec<u16> = text.units().into_owned();
         if split {
             let limit = if second == Value::Undefined {
                 u32::MAX
             } else {
                 super::numeric::uint32(self.to_number(second)?)
             } as usize;
-            let separator = self.to_string(search.clone())?;
-            let separator: Vec<u16> = separator.encode_utf16().collect();
+            let separator = self.to_js_string(search.clone())?;
+            let separator: Vec<u16> = separator.units().into_owned();
             let out = self.new_array(0)?;
             self.protect(&Value::Object(out))?;
             if limit == 0 {
                 return Ok(Value::Object(out));
             }
             if search == Value::Undefined {
-                self.append_array(out, Some(Value::String(text)), false)?;
+                self.append_array(out, Some(Value::String(text.clone())), false)?;
             } else if separator.is_empty() {
                 for unit in units.iter().take(limit) {
                     self.tick()?;
@@ -124,13 +124,13 @@ impl Engine<'_> {
             }
             return Ok(Value::Object(out));
         }
-        let needle = self.to_string(search)?;
-        let search: Vec<u16> = needle.encode_utf16().collect();
+        let needle = self.to_js_string(search)?;
+        let search: Vec<u16> = needle.units().into_owned();
         let functional = self.callable(&second);
         let template: Vec<u16> = if functional {
             vec![]
         } else {
-            self.to_string(second.clone())?.encode_utf16().collect()
+            self.to_js_string(second.clone())?.units().into_owned()
         };
         let mut out = vec![];
         let mut from = 0;
@@ -144,13 +144,13 @@ impl Engine<'_> {
                     second.clone(),
                     Value::Undefined,
                     vec![
-                        Value::String(needle.clone()),
+                        Value::String(needle.clone().into()),
                         Value::number(at as f64),
-                        Value::String(text.clone()),
+                        Value::String(text.clone().into()),
                     ],
                 )?;
                 self.protect(&replacement)?;
-                let replacement: Vec<u16> = self.to_string(replacement)?.encode_utf16().collect();
+                let replacement: Vec<u16> = self.to_js_string(replacement)?.units().into_owned();
                 append(&mut out, &replacement)?;
             } else {
                 let mut i = 0;

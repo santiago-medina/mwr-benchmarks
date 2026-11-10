@@ -29,14 +29,18 @@ pub(super) fn segment(
     Err(error("unterminated template literal"))
 }
 pub(super) fn cook(raw: &str) -> Result<Option<String>, ()> {
-    cook_mode(raw, None)
+    match cook_mode(raw, None) {
+        Some(units) => String::from_utf16(&units).map(Some).map_err(|_| ()),
+        None => Ok(None),
+    }
 }
 /// String-literal cooking: legacy octal (`\07`) and `\8` `\9` escapes are accepted and
 /// reported through `legacy` (an early error only in strict code).
-pub(super) fn cook_legacy(raw: &str, legacy: &mut bool) -> Result<Option<String>, ()> {
+/// Returns the SV code units (§12.9.4.2), which may contain lone surrogates.
+pub(super) fn cook_legacy(raw: &str, legacy: &mut bool) -> Option<Vec<u16>> {
     cook_mode(raw, Some(legacy))
 }
-fn cook_mode(raw: &str, mut legacy: Option<&mut bool>) -> Result<Option<String>, ()> {
+fn cook_mode(raw: &str, mut legacy: Option<&mut bool>) -> Option<Vec<u16>> {
     let mut chars = raw.chars().peekable();
     let mut units = vec![];
     while let Some(ch) = chars.next() {
@@ -45,7 +49,7 @@ fn cook_mode(raw: &str, mut legacy: Option<&mut bool>) -> Result<Option<String>,
             continue;
         }
         let Some(ch) = chars.next() else {
-            return Ok(None);
+            return None;
         };
         let ch = match ch {
             '\n' | '\u{2028}' | '\u{2029}' => continue,
@@ -75,7 +79,7 @@ fn cook_mode(raw: &str, mut legacy: Option<&mut bool>) -> Result<Option<String>,
                     char::from_u32(value).unwrap()
                 }
             }
-            '0'..='9' => return Ok(None),
+            '0'..='9' => return None,
             'x' | 'u' => {
                 let braced = ch == 'u' && chars.peek() == Some(&'{');
                 if braced {
@@ -93,19 +97,19 @@ fn cook_mode(raw: &str, mut legacy: Option<&mut bool>) -> Result<Option<String>,
                         break;
                     }
                     let Some(digit) = chars.next().and_then(|ch| ch.to_digit(16)) else {
-                        return Ok(None);
+                        return None;
                     };
                     number = match number.checked_mul(16).and_then(|n| n.checked_add(digit)) {
                         Some(n) => n,
-                        None => return Ok(None),
+                        None => return None,
                     };
                     digits += 1;
                     if number > 0x10ffff {
-                        return Ok(None);
+                        return None;
                     }
                 }
                 if digits == 0 {
-                    return Ok(None);
+                    return None;
                 }
                 if number <= 0xffff {
                     units.push(number as u16);
@@ -120,5 +124,5 @@ fn cook_mode(raw: &str, mut legacy: Option<&mut bool>) -> Result<Option<String>,
         };
         units.extend(ch.encode_utf16(&mut [0; 2]).iter().copied());
     }
-    String::from_utf16(&units).map(Some).map_err(|_| ())
+    Some(units)
 }

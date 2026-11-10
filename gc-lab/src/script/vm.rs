@@ -57,7 +57,7 @@ pub(super) enum Value {
     Number(u64),
     BigInt(std::rc::Rc<super::bigint::Big>),
     Symbol(u64),
-    String(String),
+    String(super::js_string::JsString),
     Object(Id),
     Document,
     Native { receiver: Option<Id>, name: String },
@@ -458,7 +458,7 @@ impl<'host> Engine<'host> {
     }
     pub fn binding_string(&mut self, name: &str) -> Result<String> {
         match self.binding(name)? {
-            Value::String(value) => Ok(value),
+            Value::String(value) => Ok(value.text()?.to_owned()),
             _ => Err(ScriptError::Runtime("not a string")),
         }
     }
@@ -613,6 +613,41 @@ impl<'host> Engine<'host> {
                 constants,
                 function_scope,
                 object_bindings,
+                aliases: HashMap::new(),
+                strict,
+                with_object: None,
+                lexical,
+            },
+        );
+        Ok(id)
+    }
+    /// A declarative environment holding uninitialized mutable `let` bindings for
+    /// `names`; the same as `new_environment(parent, [let n; ...], false)` without
+    /// building statements or walking a body.
+    pub(super) fn let_environment(&mut self, parent: Option<Id>, names: &[String]) -> Result<Id> {
+        let mut bindings: HashMap<String, Option<Value>> =
+            names.iter().map(|n| (n.clone(), None)).collect();
+        let mutable: HashSet<String> = names.iter().cloned().collect();
+        let lexical = mutable.clone();
+        if parent.is_none() {
+            bindings
+                .entry("document".into())
+                .or_insert(Some(Value::Document));
+        }
+        let strict = parent.is_none_or(|p| self.env_strict(p));
+        let id = self.allocate(Domain::Js, -300)?;
+        if let Some(p) = parent {
+            self.runtime.link(id, p)?;
+        }
+        self.objects.insert(
+            id,
+            Object::Environment {
+                parent,
+                bindings,
+                mutable,
+                constants: HashSet::new(),
+                function_scope: false,
+                object_bindings: HashSet::new(),
                 aliases: HashMap::new(),
                 strict,
                 with_object: None,

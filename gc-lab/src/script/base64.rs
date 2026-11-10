@@ -211,6 +211,7 @@ impl Engine<'_> {
                 let Value::String(string) = arg(0) else {
                     return self.throw_error("TypeError", "fromBase64 requires a string");
                 };
+                let string = string.lossy();
                 let options = self.base64_options(arg(1))?;
                 let url = self.alphabet_option(&options)?;
                 let last = self.last_chunk_option(&options)?;
@@ -221,6 +222,7 @@ impl Engine<'_> {
                 let Value::String(string) = arg(0) else {
                     return self.throw_error("TypeError", "fromHex requires a string");
                 };
+                let string = string.lossy();
                 let length = string.encode_utf16().count();
                 self.uint8_from_bytes(from_hex(string.as_bytes(), length, usize::MAX))
             }
@@ -233,13 +235,17 @@ impl Engine<'_> {
                     None => false,
                 };
                 let bytes = self.uint8_bytes(&typed)?;
-                Ok(Value::String(to_base64(&bytes, url, omit)))
+                Ok(Value::String((to_base64(&bytes, url, omit)).into()))
             }
             "Uint8Array.prototype.toHex" => {
                 let (_, typed) = self.validate_uint8(&receiver)?;
                 let bytes = self.uint8_bytes(&typed)?;
                 Ok(Value::String(
-                    bytes.iter().map(|b| format!("{b:02x}")).collect(),
+                    bytes
+                        .iter()
+                        .map(|b| format!("{b:02x}"))
+                        .collect::<String>()
+                        .into(),
                 ))
             }
             "Uint8Array.prototype.setFromBase64" | "Uint8Array.prototype.setFromHex" => {
@@ -247,6 +253,7 @@ impl Engine<'_> {
                 let Value::String(string) = arg(0) else {
                     return self.throw_error("TypeError", "the input must be a string");
                 };
+                let string = string.lossy();
                 let decoded = if name.ends_with("Base64") {
                     let options = self.base64_options(arg(1))?;
                     let url = self.alphabet_option(&options)?;

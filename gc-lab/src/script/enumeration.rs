@@ -105,6 +105,11 @@ impl Engine<'_> {
         data.enumeration = Some(cursor);
         self.replace_data(id, data)?;
         let done = value.is_none();
-        self.iterator_result(value.map(Value::String).unwrap_or(Value::Undefined), done)
+        self.iterator_result(
+            value
+                .map(|s| Value::String(s.into()))
+                .unwrap_or(Value::Undefined),
+            done,
+        )
     }
 }

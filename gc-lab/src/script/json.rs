@@ -214,6 +214,26 @@ impl Reader<'_> {
         }
     }
 }
+/// QuoteJSONString (§25.5.2.3) over the code points of `s` (§11.1.4 CodePointAt):
+/// a lone surrogate is written as a `\udxxx` escape (step 2.b), so the result is
+/// always well-formed.
+fn quote_units(s: &super::js_string::JsString) -> String {
+    let Some(text) = s.as_str() else {
+        let mut out = String::from("\"");
+        for c in char::decode_utf16(s.units().iter().copied()) {
+            match c {
+                Ok(c) => {
+                    let q = quote(c.encode_utf8(&mut [0; 4]));
+                    out.push_str(&q[1..q.len() - 1]);
+                }
+                Err(e) => out.push_str(&format!("\\u{:04x}", e.unpaired_surrogate())),
+            }
+        }
+        out.push('"');
+        return out;
+    };
+    quote(text)
+}
 fn quote(s: &str) -> String {
     let mut out = String::from("\"");
     for c in s.chars() {
@@ -244,7 +264,7 @@ impl Engine<'_> {
             Json::Null => Ok(Value::Null),
             Json::Bool(b) => Ok(Value::Bool(b)),
             Json::Number(n) => Ok(Value::number(n)),
-            Json::String(s) => Ok(Value::String(s)),
+            Json::String(s) => Ok(Value::String(s.into())),
             Json::Array(items) => {
                 let id = self.new_array(items.len() as u32)?;
                 self.protect(&Value::Object(id))?;
@@ -308,7 +328,7 @@ impl Engine<'_> {
         self.invoke_this(
             reviver,
             Value::Object(holder),
-            vec![Value::String(key), value],
+            vec![Value::String(key.into()), value],
         )
     }
     fn json_keys(&mut self, id: Id) -> Result<Vec<String>> {
@@ -370,7 +390,7 @@ impl Engine<'_> {
                     if let Value::Object(id) = v.clone() {
                         if let Some(boxed) = self.boxed_slot(id)? {
                             v = match boxed {
-                                Value::String(_) => Value::String(self.to_string(v)?),
+                                Value::String(_) => Value::String((self.to_string(v)?).into()),
                                 Value::Number(_) => Value::number(self.to_number(v)?),
                                 _ => Value::Undefined,
                             };
@@ -390,7 +410,7 @@ impl Engine<'_> {
         if let Value::Object(id) = space.clone() {
             if let Some(boxed) = self.boxed_slot(id)? {
                 space = match boxed {
-                    Value::String(_) => Value::String(self.to_string(space)?),
+                    Value::String(_) => Value::String((self.to_string(space)?).into()),
                     Value::Number(_) => Value::number(self.to_number(space)?),
                     _ => Value::Undefined,
                 };
@@ -400,7 +420,8 @@ impl Engine<'_> {
             Value::Number(n) => " ".repeat(f64::from_bits(n).clamp(0.0, 10.0) as usize),
             Value::String(s) => {
                 let mut units = 0;
-                s.chars()
+                s.text()?
+                    .chars()
                     .take_while(|c| {
                         units += c.len_utf16();
                         units <= 10
@@ -423,7 +444,7 @@ impl Engine<'_> {
         self.protect(&Value::Object(holder))?;
         self.put_data(holder, "", input)?;
         Ok(match self.json_serialize(holder, "", &mut writer)? {
-            Some(s) => Value::String(s),
+            Some(s) => Value::String(s.into()),
             None => Value::Undefined,
         })
     }
@@ -459,7 +480,7 @@ impl Engine<'_> {
             if let Some(boxed) = self.boxed_slot(id)? {
                 value = match boxed {
                     Value::Number(_) => Value::number(self.to_number(value)?),
-                    Value::String(_) => Value::String(self.to_string(value)?),
+                    Value::String(_) => Value::String((self.to_string(value)?).into()),
                     Value::Bool(_) | Value::BigInt(_) => boxed,
                     _ => value,
                 };
@@ -483,7 +504,7 @@ impl Engine<'_> {
                     "null".into()
                 }))
             }
-            Value::String(s) => Ok(Some(quote(&s))),
+            Value::String(s) => Ok(Some(quote_units(&s))),
             Value::Object(id) => {
                 if self.callable(&Value::Object(id)) {
                     return Ok(None);

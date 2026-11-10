@@ -46,7 +46,7 @@ impl Engine<'_> {
             Expr::Member(base, key) => {
                 let base = self.eval(base, env)?;
                 self.protect(&base)?;
-                let key = self.member_key(&base, Value::String(key.clone()))?;
+                let key = self.member_key(&base, Value::String(key.clone().into()))?;
                 Ok(Reference::Property(base, key, self.env_strict(env)))
             }
             Expr::Computed(base, key) => {

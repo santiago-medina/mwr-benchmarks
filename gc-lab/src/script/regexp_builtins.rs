@@ -1,6 +1,7 @@
 //! RegExp objects over the pure matcher in `regexp.rs`: constructor, prototype
 //! methods, the Symbol protocol methods, %RegExpStringIterator% and the String
 //! methods that delegate to them. Strings are converted to UTF-16 per call.
+use super::js_string::JsString;
 use super::{
     objects::{Descriptor, Key},
     regexp::{self, Flags, Program},
@@ -27,7 +28,7 @@ pub(super) struct Matcher {
 #[derive(Clone)]
 pub(super) struct Cursor {
     pub regexp: Id,
-    pub text: String,
+    pub text: JsString,
     pub global: bool,
     pub unicode: bool,
     pub done: bool,
@@ -59,8 +60,8 @@ pub(super) fn compile_cached(
 pub(super) fn literal_ok(pattern: &str, flags: &str) -> bool {
     Flags::parse(flags).is_some_and(|f| compile_cached(pattern, f).is_ok())
 }
-fn units(text: &str) -> Vec<u16> {
-    text.encode_utf16().collect()
+fn units(text: &JsString) -> Vec<u16> {
+    text.units().into_owned()
 }
 fn slice(u: &[u16], a: usize, b: usize) -> Result<Value> {
     super::strings::string(&u[a.min(u.len())..b.min(u.len()).max(a.min(u.len()))])
@@ -114,9 +115,17 @@ fn escape_source(source: &str) -> String {
     out
 }
 /// RegExp.escape.
-fn escape(text: &str) -> String {
+fn escape(text: &JsString) -> String {
     let mut out = String::new();
-    for (i, c) in text.chars().enumerate() {
+    for (i, c) in char::decode_utf16(text.units().iter().copied()).enumerate() {
+        // §22.2.5.1.1 EncodeForRegExpEscape step 5: a lone surrogate is a UnicodeEscape.
+        let c = match c {
+            Ok(c) => c,
+            Err(e) => {
+                out.push_str(&format!("\\u{:04x}", e.unpaired_surrogate()));
+                continue;
+            }
+        };
         if i == 0 && c.is_ascii_alphanumeric() {
             out.push_str(&format!("\\x{:02x}", c as u32));
             continue;
@@ -312,9 +321,9 @@ impl Engine<'_> {
         }
         let (p, f) = if let Some(slot) = self.regexp_slot(&pattern) {
             (
-                Value::String(slot.source.clone()),
+                Value::String(slot.source.clone().into()),
                 if flags == Value::Undefined {
-                    Value::String(slot.flags.text())
+                    Value::String(slot.flags.text().into())
                 } else {
                     flags
                 },
@@ -337,7 +346,7 @@ impl Engine<'_> {
         self.regexp_initialize(id, p, f)
     }
     /// RegExpBuiltinExec.
-    fn regexp_builtin_exec(&mut self, id: Id, text: &str) -> Result<Value> {
+    fn regexp_builtin_exec(&mut self, id: Id, text: &JsString) -> Result<Value> {
         let r = Value::Object(id);
         let slot = self
             .regexp_slot(&r)
@@ -374,7 +383,7 @@ impl Engine<'_> {
         let array = self.new_array(0)?;
         self.protect(&Value::Object(array))?;
         self.create_data(array, "index", Value::number(start as f64))?;
-        self.create_data(array, "input", Value::String(text.into()))?;
+        self.create_data(array, "input", Value::String(text.clone()))?;
         let mut values = vec![];
         for cap in &caps {
             values.push(match cap {
@@ -444,7 +453,7 @@ impl Engine<'_> {
         Ok(Value::Object(array))
     }
     /// RegExpExec.
-    fn regexp_exec(&mut self, r: Value, text: &str) -> Result<Value> {
+    fn regexp_exec(&mut self, r: Value, text: &JsString) -> Result<Value> {
         let exec = self.get_member(r.clone(), "exec")?;
         self.protect(&exec)?;
         if self.callable(&exec) {
@@ -554,7 +563,7 @@ impl Engine<'_> {
                 if (1..=captures.len()).contains(&index) {
                     let cap = captures[index - 1].clone();
                     if cap != Value::Undefined {
-                        let s = self.to_string(cap)?;
+                        let s = self.to_js_string(cap)?;
                         push(out, &units(&s))?;
                     }
                 } else {
@@ -569,7 +578,7 @@ impl Engine<'_> {
                         let name = self.to_string(name)?;
                         let cap = self.get_member(named.clone(), name.as_str())?;
                         if cap != Value::Undefined {
-                            let s = self.to_string(cap)?;
+                            let s = self.to_js_string(cap)?;
                             push(out, &units(&s))?;
                         }
                         i += gt + 1;
@@ -726,7 +735,7 @@ impl Engine<'_> {
                 let Value::String(text) = arg(0) else {
                     return self.throw_error("TypeError", "RegExp.escape requires a string");
                 };
-                return Ok(Value::String(escape(&text)));
+                return Ok(Value::String(escape(&text).into()));
             }
             "%RegExpStringIteratorPrototype%.next" => return self.regexp_iterator_next(receiver),
             _ => {}
@@ -741,7 +750,7 @@ impl Engine<'_> {
                         out.push(*c);
                     }
                 }
-                return Ok(Value::String(out));
+                return Ok(Value::String(out.into()));
             }
             let slot = self.regexp_slot(&receiver);
             let Some(slot) = slot else {
@@ -755,7 +764,7 @@ impl Engine<'_> {
                 return self.throw_error("TypeError", "receiver is not a RegExp");
             };
             if getter == "source" {
-                return Ok(Value::String(escape_source(&slot.source)));
+                return Ok(Value::String(escape_source(&slot.source).into()));
             }
             let c = FLAG_GETTERS.iter().find(|(n, _)| *n == getter).unwrap().1;
             return Ok(Value::Bool(slot.flags.text().contains(c)));
@@ -769,12 +778,12 @@ impl Engine<'_> {
                 if self.regexp_slot(&receiver).is_none() {
                     return self.throw_error("TypeError", "receiver is not a RegExp");
                 }
-                let text = self.to_string(arg(0))?;
+                let text = self.to_js_string(arg(0))?;
                 self.regexp_builtin_exec(id, &text)
             }
             "test" => {
                 self.require_object(&receiver)?;
-                let text = self.to_string(arg(0))?;
+                let text = self.to_js_string(arg(0))?;
                 let m = self.regexp_exec(receiver, &text)?;
                 Ok(Value::Bool(m != Value::Null))
             }
@@ -783,7 +792,7 @@ impl Engine<'_> {
                 let source = self.get_member(receiver.clone(), "source")?;
                 let source = self.to_string(source)?;
                 let flags = self.flags_of(receiver)?;
-                Ok(Value::String(format!("/{source}/{flags}")))
+                Ok(Value::String((format!("/{source}/{flags}")).into()))
             }
             "compile" => {
                 let Value::Object(id) = receiver else {
@@ -797,8 +806,8 @@ impl Engine<'_> {
                         return self.throw_error("TypeError", "flags must be undefined");
                     }
                     (
-                        Value::String(slot.source.clone()),
-                        Value::String(slot.flags.text()),
+                        Value::String(slot.source.clone().into()),
+                        Value::String(slot.flags.text().into()),
                     )
                 } else {
                     (arg(0), arg(1))
@@ -807,7 +816,7 @@ impl Engine<'_> {
             }
             "@@match" => {
                 self.require_object(&receiver)?;
-                let text = self.to_string(arg(0))?;
+                let text = self.to_js_string(arg(0))?;
                 let flags = self.flags_of(receiver.clone())?;
                 if !flags.contains('g') {
                     return self.regexp_exec(receiver, &text);
@@ -829,9 +838,9 @@ impl Engine<'_> {
                         });
                     }
                     let m = self.get_member(result, "0")?;
-                    let m = self.to_string(m)?;
+                    let m = self.to_js_string(m)?;
                     let empty = m.is_empty();
-                    self.create_data(array, n.to_string(), Value::String(m))?;
+                    self.create_data(array, n.to_string(), Value::String(m.into()))?;
                     if empty {
                         self.advance_last_index(receiver.clone(), &input, unicode)?;
                     }
@@ -840,12 +849,14 @@ impl Engine<'_> {
             }
             "@@matchAll" => {
                 self.require_object(&receiver)?;
-                let text = self.to_string(arg(0))?;
+                let text = self.to_js_string(arg(0))?;
                 let default = self.regexp_constructor();
                 let c = self.species_constructor(receiver.clone(), default)?;
                 let flags = self.flags_of(receiver.clone())?;
-                let matcher =
-                    self.construct(c, vec![receiver.clone(), Value::String(flags.clone())])?;
+                let matcher = self.construct(
+                    c,
+                    vec![receiver.clone(), Value::String(flags.clone().into())],
+                )?;
                 self.protect(&matcher)?;
                 let last = self.get_member(receiver, "lastIndex")?;
                 let last = self.to_length(last)?;
@@ -869,7 +880,7 @@ impl Engine<'_> {
             }
             "@@search" => {
                 self.require_object(&receiver)?;
-                let text = self.to_string(arg(0))?;
+                let text = self.to_js_string(arg(0))?;
                 let previous = self.get_member(receiver.clone(), "lastIndex")?;
                 self.protect(&previous)?;
                 if !previous.same_value(&Value::number(0.0)) {
@@ -915,7 +926,7 @@ impl Engine<'_> {
         }
         if cursor.global {
             let s = self.get_member(m.clone(), "0")?;
-            let s = self.to_string(s)?;
+            let s = self.to_js_string(s)?;
             if s.is_empty() {
                 let input = units(&cursor.text);
                 self.advance_last_index(r, &input, cursor.unicode)?;
@@ -927,7 +938,7 @@ impl Engine<'_> {
     }
     fn regexp_split(&mut self, rx: Value, string: Value, limit: Value) -> Result<Value> {
         self.require_object(&rx)?;
-        let text = self.to_string(string)?;
+        let text = self.to_js_string(string)?;
         let default = self.regexp_constructor();
         let c = self.species_constructor(rx.clone(), default)?;
         let flags = self.flags_of(rx.clone())?;
@@ -937,7 +948,7 @@ impl Engine<'_> {
         } else {
             format!("{flags}y")
         };
-        let splitter = self.construct(c, vec![rx, Value::String(new_flags)])?;
+        let splitter = self.construct(c, vec![rx, Value::String(new_flags.into())])?;
         self.protect(&splitter)?;
         let array = self.new_array(0)?;
         self.protect(&Value::Object(array))?;
@@ -954,7 +965,7 @@ impl Engine<'_> {
         if size == 0 {
             let z = self.regexp_exec(splitter, &text)?;
             if z == Value::Null {
-                self.create_data(array, "0", Value::String(text))?;
+                self.create_data(array, "0", Value::String(text.into()))?;
             }
             return Ok(Value::Object(array));
         }
@@ -1001,13 +1012,13 @@ impl Engine<'_> {
     }
     fn regexp_replace(&mut self, rx: Value, string: Value, replace: Value) -> Result<Value> {
         self.require_object(&rx)?;
-        let text = self.to_string(string)?;
+        let text = self.to_js_string(string)?;
         let input = units(&text);
         let functional = self.callable(&replace);
         let template = if functional {
             vec![]
         } else {
-            units(&self.to_string(replace.clone())?)
+            units(&self.to_js_string(replace.clone())?)
         };
         let flags = self.flags_of(rx.clone())?;
         let global = flags.contains('g');
@@ -1027,7 +1038,7 @@ impl Engine<'_> {
                 break;
             }
             let m = self.get_member(result, "0")?;
-            if self.to_string(m)?.is_empty() {
+            if self.to_js_string(m)?.is_empty() {
                 self.advance_last_index(rx.clone(), &input, unicode)?;
             }
         }
@@ -1039,7 +1050,7 @@ impl Engine<'_> {
             };
             let count = self.length_of(rid)?.saturating_sub(1);
             let matched = self.get_member(result.clone(), "0")?;
-            let matched = units(&self.to_string(matched)?);
+            let matched = units(&self.to_js_string(matched)?);
             let position = self.get_member(result.clone(), "index")?;
             let position = self.integer(position)?.clamp(0.0, input.len() as f64) as usize;
             let mut captures = vec![];
@@ -1048,7 +1059,7 @@ impl Engine<'_> {
                 let cap = if cap == Value::Undefined {
                     cap
                 } else {
-                    Value::String(self.to_string(cap)?)
+                    Value::String((self.to_js_string(cap)?).into())
                 };
                 captures.push(cap);
             }
@@ -1059,12 +1070,12 @@ impl Engine<'_> {
                 let mut call = vec![super::strings::string(&matched)?];
                 call.extend(captures);
                 call.push(Value::number(position as f64));
-                call.push(Value::String(text.clone()));
+                call.push(Value::String(text.clone().into()));
                 if named != Value::Undefined {
                     call.push(named);
                 }
                 let v = self.invoke_this(replace.clone(), Value::Undefined, call)?;
-                replacement = units(&self.to_string(v)?);
+                replacement = units(&self.to_js_string(v)?);
             } else {
                 let named = if named == Value::Undefined {
                     named
@@ -1130,11 +1141,11 @@ impl Engine<'_> {
                 return self.invoke_this(method, regexp, vec![receiver]);
             }
         }
-        let text = self.to_string(receiver)?;
+        let text = self.to_js_string(receiver)?;
         let rx = self.regexp_create(regexp, flags)?;
         self.protect(&rx)?;
         let method = self.get_member(rx.clone(), Key::Symbol(symbol))?;
         self.protect(&method)?;
-        self.invoke_this(method, rx, vec![Value::String(text)])
+        self.invoke_this(method, rx, vec![Value::String(text.into())])
     }
 }

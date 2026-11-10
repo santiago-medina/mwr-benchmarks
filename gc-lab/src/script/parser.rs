@@ -26,6 +26,8 @@ pub enum Expr {
     Template(Box<super::templates::Template>),
     Name(String),
     String(String),
+    /// A string literal with a lone surrogate (§6.1.4); well-formed literals are `String`.
+    Units(Vec<u16>),
     Number(String),
     BigInt(String),
     RegExp {
@@ -286,6 +288,8 @@ enum Token {
         flags: String,
     },
     String(String),
+    /// A string literal whose SV is not well-formed UTF-16 (has a lone surrogate).
+    Units(Vec<u16>),
     Number(String),
     BigInt(String),
     Punct(char),
@@ -561,14 +565,16 @@ pub(super) fn tokenize_legacy(
                 // Legacy octal and \8 \9 escapes: early errors in strict code (the parser checks).
                 let mut old = false;
                 match super::template_lex::cook_legacy(raw, &mut old) {
-                    Ok(Some(s)) => {
+                    Some(units) => {
                         if old {
                             legacy.insert(offset);
                         }
-                        Token::String(s)
+                        match String::from_utf16(&units) {
+                            Ok(s) => Token::String(s),
+                            Err(_) => Token::Units(units),
+                        }
                     }
-                    Ok(None) => return Err(error("invalid escape")),
-                    Err(()) => return Err(error("surrogate strings unsupported")),
+                    None => return Err(error("invalid escape")),
                 }
             }
             '.' if source[offset..].starts_with("...") => {
@@ -698,7 +704,11 @@ impl<'a> Parser<'a> {
     fn prologue(&mut self, start: usize) -> Result<(), SyntaxError> {
         let mut i = start;
         let mut offsets = vec![];
-        while let (Token::String(text), offset) = &self.tokens[i] {
+        while let (Token::String(_) | Token::Units(_), offset) = &self.tokens[i] {
+            let text = match &self.tokens[i].0 {
+                Token::String(text) => text.as_str(),
+                _ => "",
+            };
             let next = &self.tokens[i + 1];
             let terminated = matches!(next.0, Token::Punct(';') | Token::Punct('}') | Token::End)
                 || self.source[*offset..next.1].contains(['\n', '\r', '\u{2028}', '\u{2029}'])
@@ -852,6 +862,8 @@ impl Parser<'_> {
     fn key(&mut self) -> Result<String, SyntaxError> {
         match self.take() {
             Token::Name(s) | Token::EscapedName(s) | Token::String(s) => Ok(s),
+            // Ill-formed property keys need `Key::String(JsString)` (STRINGS.md phase 3).
+            Token::Units(_) => Err(self.error("surrogate strings unsupported")),
             Token::Number(s) => Ok(super::execute::number_string(s.parse().unwrap())),
             Token::BigInt(s) => super::bigint::Big::parse(&s)
                 .map(|n| n.radix_string(10))
@@ -1116,6 +1128,7 @@ impl Parser<'_> {
                 Token::Name(_)
                     | Token::EscapedName(_)
                     | Token::String(_)
+                    | Token::Units(_)
                     | Token::Number(_)
                     | Token::BigInt(_)
                     | Token::Punct('[')
@@ -1357,6 +1370,7 @@ impl Parser<'_> {
                 Token::Name(_)
                     | Token::EscapedName(_)
                     | Token::String(_)
+                    | Token::Units(_)
                     | Token::Number(_)
                     | Token::BigInt(_)
                     | Token::PrivateName(_)
@@ -2927,6 +2941,7 @@ impl Parser<'_> {
                 Ok(Expr::RegExp { pattern, flags })
             }
             Token::String(s) => Ok(Expr::String(s)),
+            Token::Units(u) => Ok(Expr::Units(u)),
             Token::Number(n) => Ok(Expr::Number(n)),
             Token::BigInt(n) => Ok(Expr::BigInt(n)),
             Token::Punct('(') => {
@@ -3301,7 +3316,7 @@ fn validate_function(
                         message: "strict directive with non-simple parameters",
                     })
                 }
-                Stmt::Expr(Expr::String(_)) => {}
+                Stmt::Expr(Expr::String(_) | Expr::Units(_)) => {}
                 _ => break,
             }
         }

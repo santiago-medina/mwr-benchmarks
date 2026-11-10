@@ -68,10 +68,11 @@ impl Engine<'_> {
             Some(env) => (self.env_binds(env, "%home"), self.env_binds(env, "%func")),
             None => (false, false),
         };
-        let program = match parser::parse_eval(&text, caller_strict, super_property, super_call) {
-            Ok(program) => program,
-            Err(error) => return self.throw_error("SyntaxError", error.message),
-        };
+        let program =
+            match parser::parse_eval(text.text()?, caller_strict, super_property, super_call) {
+                Ok(program) => program,
+                Err(error) => return self.throw_error("SyntaxError", error.message),
+            };
         let strict = !matches!(program.first(), Some(Stmt::Sloppy));
         self.frame(|e| {
             let scope = e.new_environment(Some(env), &program, strict)?;

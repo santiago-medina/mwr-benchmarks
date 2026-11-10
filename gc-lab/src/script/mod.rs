@@ -6,6 +6,7 @@ mod host;
 mod iterator_helpers;
 mod objects;
 pub mod parser;
+mod props;
 mod vm;
 pub use vm::{Engine, GcPolicy, ScriptError, SuspendedEngine};
 
@@ -38,6 +39,7 @@ mod json;
 mod number_format;
 mod numeric;
 
+mod js_string;
 mod string_search;
 mod strings;
 

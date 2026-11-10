@@ -141,8 +141,8 @@ impl Engine<'_> {
                 };
                 match property {
                     "then" => Ok(Value::Undefined),
-                    "textContent" => Ok(Value::String(self.node_text(id)?)),
-                    "tagName" => Ok(Value::String(tag.to_ascii_uppercase())),
+                    "textContent" => Ok(Value::String((self.node_text(id)?).into())),
+                    "tagName" => Ok(Value::String(tag.to_ascii_uppercase().into())),
                     "addEventListener"
                     | "removeEventListener"
                     | "click"
@@ -158,16 +158,14 @@ impl Engine<'_> {
             value => {
                 if let Value::String(text) = &value {
                     if property == "length" {
-                        return Ok(Value::number(text.encode_utf16().count() as f64));
+                        return Ok(Value::number(text.len_units() as f64));
                     }
                     if let Some(index) = Key::from(property).index() {
-                        if let Some(unit) = text.encode_utf16().nth(index as usize) {
-                            let Some(c) = char::from_u32(unit as u32) else {
-                                return Err(ScriptError::Unsupported(
-                                    "unpaired UTF-16 string storage",
-                                ));
-                            };
-                            return Ok(Value::String(c.to_string()));
+                        // §10.4.3.5 StringGetOwnProperty: the single code unit at index.
+                        if let Some(unit) = text.unit_at(index as usize) {
+                            return Ok(Value::String(super::js_string::JsString::from_units(&[
+                                unit,
+                            ])));
                         }
                     }
                 }
@@ -334,6 +332,8 @@ impl Engine<'_> {
                 let [Value::String(argument)] = args.as_slice() else {
                     return Err(ScriptError::Runtime("DOM lookup requires one string"));
                 };
+                let argument = argument.text()?.to_owned();
+                let argument = &argument;
                 if name == "querySelector" {
                     let adapter = self.adapter.as_mut().ok_or(ScriptError::Runtime(
                         "querySelector requires an external DOM",

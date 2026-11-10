@@ -257,7 +257,7 @@ impl Engine<'_> {
                 p,
                 Key::Symbol(1),
                 Descriptor {
-                    value: Some(Value::String(format!("{name} Iterator"))),
+                    value: Some(Value::String((format!("{name} Iterator")).into())),
                     configurable: Some(true),
                     ..Descriptor::default()
                 },

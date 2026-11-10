@@ -495,7 +495,7 @@ impl Engine<'_> {
             self.runtime.link(env, p)?;
             let mut d = self.data(p)?.clone();
             d.boxed = Some(match name {
-                "String" => Value::String(String::new()),
+                "String" => Value::String(String::new().into()),
                 "Number" => Value::number(0.0),
                 _ => Value::Bool(false),
             });
@@ -523,7 +523,7 @@ impl Engine<'_> {
             let p = self.new_object(Some(parent))?;
             self.runtime.link(env, p)?;
             self.hidden(p, "name", Value::String((*name).into()))?;
-            self.hidden(p, "message", Value::String(String::new()))?;
+            self.hidden(p, "message", Value::String(String::new().into()))?;
             self.intrinsics
                 .as_mut()
                 .unwrap()
@@ -846,19 +846,16 @@ impl Engine<'_> {
                 id,
                 "length",
                 Descriptor {
-                    value: Some(Value::number(s.encode_utf16().count() as f64)),
+                    value: Some(Value::number(s.len_units() as f64)),
                     ..Descriptor::default()
                 },
             )?;
-            for (i, c) in s.encode_utf16().enumerate() {
-                let Some(c) = char::from_u32(c as u32) else {
-                    return Err(ScriptError::Unsupported("surrogate string wrapper"));
-                };
+            for (i, c) in s.units().iter().copied().enumerate() {
                 self.define(
                     id,
                     &i.to_string(),
                     Descriptor {
-                        value: Some(Value::String(c.to_string())),
+                        value: Some(Value::String(super::js_string::JsString::from_units(&[c]))),
                         enumerable: Some(true),
                         ..Descriptor::default()
                     },
@@ -934,7 +931,7 @@ impl Engine<'_> {
         let name = if let Value::String(s) = name {
             s
         } else {
-            String::new()
+            String::new().into()
         };
         let id = self.allocate(Domain::Js, -700)?;
         for v in std::iter::once(&target)
@@ -960,7 +957,7 @@ impl Engine<'_> {
             id,
             "name",
             Descriptor {
-                value: Some(Value::String(format!("bound {name}"))),
+                value: Some(Value::String((format!("bound {name}")).into())),
                 configurable: Some(true),
                 ..Descriptor::default()
             },
@@ -1182,7 +1179,7 @@ impl Engine<'_> {
         if name == "Test262Error.thrower" {
             let message = match args.first() {
                 Some(Value::String(s)) => s.clone(),
-                _ => String::new(),
+                _ => String::new().into(),
             };
             let error =
                 self.error_constructor("Test262Error", vec![Value::String(message)], None)?;
@@ -1219,7 +1216,8 @@ impl Engine<'_> {
                 return self.invoke_this(target, this, values);
             }
             "parseInt" => {
-                let text = self.to_string(arg(0))?;
+                let text = self.to_js_string(arg(0))?;
+                let text = text.scalar_prefix();
                 let mut s = text.trim_start_matches(|c: char| {
                     c == '\u{feff}' || c != '\u{85}' && c.is_whitespace()
                 });
@@ -1276,11 +1274,11 @@ impl Engine<'_> {
             "Function.prototype.toString" => return self.function_source(receiver),
             "String" => {
                 return Ok(Value::String(if args.is_empty() {
-                    String::new()
+                    String::new().into()
                 } else if let Value::Symbol(id) = arg(0) {
-                    self.symbol_string(id)
+                    self.symbol_string(id).into()
                 } else {
-                    self.to_string(arg(0))?
+                    self.to_js_string(arg(0))?
                 }))
             }
             "Number" => {
@@ -1394,7 +1392,7 @@ impl Engine<'_> {
                 } else {
                     brand.into()
                 };
-                return Ok(Value::String(format!("[object {brand}]")));
+                return Ok(Value::String((format!("[object {brand}]")).into()));
             }
             // Annex B §B.2.2.1.1 get Object.prototype.__proto__
             "Object.prototype.__proto__.get" => {
@@ -1530,7 +1528,7 @@ impl Engine<'_> {
                     return self.number_format(&format!("to{method}"), x, arg(0));
                 }
             }
-            return self.to_string(primitive).map(Value::String);
+            return self.to_string(primitive).map(|s| Value::String(s.into()));
         }
         let reflect = name.starts_with("Reflect.");
         let method = name
@@ -1594,7 +1592,7 @@ impl Engine<'_> {
                     };
                     if include {
                         values.push(match key {
-                            super::objects::Key::String(s) => Value::String(s),
+                            super::objects::Key::String(s) => Value::String(s.into()),
                             super::objects::Key::Symbol(id) => Value::Symbol(id),
                         });
                     }

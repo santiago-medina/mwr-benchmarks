@@ -112,7 +112,7 @@ impl Engine<'_> {
                 self.data(id)?.source.clone()
             };
             if let Some(source) = source {
-                return Ok(Value::String(source));
+                return Ok(Value::String(source.into()));
             }
         }
         // Source availability is a host choice for pre-existing closures and native functions.

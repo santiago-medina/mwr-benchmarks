@@ -1,4 +1,5 @@
 //! Template site records are immutable AST data; cached arrays belong to their realm graph.
+use super::js_string::{Builder, JsString};
 use super::{
     objects::Descriptor,
     parser::Expr,
@@ -34,10 +35,12 @@ impl Engine<'_> {
         for (i, (text, source)) in t.parts.iter().enumerate() {
             self.tick()?;
             for (id, value) in [
-                (raw, Value::String(source.clone())),
+                (raw, Value::String(source.clone().into())),
                 (
                     cooked,
-                    text.clone().map(Value::String).unwrap_or(Value::Undefined),
+                    text.clone()
+                        .map(|s| Value::String(s.into()))
+                        .unwrap_or(Value::Undefined),
                 ),
             ] {
                 self.define(
@@ -106,10 +109,11 @@ impl Engine<'_> {
             }
             self.invoke_this(callee, receiver, args)
         } else {
-            let mut text = t.parts[0]
+            let mut text: JsString = t.parts[0]
                 .0
-                .clone()
-                .ok_or(ScriptError::Runtime("invalid untagged template escape"))?;
+                .as_deref()
+                .ok_or(ScriptError::Runtime("invalid untagged template escape"))?
+                .into();
             for (i, expression) in t.values.iter().enumerate() {
                 let value = self.eval(expression, env)?;
                 self.protect(&value)?;
@@ -122,26 +126,27 @@ impl Engine<'_> {
             Ok(Value::String(text))
         }
     }
+    /// One TemplateLiteral step (§13.2.8.6): `text` + ToString(value) + `part`.
     pub(super) fn template_text(
         &mut self,
-        mut text: String,
+        text: JsString,
         value: Value,
         part: &str,
-    ) -> Result<String> {
-        let substitution = self.to_string(value)?;
+    ) -> Result<JsString> {
+        let substitution = self.to_js_string(value)?;
         if text
-            .len()
-            .saturating_add(substitution.len())
+            .size()
+            .saturating_add(substitution.size())
             .saturating_add(part.len())
             > 16_777_216
         {
             return Err(ScriptError::Runtime("template string limit"));
         }
-        text.try_reserve(substitution.len() + part.len())
-            .map_err(|_| ScriptError::Runtime("template allocation failed"))?;
-        text.push_str(&substitution);
-        text.push_str(part);
-        Ok(text)
+        let mut out = Builder::default();
+        out.push(&text);
+        out.push(&substitution);
+        out.push_str(part);
+        Ok(out.finish())
     }
     pub(super) fn string_raw(&mut self, args: Vec<Value>) -> Result<Value> {
         let template = self.object_coercible(args.first().cloned().unwrap_or(Value::Undefined))?;
@@ -151,7 +156,7 @@ impl Engine<'_> {
         let raw = self.object_coercible(raw)?;
         self.protect(&Value::Object(raw))?;
         let length = self.length_of(raw)?;
-        let mut text = String::new();
+        let mut text = JsString::default();
         for index in 0..length {
             self.tick()?;
             let part = self.get_member(Value::Object(raw), index.to_string())?;
@@ -161,7 +166,7 @@ impl Engine<'_> {
                 let substitution = args
                     .get(index as usize + 1)
                     .cloned()
-                    .unwrap_or(Value::String(String::new()));
+                    .unwrap_or(Value::String(String::new().into()));
                 text = self.template_text(text, substitution, "")?;
             }
         }

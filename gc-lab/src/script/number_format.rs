@@ -177,7 +177,11 @@ impl Engine<'_> {
         let text = match method {
             // §21.1.3.4 Number.prototype.toLocaleString without ECMA-402: the
             // implementation-defined form is Number::toString(x, 10).
-            "toLocaleString" => return self.to_string(Value::number(x)).map(Value::String),
+            "toLocaleString" => {
+                return self
+                    .to_string(Value::number(x))
+                    .map(|s| Value::String(s.into()))
+            }
             // §21.1.3.6 Number.prototype.toString
             "toString" => {
                 let radix = if matches!(arg, Value::Undefined) {
@@ -190,7 +194,9 @@ impl Engine<'_> {
                         .throw_error("RangeError", "toString() radix must be between 2 and 36");
                 }
                 if radix == 10.0 || !x.is_finite() {
-                    return self.to_string(Value::number(x)).map(Value::String);
+                    return self
+                        .to_string(Value::number(x))
+                        .map(|s| Value::String(s.into()));
                 }
                 radix_string(x, radix as u32)
             }
@@ -204,7 +210,9 @@ impl Engine<'_> {
                     );
                 }
                 if !x.is_finite() {
-                    return self.to_string(Value::number(x)).map(Value::String);
+                    return self
+                        .to_string(Value::number(x))
+                        .map(|s| Value::String(s.into()));
                 }
                 let f = f as usize;
                 let sign = if x < 0.0 { "-" } else { "" };
@@ -234,7 +242,9 @@ impl Engine<'_> {
                 let undefined = matches!(arg, Value::Undefined);
                 let f = self.integer(arg)?;
                 if !x.is_finite() {
-                    return self.to_string(Value::number(x)).map(Value::String);
+                    return self
+                        .to_string(Value::number(x))
+                        .map(|s| Value::String(s.into()));
                 }
                 if !f.is_finite() || !(0.0..=100.0).contains(&f) {
                     return self.throw_error(
@@ -256,11 +266,15 @@ impl Engine<'_> {
             // §21.1.3.5 Number.prototype.toPrecision
             _ => {
                 if matches!(arg, Value::Undefined) {
-                    return self.to_string(Value::number(x)).map(Value::String);
+                    return self
+                        .to_string(Value::number(x))
+                        .map(|s| Value::String(s.into()));
                 }
                 let p = self.integer(arg)?;
                 if !x.is_finite() {
-                    return self.to_string(Value::number(x)).map(Value::String);
+                    return self
+                        .to_string(Value::number(x))
+                        .map(|s| Value::String(s.into()));
                 }
                 if !p.is_finite() || !(1.0..=100.0).contains(&p) {
                     return self.throw_error(

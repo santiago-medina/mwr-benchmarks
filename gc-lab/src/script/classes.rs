@@ -11,7 +11,7 @@ type Result<T> = std::result::Result<T, ScriptError>;
 
 fn key_value(key: &Key) -> Value {
     match key {
-        Key::String(s) => Value::String(s.clone()),
+        Key::String(s) => Value::String(s.clone().into()),
         Key::Symbol(id) => Value::Symbol(*id),
     }
 }
@@ -675,7 +675,7 @@ impl Engine<'_> {
             }) => self.throw_error("TypeError", "private method is not writable"),
             Some(Kind::Data { .. }) => {
                 let mut data = self.data(id)?.clone();
-                if let Some((_, p)) = data.properties.iter_mut().find(|(k, _)| *k == key) {
+                if let Some(p) = data.properties.get_mut(&key) {
                     p.kind = Kind::Data {
                         value,
                         writable: true,

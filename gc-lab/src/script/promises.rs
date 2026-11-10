@@ -418,7 +418,7 @@ impl Engine<'_> {
             id,
             "name",
             Descriptor {
-                value: Some(Value::String(String::new())),
+                value: Some(Value::String(String::new().into())),
                 configurable: Some(true),
                 ..Descriptor::default()
             },

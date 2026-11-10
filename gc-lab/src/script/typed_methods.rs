@@ -179,7 +179,7 @@ impl Engine<'_> {
                         return self.throw_error("RangeError", "host string size limit");
                     }
                 }
-                Ok(Value::String(text))
+                Ok(Value::String(text.into()))
             }
             "indexOf" | "includes" | "lastIndexOf" => {
                 if length == 0 {

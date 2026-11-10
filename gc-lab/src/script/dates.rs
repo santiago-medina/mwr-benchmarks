@@ -90,7 +90,7 @@ impl Engine<'_> {
             } else {
                 let value = self.to_primitive_hint(value, "default")?;
                 if let Value::String(text) = value {
-                    self.date_parse(&text)?
+                    self.date_parse(&text.lossy())?
                 } else {
                     calendar::clip(self.to_number(value)?)
                 }
@@ -241,7 +241,7 @@ impl Engine<'_> {
     ) -> Result<Value> {
         let arg = |i| args.get(i).cloned().unwrap_or(Value::Undefined);
         match name {
-            "Date" => return Ok(Value::String(calendar::format(now(), "toString"))),
+            "Date" => return Ok(Value::String((calendar::format(now(), "toString")).into())),
             "Date.now" => return Ok(Value::number(now())),
             "Date.parse" => {
                 let text = self.to_string(arg(0))?;
@@ -259,7 +259,7 @@ impl Engine<'_> {
                 let Value::String(hint) = arg(0) else {
                     return self.throw_error("TypeError", "invalid Date conversion hint");
                 };
-                return match hint.as_str() {
+                return match hint.as_str().unwrap_or("") {
                     "number" => self.ordinary_to_primitive(receiver, false),
                     "string" | "default" => self.ordinary_to_primitive(receiver, true),
                     _ => self.throw_error("TypeError", "invalid Date conversion hint"),
@@ -287,7 +287,7 @@ impl Engine<'_> {
             if method == "toISOString" && time.is_nan() {
                 return self.throw_error("RangeError", "invalid Date time value");
             }
-            return Ok(Value::String(calendar::format(time, method)));
+            return Ok(Value::String((calendar::format(time, method)).into()));
         }
         if method == "getTimezoneOffset" {
             return Ok(Value::number(if time.is_nan() { f64::NAN } else { 0.0 }));

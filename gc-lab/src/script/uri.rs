@@ -60,10 +60,34 @@ fn decode(input: &str, uri: bool) -> Option<String> {
 }
 impl Engine<'_> {
     pub(super) fn uri_builtin(&mut self, name: &str, args: Vec<Value>) -> Result<Value> {
-        let text = self.to_string(args.first().cloned().unwrap_or(Value::Undefined))?;
+        let text = self.to_js_string(args.first().cloned().unwrap_or(Value::Undefined))?;
+        // §19.2.6.5 Encode step 3.c.ii: CodePointAt reports a lone surrogate
+        // ([[IsUnpairedSurrogate]]), which throws a URIError.
+        let Some(text) = text.as_str() else {
+            if name.starts_with("encode") {
+                return self.throw_error("URIError", "URI malformed");
+            }
+            // §19.2.6.6 Decode step 4.b: a code unit other than `%` is copied as is.
+            // Escapes are ASCII, so decoding each well-formed run separately is exact:
+            // an escape interrupted by a lone surrogate is malformed either way.
+            let reserved = name == "decodeURI";
+            let mut units: Vec<u16> = vec![];
+            for run in text.scalar_runs() {
+                match run {
+                    Ok(s) => match decode(&s, reserved) {
+                        Some(d) => units.extend(d.encode_utf16()),
+                        None => return self.throw_error("URIError", "malformed URI sequence"),
+                    },
+                    Err(unit) => units.push(unit),
+                }
+            }
+            return Ok(Value::String(super::js_string::JsString::from_units(
+                &units,
+            )));
+        };
         if name.starts_with("decode") {
             return match decode(&text, name == "decodeURI") {
-                Some(s) => Ok(Value::String(s)),
+                Some(s) => Ok(Value::String(s.into())),
                 None => self.throw_error("URIError", "malformed URI sequence"),
             };
         }
@@ -79,6 +103,6 @@ impl Engine<'_> {
                 out.push(HEX[(byte & 15) as usize] as char);
             }
         }
-        Ok(Value::String(out))
+        Ok(Value::String(out.into()))
     }
 }

@@ -54,11 +54,9 @@ impl Engine<'_> {
             Some(Object::Environment { parent, .. }) => *parent,
             _ => return Err(ScriptError::Runtime("invalid loop environment")),
         };
-        let body: Vec<_> = names
-            .iter()
-            .map(|n| Stmt::Let(n.clone(), Expr::Undefined))
-            .collect();
-        let next = self.new_environment(parent, &body, false)?;
+        // CreatePerIterationEnvironment (§14.7.4.4): a declarative environment
+        // with the same outer environment and one mutable binding per name.
+        let next = self.let_environment(parent, names)?;
         self.protect(&Value::Object(next))?;
         for name in names {
             let value = self.lookup(env, name)?;

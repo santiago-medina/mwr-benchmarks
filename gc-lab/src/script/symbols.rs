@@ -180,12 +180,12 @@ impl Engine<'_> {
                     .symbol_registry
                     .iter()
                     .find(|(_, symbol)| **symbol == id)
-                    .map(|(key, _)| Value::String(key.clone()))
+                    .map(|(key, _)| Value::String(key.clone().into()))
                     .unwrap_or(Value::Undefined))
             }
             "Symbol.prototype.toString" => {
                 let id = self.this_symbol(receiver)?;
-                Ok(Value::String(self.symbol_string(id)))
+                Ok(Value::String(self.symbol_string(id).into()))
             }
             "Symbol.prototype.valueOf" | "Symbol.prototype.toPrimitive" => {
                 self.this_symbol(receiver).map(Value::Symbol)
@@ -194,7 +194,7 @@ impl Engine<'_> {
                 let id = self.this_symbol(receiver)?;
                 Ok(self
                     .symbol_description(id)
-                    .map(Value::String)
+                    .map(|s| Value::String(s.into()))
                     .unwrap_or(Value::Undefined))
             }
             _ => Err(ScriptError::Unsupported("symbol intrinsic")),

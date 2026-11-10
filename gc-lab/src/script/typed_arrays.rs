@@ -375,7 +375,7 @@ impl Engine<'_> {
                     value: Some(Value::String(if getter == "tag" {
                         "get [Symbol.toStringTag]".into()
                     } else {
-                        format!("get {getter}")
+                        (format!("get {getter}")).into()
                     })),
                     ..Default::default()
                 },

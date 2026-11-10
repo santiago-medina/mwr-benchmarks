@@ -30,9 +30,15 @@ impl From<&Key> for Key {
 impl Key {
     pub fn index(&self) -> Option<u32> {
         if let Self::String(s) = self {
-            s.parse::<u32>()
-                .ok()
-                .filter(|n| *n < u32::MAX && n.to_string() == *s)
+            // CanonicalNumericIndexString for array indices, without allocating.
+            let b = s.as_bytes();
+            if b.is_empty() || b.len() > 10 || (b.len() > 1 && b[0] == b'0') {
+                return None;
+            }
+            if !b.iter().all(u8::is_ascii_digit) {
+                return None;
+            }
+            s.parse::<u32>().ok().filter(|n| *n < u32::MAX)
         } else {
             None
         }
@@ -57,7 +63,7 @@ impl Property {
             configurable,
         }
     }
-    fn edges(&self) -> Vec<Id> {
+    pub(super) fn edges(&self) -> Vec<Id> {
         match &self.kind {
             Kind::Data { value, .. } => value.id().into_iter().collect(),
             Kind::Accessor { get, set } => get.id().into_iter().chain(set.id()).collect(),
@@ -84,7 +90,7 @@ impl Descriptor {
 #[derive(Clone)]
 pub(super) struct Data {
     pub prototype: Option<Id>,
-    pub properties: Vec<(Key, Property)>,
+    pub properties: super::props::PropertyMap,
     pub extensible: bool,
     pub error_class: Option<String>,
     pub boxed: Option<Value>,
@@ -124,7 +130,7 @@ impl Data {
     pub fn new(prototype: Option<Id>) -> Self {
         Self {
             prototype,
-            properties: vec![],
+            properties: Default::default(),
             extensible: true,
             namespace: None,
             error_class: None,
@@ -192,10 +198,7 @@ impl Data {
     }
     pub fn own(&self, key: impl Into<Key>) -> Option<&Property> {
         let key = key.into();
-        self.properties
-            .iter()
-            .find(|(k, _)| *k == key)
-            .map(|(_, p)| p)
+        self.properties.get(&key)
     }
 }
 /// IsCompatiblePropertyDescriptor (§10.1.6.2): the validation half of
@@ -232,9 +235,20 @@ pub(super) fn compatible_descriptor(
 }
 impl Data {
     pub(super) fn apply(&mut self, key: Key, d: Descriptor) -> bool {
-        let old = self.own(&key).cloned();
+        match self.merged(&key, d) {
+            Some(p) => {
+                self.properties.insert(key, p);
+                true
+            }
+            None => false,
+        }
+    }
+    /// ValidateAndApplyPropertyDescriptor (§10.1.6.3) without the store: the property
+    /// `key` would hold after applying `d`, or None when `d` is incompatible.
+    pub(super) fn merged(&self, key: &Key, d: Descriptor) -> Option<Property> {
+        let old = self.own(key).cloned();
         if !compatible_descriptor(self.extensible, &d, old.as_ref()) {
-            return false;
+            return None;
         }
         let mut p = old.unwrap_or_else(|| Property::data(Value::Undefined, false, false, false));
         if d.accessor() && !matches!(p.kind, Kind::Accessor { .. }) {
@@ -273,12 +287,7 @@ impl Data {
         if let Some(v) = d.configurable {
             p.configurable = v;
         }
-        if let Some((_, v)) = self.properties.iter_mut().find(|(k, _)| *k == key) {
-            *v = p;
-        } else {
-            self.properties.push((key, p));
-        }
-        true
+        Some(p)
     }
 }
 
@@ -326,6 +335,48 @@ impl Engine<'_> {
             _ => unreachable!(),
         }
         Ok(())
+    }
+    /// [[DefineOwnProperty]] store for one key, in place: links the new property's
+    /// edges first (rolling back on a budget error), stores, then unlinks the old
+    /// edges. O(1) in the number of properties, unlike clone + `replace_data`.
+    pub(super) fn define_in_place(&mut self, id: Id, key: Key, d: Descriptor) -> Result<bool> {
+        let data = self.data(id)?;
+        let old = data.own(&key).map(Property::edges).unwrap_or_default();
+        let Some(next) = data.merged(&key, d) else {
+            return Ok(false);
+        };
+        let new = next.edges();
+        if new != old {
+            for (at, child) in new.iter().enumerate() {
+                if let Err(error) = self.runtime.link(id, *child) {
+                    for a in &new[..at] {
+                        self.runtime.unlink(id, *a)?;
+                    }
+                    return Err(error.into());
+                }
+            }
+        }
+        self.data_mut(id)?.properties.insert(key, next);
+        if new != old {
+            for child in old {
+                self.runtime.unlink(id, child)?;
+            }
+        }
+        Ok(true)
+    }
+    pub(super) fn data_mut(&mut self, id: Id) -> Result<&mut Data> {
+        self.runtime.value(id)?;
+        match self.objects.get_mut(&id) {
+            Some(
+                Object::Ordinary(d)
+                | Object::Builtin { data: d, .. }
+                | Object::Bound { data: d, .. }
+                | Object::Closure { data: d, .. },
+            ) => Ok(d),
+            _ => Err(ScriptError::Unsupported(
+                "ordinary reflection on host objects",
+            )),
+        }
     }
     pub(super) fn new_object(&mut self, prototype: Option<Id>) -> Result<Id> {
         if let Some(prototype) = prototype {
@@ -494,12 +545,7 @@ impl Engine<'_> {
             }
             return Ok(true);
         }
-        let mut data = self.data(id)?.clone();
-        let accepted = data.apply(key, d);
-        if accepted {
-            self.replace_data(id, data)?;
-        }
-        Ok(accepted)
+        self.define_in_place(id, key, d)
     }
 
     pub(super) fn put_data(&mut self, id: Id, key: impl Into<Key>, value: Value) -> Result<()> {
@@ -621,15 +667,28 @@ impl Engine<'_> {
         if self.own(id, &key)?.is_some_and(|p| !p.configurable) {
             return Ok(false);
         }
-        let mut d = self.data(id)?.clone();
-        d.properties.retain(|(k, _)| *k != key);
-        if let (Some(map), Some(index)) = (&mut d.parameter_map, key.index()) {
-            if let Some(slot) = map.get_mut(index as usize) {
-                *slot = None;
+        self.remove_in_place(id, &key)?;
+        if let Some(index) = key.index() {
+            let taken = self
+                .data_mut(id)?
+                .parameter_map
+                .as_mut()
+                .and_then(|map| map.get_mut(index as usize))
+                .and_then(Option::take);
+            if let Some((env, _)) = taken {
+                self.runtime.unlink(id, env)?;
             }
         }
-        self.replace_data(id, d)?;
         Ok(true)
+    }
+    /// Removes one own property in place and unlinks its GC edges (no Data clone).
+    pub(super) fn remove_in_place(&mut self, id: Id, key: &Key) -> Result<()> {
+        if let Some(old) = self.data_mut(id)?.properties.remove(key) {
+            for child in old.edges() {
+                self.runtime.unlink(id, child)?;
+            }
+        }
+        Ok(())
     }
     /// [[SetPrototypeOf]] (OrdinarySetPrototypeOf, §10.1.2.1).
     pub(super) fn set_prototype(&mut self, id: Id, prototype: Option<Id>) -> Result<bool> {

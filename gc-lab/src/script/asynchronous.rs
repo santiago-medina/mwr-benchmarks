@@ -1722,7 +1722,7 @@ impl Engine<'_> {
                                 &frame,
                                 out,
                                 match key {
-                                    super::objects::Key::String(s) => Value::String(s),
+                                    super::objects::Key::String(s) => Value::String(s.into()),
                                     super::objects::Key::Symbol(s) => Value::Symbol(s),
                                 },
                             )?;
@@ -1896,7 +1896,7 @@ impl Engine<'_> {
                             };
                             let value = e.register(&frame, value)?;
                             let text = e.template_text(text, value, &part)?;
-                            e.store(&frame, out, Value::String(text))?;
+                            e.store(&frame, out, Value::String(text.into()))?;
                         }
                         Op::Object(out) => {
                             let object =

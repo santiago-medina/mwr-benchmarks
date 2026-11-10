@@ -82,20 +82,17 @@ fn export_name(p: &mut Parser<'_>) -> Result<ExportName, SyntaxError> {
     match p.take() {
         Token::Name(s) => Ok(ExportName::Ident(s, false)),
         Token::EscapedName(s) => Ok(ExportName::Ident(s, true)),
-        Token::String(s) => {
-            // IsStringWellFormedUnicode: the lexer keeps lone surrogates as U+FFFD
-            // only when it cannot represent them; reject the escape outright.
-            if s.contains('\u{FFFD}') && !p.source.contains('\u{FFFD}') {
-                return Err(p.error("module export name is not well-formed Unicode"));
-            }
-            Ok(ExportName::Str(s))
-        }
+        Token::String(s) => Ok(ExportName::Str(s)),
+        // §16.2.1.1 early error: IsStringWellFormedUnicode(StringValue) is false.
+        Token::Units(_) => Err(p.error("module export name is not well-formed Unicode")),
         _ => Err(p.error("expected module export name")),
     }
 }
 fn specifier(p: &mut Parser<'_>) -> Result<String, SyntaxError> {
     let s = match p.take() {
         Token::String(s) => s,
+        // Host module resolution takes scalar text (HostLoadImportedModule).
+        Token::Units(_) => return Err(p.error("surrogate strings unsupported")),
         _ => return Err(p.error("module requires string specifier")),
     };
     // WithClause (import attributes) is not implemented: never accept it.
@@ -126,7 +123,7 @@ fn imported_binding(p: &mut Parser<'_>) -> Result<String, SyntaxError> {
 }
 /// ImportDeclaration after `import` (§16.2.2).
 fn import_declaration(p: &mut Parser<'_>, module: &mut Module) -> Result<(), SyntaxError> {
-    if let Token::String(_) = p.current() {
+    if let Token::String(_) | Token::Units(_) = p.current() {
         let s = specifier(p)?;
         p.semi()?;
         request(module, &s, ImportPhase::Evaluation);

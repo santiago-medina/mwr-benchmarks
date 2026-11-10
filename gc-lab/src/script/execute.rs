@@ -1,4 +1,5 @@
 //! Evaluation and completion propagation. Every allocating operation runs under a root frame.
+use super::js_string::JsString;
 use super::{
     objects::{Data, Descriptor, Key, Kind},
     parser::{Expr, Param, Pattern, Property as Literal, Stmt},
@@ -83,7 +84,7 @@ impl Engine<'_> {
                         Some(Kind::Data {
                             value: Value::String(s),
                             ..
-                        }) => s.clone(),
+                        }) => s.lossy().into_owned(),
                         _ => String::new(),
                     },
                 )
@@ -686,7 +687,8 @@ impl Engine<'_> {
             }
             Expr::Name(n) => self.lookup(env, n),
             Expr::This => self.lookup(env, "this"),
-            Expr::String(s) => Ok(Value::String(s.clone())),
+            Expr::String(s) => Ok(Value::String(s.clone().into())),
+            Expr::Units(u) => Ok(Value::String(JsString::from_units(u))),
             Expr::BigInt(s) => self.big_literal(s),
             Expr::RegExp { pattern, flags } => self.regexp_literal(pattern, flags),
             Expr::Number(n) => Ok(Value::number(n.parse().unwrap())),
@@ -1456,11 +1458,13 @@ impl Engine<'_> {
                 let b = self.to_primitive_hint(b, hint)?;
                 self.protect(&b)?;
                 if op == "+" && (matches!(a, Value::String(_)) || matches!(b, Value::String(_))) {
-                    return Ok(Value::String(self.to_string(a)? + &self.to_string(b)?));
+                    // §13.15.3 step 1.b.iii: the concatenation of the code units.
+                    let a = self.to_js_string(a)?;
+                    return Ok(Value::String(a.concat(&self.to_js_string(b)?)));
                 }
                 if matches!(op, "<" | ">" | "<=" | ">=") {
                     if let (Value::String(a), Value::String(b)) = (&a, &b) {
-                        let order = a.encode_utf16().cmp(b.encode_utf16());
+                        let order = a.units().cmp(&b.units());
                         return Ok(Value::Bool(match op {
                             "<" => order.is_lt(),
                             ">" => order.is_gt(),
@@ -1622,15 +1626,21 @@ impl Engine<'_> {
             self.to_string(value).map(Key::String)
         }
     }
+    /// ToString (§7.1.17) as scalar text; an ill-formed result reports Unsupported.
+    /// Sites that handle lone surrogates call `to_js_string`.
     pub(super) fn to_string(&mut self, v: Value) -> Result<String> {
+        Ok(self.to_js_string(v)?.text()?.to_owned())
+    }
+    /// ToString (§7.1.17).
+    pub(super) fn to_js_string(&mut self, v: Value) -> Result<JsString> {
         let v = self.to_primitive(v, true)?;
         Ok(match v {
             Value::Undefined => "undefined".into(),
             Value::Null => "null".into(),
-            Value::Bool(b) => b.to_string(),
-            Value::Number(n) => number_string(f64::from_bits(n)),
+            Value::Bool(b) => b.to_string().into(),
+            Value::Number(n) => number_string(f64::from_bits(n)).into(),
             Value::String(s) => s,
-            Value::BigInt(value) => self.big_string(&value, 10)?,
+            Value::BigInt(value) => self.big_string(&value, 10)?.into(),
             Value::Symbol(_) => {
                 return self.throw_error("TypeError", "cannot convert symbol to string")
             }
@@ -1657,6 +1667,9 @@ impl Engine<'_> {
                 return self.throw_error("TypeError", "cannot convert symbol to number")
             }
             Value::String(s) => {
+                // A lone surrogate is neither whitespace nor numeric (§7.1.4.1.1), so
+                // the lossy U+FFFD stand-in yields the same NaN.
+                let s = s.lossy();
                 let s = s.trim_matches(super::strings::whitespace);
                 if s.is_empty() {
                     0.0

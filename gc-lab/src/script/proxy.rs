@@ -19,7 +19,7 @@ type Result<T> = std::result::Result<T, ScriptError>;
 
 fn key_value(key: &Key) -> Value {
     match key {
-        Key::String(s) => Value::String(s.clone()),
+        Key::String(s) => Value::String(s.clone().into()),
         Key::Symbol(id) => Value::Symbol(*id),
     }
 }
@@ -623,7 +623,7 @@ impl Engine<'_> {
                 e.tick()?;
                 let v = e.get_member(Value::Object(array), index.to_string())?;
                 let key = match v {
-                    Value::String(s) => Key::String(s),
+                    Value::String(s) => Key::String(s.text()?.to_owned()),
                     Value::Symbol(s) => Key::Symbol(s),
                     _ => {
                         return e.throw_error(

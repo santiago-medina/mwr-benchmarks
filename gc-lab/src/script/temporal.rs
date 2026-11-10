@@ -3,6 +3,11 @@
 //!
 //! The JS layer (brand checks, argument coercion, options reading in the spec's
 //! observable order) is ours; arithmetic, parsing and formatting come from the crate.
+//!
+//! Temporal strings reach the crate parsers through `JsString::lossy`: no Temporal grammar
+//! (ISO 8601, time zone identifiers, units, calendars) admits a surrogate code unit, so a
+//! U+FFFD stand-in for a lone surrogate is rejected exactly like the original (RangeError).
+//!
 //! Every crate call runs under `catch_unwind` (`Engine::tcall`): the audit by Rust
 //! Unsafe Security Auditor (#92, collab #311) left panics (DoS) as the residual risk.
 use super::bigint::Big;
@@ -371,12 +376,12 @@ impl Engine<'_> {
                 if let Value::String(tz) = &extras[1] {
                     // A zoned relativeTo: InterpretISODateTimeOffset with offset
                     // ~reject~, disambiguation ~compatible~, match-exactly.
-                    let tz = self.tcall(|| TimeZone::try_from_str(tz))?;
+                    let tz = self.tcall(|| TimeZone::try_from_str(&tz.lossy()))?;
                     let time =
                         self.regulate_time(time.map(|v| v.unwrap_or(0.0)), Overflow::Constrain)?;
                     let offset = match &extras[0] {
                         Value::String(o) => {
-                            Some(self.tcall(|| UtcOffset::from_utf8(o.as_bytes()))?)
+                            Some(self.tcall(|| UtcOffset::from_utf8(o.lossy().as_bytes()))?)
                         }
                         _ => None,
                     };
@@ -408,7 +413,9 @@ impl Engine<'_> {
                 self.regulate_time(time.map(|v| v.unwrap_or(0.0)), Overflow::Constrain)?;
                 Ok(Some(RelativeTo::PlainDate(date)))
             }
-            Value::String(s) => self.tcall(|| RelativeTo::try_from_str(&s)).map(Some),
+            Value::String(s) => self
+                .tcall(|| RelativeTo::try_from_str(&s.lossy()))
+                .map(Some),
             _ => self.throw_error("TypeError", "relativeTo must be an object or a string"),
         }
     }
@@ -455,7 +462,7 @@ impl Engine<'_> {
                 let values = partial.map(|v| v.unwrap_or(0.0));
                 self.tcall(|| fields_to_duration(&values))
             }
-            Value::String(s) => self.tcall(|| Duration::from_utf8(s.as_bytes())),
+            Value::String(s) => self.tcall(|| Duration::from_utf8(s.lossy().as_bytes())),
             _ => self.throw_error("TypeError", "cannot convert value to a Temporal.Duration"),
         }
     }
@@ -520,7 +527,7 @@ impl Engine<'_> {
                         return self.throw_error("TypeError", "round requires an argument")
                     }
                     Value::String(ref s) => {
-                        let unit = match s.parse::<Unit>() {
+                        let unit = match s.lossy().parse::<Unit>() {
                             Ok(u) => u,
                             Err(_) => {
                                 return self.throw_error(
@@ -555,7 +562,7 @@ impl Engine<'_> {
                     Value::Undefined => {
                         return self.throw_error("TypeError", "total requires an argument")
                     }
-                    Value::String(ref s) => match s.parse::<Unit>() {
+                    Value::String(ref s) => match s.lossy().parse::<Unit>() {
                         Ok(u) => (Some(u), None),
                         Err(_) => {
                             return self.throw_error(
@@ -602,7 +609,7 @@ impl Engine<'_> {
                     rounding_mode,
                 };
                 let s = self.tcall(|| d.as_temporal_string(opts))?;
-                Ok(Value::String(s))
+                Ok(Value::String(s.into()))
             }
             "valueOf" => self.throw_error(
                 "TypeError",
@@ -675,7 +682,7 @@ impl Engine<'_> {
             return Ok(c.clone());
         }
         match value {
-            Value::String(s) => self.tcall(|| s.parse::<Calendar>()),
+            Value::String(s) => self.tcall(|| s.lossy().parse::<Calendar>()),
             _ => self.throw_error("TypeError", "calendar must be a string"),
         }
     }
@@ -765,12 +772,12 @@ impl Engine<'_> {
                         let Value::String(s) = p else {
                             return self.throw_error("TypeError", "offset must be a string");
                         };
-                        self.tcall(|| UtcOffset::from_utf8(s.as_bytes()))?;
+                        self.tcall(|| UtcOffset::from_utf8(s.lossy().as_bytes()))?;
                         Value::String(s)
                     } else {
                         // ToTemporalTimeZoneIdentifier, kept as its identifier string.
                         let tz = self.time_zone_identifier(value)?;
-                        Value::String(self.tcall(|| tz.identifier())?)
+                        Value::String((self.tcall(|| tz.identifier())?).into())
                     };
                 }
                 _ if TIME_FIELDS.iter().any(|(n, _)| *n == name) => {
@@ -791,7 +798,7 @@ impl Engine<'_> {
                         return self.throw_error("TypeError", "monthCode must be a string");
                     };
                     fields.month_code =
-                        Some(self.tcall(|| MonthCode::try_from_utf8(s.as_bytes()))?);
+                        Some(self.tcall(|| MonthCode::try_from_utf8(s.lossy().as_bytes()))?);
                 }
             }
         }
@@ -843,7 +850,7 @@ impl Engine<'_> {
         let Value::String(s) = item else {
             return self.throw_error("TypeError", "cannot convert value to a Temporal.PlainDate");
         };
-        let date = self.tcall(|| PlainDate::from_utf8(s.as_bytes()))?;
+        let date = self.tcall(|| PlainDate::from_utf8(s.lossy().as_bytes()))?;
         read_options(self)?;
         Ok(date)
     }
@@ -932,7 +939,10 @@ impl Engine<'_> {
         }
         let method = method.strip_prefix("prototype.").unwrap_or(method);
         let d = self.this_plain_date(&receiver)?;
-        let opt_str = |s: Option<String>| s.map(Value::String).unwrap_or(Value::Undefined);
+        let opt_str = |s: Option<String>| {
+            s.map(|s| Value::String(s.into()))
+                .unwrap_or(Value::Undefined)
+        };
         let opt_num = |n: Option<f64>| n.map(Value::number).unwrap_or(Value::Undefined);
         match method {
             "calendarId" => Ok(Value::String(d.calendar().identifier().into())),
@@ -940,7 +950,7 @@ impl Engine<'_> {
             "eraYear" => Ok(opt_num(d.era_year().map(f64::from))),
             "year" => Ok(Value::number(d.year() as f64)),
             "month" => Ok(Value::number(d.month() as f64)),
-            "monthCode" => Ok(Value::String(d.month_code().as_str().to_string())),
+            "monthCode" => Ok(Value::String(d.month_code().as_str().to_string().into())),
             "day" => Ok(Value::number(d.day() as f64)),
             "dayOfWeek" => Ok(Value::number(d.day_of_week() as f64)),
             "dayOfYear" => Ok(Value::number(d.day_of_year() as f64)),
@@ -1045,7 +1055,7 @@ impl Engine<'_> {
                 } else {
                     DisplayCalendar::Auto
                 };
-                Ok(Value::String(d.to_ixdtf_string(show)))
+                Ok(Value::String(d.to_ixdtf_string(show).into()))
             }
             "valueOf" => self.throw_error(
                 "TypeError",
@@ -1135,7 +1145,7 @@ impl Engine<'_> {
         let Value::String(s) = item else {
             return self.throw_error("TypeError", "cannot convert value to a Temporal.PlainTime");
         };
-        let time = self.tcall(|| PlainTime::from_utf8(s.as_bytes()))?;
+        let time = self.tcall(|| PlainTime::from_utf8(s.lossy().as_bytes()))?;
         read_options(self)?;
         Ok(time)
     }
@@ -1155,7 +1165,7 @@ impl Engine<'_> {
         let mut opts = RoundingOptions::default();
         let smallest = match round_to {
             Value::Undefined => return self.throw_error("TypeError", "round requires an argument"),
-            Value::String(ref s) => match s.parse::<Unit>() {
+            Value::String(ref s) => match s.lossy().parse::<Unit>() {
                 Ok(u) => Some(u),
                 Err(_) => {
                     return self.throw_error(
@@ -1278,7 +1288,9 @@ impl Engine<'_> {
                     None
                 };
                 let opts = self.time_string_options(options)?;
-                Ok(Value::String(self.tcall(|| t.to_ixdtf_string(opts))?))
+                Ok(Value::String(
+                    (self.tcall(|| t.to_ixdtf_string(opts))?).into(),
+                ))
             }
             "valueOf" => self.throw_error(
                 "TypeError",
@@ -1349,7 +1361,7 @@ impl Engine<'_> {
                 "cannot convert value to a Temporal.PlainDateTime",
             );
         };
-        let dt = self.tcall(|| PlainDateTime::from_utf8(s.as_bytes()))?;
+        let dt = self.tcall(|| PlainDateTime::from_utf8(s.lossy().as_bytes()))?;
         read_options(self)?;
         Ok(dt)
     }
@@ -1385,7 +1397,10 @@ impl Engine<'_> {
         }
         let method = method.strip_prefix("prototype.").unwrap_or(method);
         let d = self.this_plain_date_time(&receiver)?;
-        let opt_str = |s: Option<String>| s.map(Value::String).unwrap_or(Value::Undefined);
+        let opt_str = |s: Option<String>| {
+            s.map(|s| Value::String(s.into()))
+                .unwrap_or(Value::Undefined)
+        };
         let opt_num = |n: Option<f64>| n.map(Value::number).unwrap_or(Value::Undefined);
         match method {
             "calendarId" => Ok(Value::String(d.calendar().identifier().into())),
@@ -1393,7 +1408,7 @@ impl Engine<'_> {
             "eraYear" => Ok(opt_num(d.era_year().map(f64::from))),
             "year" => Ok(Value::number(d.year() as f64)),
             "month" => Ok(Value::number(d.month() as f64)),
-            "monthCode" => Ok(Value::String(d.month_code().as_str().to_string())),
+            "monthCode" => Ok(Value::String(d.month_code().as_str().to_string().into())),
             "day" => Ok(Value::number(d.day() as f64)),
             "hour" => Ok(Value::number(d.hour() as f64)),
             "minute" => Ok(Value::number(d.minute() as f64)),
@@ -1497,7 +1512,9 @@ impl Engine<'_> {
                 } else {
                     (ToStringRoundingOptions::default(), DisplayCalendar::Auto)
                 };
-                Ok(Value::String(self.tcall(|| d.to_ixdtf_string(opts, show))?))
+                Ok(Value::String(
+                    (self.tcall(|| d.to_ixdtf_string(opts, show))?).into(),
+                ))
             }
             "valueOf" => self.throw_error(
                 "TypeError",
@@ -1538,7 +1555,7 @@ impl Engine<'_> {
         let Value::String(s) = value else {
             return self.throw_error("TypeError", "time zone must be a string");
         };
-        self.tcall(|| TimeZone::try_from_str(&s))
+        self.tcall(|| TimeZone::try_from_str(&s.lossy()))
     }
 
     /// ToTemporalInstant.
@@ -1557,7 +1574,7 @@ impl Engine<'_> {
         let Value::String(s) = item else {
             return self.throw_error("TypeError", "cannot convert value to a Temporal.Instant");
         };
-        self.tcall(|| Instant::from_utf8(s.as_bytes()))
+        self.tcall(|| Instant::from_utf8(s.lossy().as_bytes()))
     }
 
     fn this_instant(&mut self, receiver: &Value) -> Result<Instant> {
@@ -1664,7 +1681,9 @@ impl Engine<'_> {
                         zone = Some(self.time_zone_identifier(tz)?);
                     }
                 }
-                Ok(Value::String(self.tcall(|| i.to_ixdtf_string(zone, opts))?))
+                Ok(Value::String(
+                    (self.tcall(|| i.to_ixdtf_string(zone, opts))?).into(),
+                ))
             }
             "toZonedDateTimeISO" => {
                 let tz = self.time_zone_identifier(arg(0))?;
@@ -1754,9 +1773,11 @@ impl Engine<'_> {
             let Value::String(tz) = &extras[1] else {
                 return self.throw_error("TypeError", "timeZone is required");
             };
-            let tz = self.tcall(|| TimeZone::try_from_str(tz))?;
+            let tz = self.tcall(|| TimeZone::try_from_str(&tz.lossy()))?;
             let offset = match &extras[0] {
-                Value::String(o) => Some(self.tcall(|| UtcOffset::from_utf8(o.as_bytes()))?),
+                Value::String(o) => {
+                    Some(self.tcall(|| UtcOffset::from_utf8(o.lossy().as_bytes()))?)
+                }
                 _ => None,
             };
             let (disambiguation, offset_option, overflow) =
@@ -1791,7 +1812,7 @@ impl Engine<'_> {
                 "cannot convert value to a Temporal.ZonedDateTime",
             );
         };
-        let parsed = self.tcall(|| ParsedZonedDateTime::from_utf8(s.as_bytes()))?;
+        let parsed = self.tcall(|| ParsedZonedDateTime::from_utf8(s.lossy().as_bytes()))?;
         let (disambiguation, offset_option, _) =
             self.zoned_options(options, OffsetDisambiguation::Reject)?;
         self.tcall(|| ZonedDateTime::from_parsed(parsed, disambiguation, offset_option))
@@ -1828,16 +1849,21 @@ impl Engine<'_> {
         }
         let method = method.strip_prefix("prototype.").unwrap_or(method);
         let z = self.this_zoned_date_time(&receiver)?;
-        let opt_str = |s: Option<String>| s.map(Value::String).unwrap_or(Value::Undefined);
+        let opt_str = |s: Option<String>| {
+            s.map(|s| Value::String(s.into()))
+                .unwrap_or(Value::Undefined)
+        };
         let opt_num = |n: Option<f64>| n.map(Value::number).unwrap_or(Value::Undefined);
         match method {
             "calendarId" => Ok(Value::String(z.calendar().identifier().into())),
-            "timeZoneId" => Ok(Value::String(self.tcall(|| z.time_zone().identifier())?)),
+            "timeZoneId" => Ok(Value::String(
+                (self.tcall(|| z.time_zone().identifier())?).into(),
+            )),
             "era" => Ok(opt_str(z.era().map(|e| e.as_str().to_string()))),
             "eraYear" => Ok(opt_num(z.era_year().map(f64::from))),
             "year" => Ok(Value::number(z.year() as f64)),
             "month" => Ok(Value::number(z.month() as f64)),
-            "monthCode" => Ok(Value::String(z.month_code().as_str().to_string())),
+            "monthCode" => Ok(Value::String(z.month_code().as_str().to_string().into())),
             "day" => Ok(Value::number(z.day() as f64)),
             "hour" => Ok(Value::number(z.hour() as f64)),
             "minute" => Ok(Value::number(z.minute() as f64)),
@@ -1858,7 +1884,7 @@ impl Engine<'_> {
             "monthsInYear" => Ok(Value::number(z.months_in_year() as f64)),
             "inLeapYear" => Ok(Value::Bool(z.in_leap_year())),
             "offsetNanoseconds" => Ok(Value::number(z.offset_nanoseconds() as f64)),
-            "offset" => Ok(Value::String(z.offset())),
+            "offset" => Ok(Value::String(z.offset().into())),
             "with" => {
                 // §6.3.x Temporal.ZonedDateTime.prototype.with ( like [ , options ] )
                 let like = arg(0);
@@ -1875,7 +1901,9 @@ impl Engine<'_> {
                 let merged: [f64; 6] = std::array::from_fn(|i| time[i].unwrap_or(current[i]));
                 let t = self.regulate_time(merged, overflow)?;
                 let offset = match &extras[0] {
-                    Value::String(o) => Some(self.tcall(|| UtcOffset::from_utf8(o.as_bytes()))?),
+                    Value::String(o) => {
+                        Some(self.tcall(|| UtcOffset::from_utf8(o.lossy().as_bytes()))?)
+                    }
                     _ => None,
                 };
                 let partial = ZonedDateTimeFields {
@@ -2030,7 +2058,7 @@ impl Engine<'_> {
                     }
                 }
                 Ok(Value::String(
-                    self.tcall(|| z.to_ixdtf_string(offset, zone, show, opts))?,
+                    (self.tcall(|| z.to_ixdtf_string(offset, zone, show, opts))?).into(),
                 ))
             }
             "valueOf" => self.throw_error(
@@ -2080,7 +2108,7 @@ impl Engine<'_> {
                 "cannot convert value to a Temporal.PlainYearMonth",
             );
         };
-        let ym = self.tcall(|| PlainYearMonth::from_utf8(s.as_bytes()))?;
+        let ym = self.tcall(|| PlainYearMonth::from_utf8(s.lossy().as_bytes()))?;
         read_options(self)?;
         Ok(ym)
     }
@@ -2120,7 +2148,7 @@ impl Engine<'_> {
                 "cannot convert value to a Temporal.PlainMonthDay",
             );
         };
-        let md = self.tcall(|| PlainMonthDay::from_utf8(s.as_bytes()))?;
+        let md = self.tcall(|| PlainMonthDay::from_utf8(s.lossy().as_bytes()))?;
         read_options(self)?;
         Ok(md)
     }
@@ -2152,7 +2180,10 @@ impl Engine<'_> {
             Some(Slot::PlainYearMonth(ym)) => ym.clone(),
             _ => return self.throw_error("TypeError", "receiver is not a Temporal.PlainYearMonth"),
         };
-        let opt_str = |s: Option<String>| s.map(Value::String).unwrap_or(Value::Undefined);
+        let opt_str = |s: Option<String>| {
+            s.map(|s| Value::String(s.into()))
+                .unwrap_or(Value::Undefined)
+        };
         let opt_num = |n: Option<f64>| n.map(Value::number).unwrap_or(Value::Undefined);
         match method {
             "calendarId" => Ok(Value::String(ym.calendar().identifier().into())),
@@ -2160,7 +2191,7 @@ impl Engine<'_> {
             "eraYear" => Ok(opt_num(ym.era_year().map(f64::from))),
             "year" => Ok(Value::number(ym.year() as f64)),
             "month" => Ok(Value::number(ym.month() as f64)),
-            "monthCode" => Ok(Value::String(ym.month_code().as_str().to_string())),
+            "monthCode" => Ok(Value::String(ym.month_code().as_str().to_string().into())),
             "daysInYear" => Ok(Value::number(ym.days_in_year() as f64)),
             "daysInMonth" => Ok(Value::number(ym.days_in_month() as f64)),
             "monthsInYear" => Ok(Value::number(ym.months_in_year() as f64)),
@@ -2230,7 +2261,7 @@ impl Engine<'_> {
                 } else {
                     DisplayCalendar::Auto
                 };
-                Ok(Value::String(ym.to_ixdtf_string(show)))
+                Ok(Value::String(ym.to_ixdtf_string(show).into()))
             }
             "valueOf" => self.throw_error(
                 "TypeError",
@@ -2261,7 +2292,7 @@ impl Engine<'_> {
         };
         match method {
             "calendarId" => Ok(Value::String(md.calendar().identifier().into())),
-            "monthCode" => Ok(Value::String(md.month_code().as_str().to_string())),
+            "monthCode" => Ok(Value::String(md.month_code().as_str().to_string().into())),
             "day" => Ok(Value::number(md.day() as f64)),
             "with" => {
                 let like = arg(0);
@@ -2301,7 +2332,7 @@ impl Engine<'_> {
                 } else {
                     DisplayCalendar::Auto
                 };
-                Ok(Value::String(md.to_ixdtf_string(show)))
+                Ok(Value::String(md.to_ixdtf_string(show).into()))
             }
             "valueOf" => self.throw_error(
                 "TypeError",
@@ -2339,7 +2370,9 @@ impl Engine<'_> {
                 let d = self.integer_with_truncation(arg(2))?;
                 let calendar = match arg(3) {
                     Value::Undefined => Calendar::ISO,
-                    Value::String(s) => self.tcall(|| Calendar::try_from_utf8(s.as_bytes()))?,
+                    Value::String(s) => {
+                        self.tcall(|| Calendar::try_from_utf8(s.lossy().as_bytes()))?
+                    }
                     _ => return self.throw_error("TypeError", "calendar must be a string"),
                 };
                 if !(1.0..=12.0).contains(&m) || !(1.0..=31.0).contains(&d) {
@@ -2378,7 +2411,9 @@ impl Engine<'_> {
                 }
                 let calendar = match arg(9) {
                     Value::Undefined => Calendar::ISO,
-                    Value::String(s) => self.tcall(|| Calendar::try_from_utf8(s.as_bytes()))?,
+                    Value::String(s) => {
+                        self.tcall(|| Calendar::try_from_utf8(s.lossy().as_bytes()))?
+                    }
                     _ => return self.throw_error("TypeError", "calendar must be a string"),
                 };
                 if !(1.0..=12.0).contains(&m) || !(1.0..=31.0).contains(&d) {
@@ -2415,10 +2450,12 @@ impl Engine<'_> {
                     return self.throw_error("TypeError", "time zone must be a string");
                 };
                 // ParseTimeZoneIdentifier: identifiers only, no ISO strings.
-                let tz = self.tcall(|| TimeZone::try_from_identifier_str(&tz))?;
+                let tz = self.tcall(|| TimeZone::try_from_identifier_str(&tz.lossy()))?;
                 let calendar = match arg(2) {
                     Value::Undefined => Calendar::ISO,
-                    Value::String(s) => self.tcall(|| Calendar::try_from_utf8(s.as_bytes()))?,
+                    Value::String(s) => {
+                        self.tcall(|| Calendar::try_from_utf8(s.lossy().as_bytes()))?
+                    }
                     _ => return self.throw_error("TypeError", "calendar must be a string"),
                 };
                 let z = self.tcall(|| ZonedDateTime::try_new_from_instant(i, tz, calendar))?;
@@ -2431,7 +2468,9 @@ impl Engine<'_> {
                 let m = self.integer_with_truncation(arg(1))?;
                 let calendar = match arg(2) {
                     Value::Undefined => Calendar::ISO,
-                    Value::String(s) => self.tcall(|| Calendar::try_from_utf8(s.as_bytes()))?,
+                    Value::String(s) => {
+                        self.tcall(|| Calendar::try_from_utf8(s.lossy().as_bytes()))?
+                    }
                     _ => return self.throw_error("TypeError", "calendar must be a string"),
                 };
                 let day = match arg(3) {
@@ -2453,7 +2492,9 @@ impl Engine<'_> {
                 let d = self.integer_with_truncation(arg(1))?;
                 let calendar = match arg(2) {
                     Value::Undefined => Calendar::ISO,
-                    Value::String(s) => self.tcall(|| Calendar::try_from_utf8(s.as_bytes()))?,
+                    Value::String(s) => {
+                        self.tcall(|| Calendar::try_from_utf8(s.lossy().as_bytes()))?
+                    }
                     _ => return self.throw_error("TypeError", "calendar must be a string"),
                 };
                 let year = match arg(3) {

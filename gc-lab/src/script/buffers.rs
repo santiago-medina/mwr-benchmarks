@@ -310,7 +310,7 @@ impl Engine<'_> {
                     f,
                     "name",
                     Descriptor {
-                        value: Some(Value::String(format!("get {getter}"))),
+                        value: Some(Value::String((format!("get {getter}")).into())),
                         ..Default::default()
                     },
                 )?;
