@@ -236,9 +236,12 @@ pub fn is_using(kind: &str) -> bool {
     kind == "using" || kind == "await using"
 }
 pub(super) fn has_direct_using(body: &[Stmt]) -> bool {
-    direct_statements(body)
-        .iter()
-        .any(|s| matches!(s, Stmt::Bind { kind, .. } if is_using(kind)))
+    // Same walk as `direct_statements`, without collecting: it runs on every block entry.
+    body.iter().any(|statement| match strip_labels(statement) {
+        Stmt::Declarations(items) => has_direct_using(items),
+        Stmt::Bind { kind, .. } => is_using(kind),
+        _ => false,
+    })
 }
 pub fn direct_statements(body: &[Stmt]) -> Vec<&Stmt> {
     let mut out = vec![];

@@ -187,7 +187,7 @@ impl Engine<'_> {
             _ if private => self.set_member(receiver, property, value),
             Value::Object(id) if !matches!(self.objects.get(id), Some(Object::Node { .. })) => {
                 let id = *id;
-                if !self.ordinary_set(id, &property, value, receiver)? && strict {
+                if !self.ordinary_set(id, property, value, receiver)? && strict {
                     return self.throw_error("TypeError", "assignment refused");
                 }
                 Ok(())
@@ -199,7 +199,7 @@ impl Engine<'_> {
             _ => {
                 // Primitive base: setters on the prototype chain still run.
                 let proto = self.primitive_prototype(&receiver)?;
-                if !self.ordinary_set(proto, &property, value, receiver)? && strict {
+                if !self.ordinary_set(proto, property, value, receiver)? && strict {
                     return self.throw_error("TypeError", "assignment to primitive property");
                 }
                 Ok(())
@@ -218,7 +218,7 @@ impl Engine<'_> {
                 return self.private_set(receiver, symbol, value);
             }
             return if let Value::Object(id) = receiver.clone() {
-                if self.ordinary_set(id, &property, value, receiver)? {
+                if self.ordinary_set(id, property, value, receiver)? {
                     Ok(())
                 } else {
                     self.throw_error("TypeError", "assignment refused")

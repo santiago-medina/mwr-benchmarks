@@ -69,17 +69,94 @@ impl BuildHasher for BuildKeyHasher {
 
 const INDEX_AT: usize = 8;
 
+/// Hasher for the index's `u64` keys, which are already seeded, avalanched key hashes.
+#[derive(Clone, Copy, Default)]
+struct HashOnly(u64);
+impl Hasher for HashOnly {
+    fn write(&mut self, _: &[u8]) {
+        unreachable!("the index hashes only u64 key hashes")
+    }
+    fn write_u64(&mut self, word: u64) {
+        self.0 = word;
+    }
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+#[derive(Clone, Copy, Default)]
+struct BuildHashOnly;
+impl BuildHasher for BuildHashOnly {
+    type Hasher = HashOnly;
+    fn build_hasher(&self) -> HashOnly {
+        HashOnly(0)
+    }
+}
+
+/// Entry positions sharing one key hash (almost always one). The index stores hashes,
+/// not keys, so appending a key never clones it; lookups compare against `entries`.
+#[derive(Clone)]
+enum Bucket {
+    One(usize),
+    Many(Vec<usize>),
+}
+
+#[derive(Clone, Default)]
+struct Index {
+    keys: BuildKeyHasher,
+    positions: HashMap<u64, Bucket, BuildHashOnly>,
+}
+impl Index {
+    fn hash(&self, key: &Key) -> u64 {
+        self.keys.hash_one(key)
+    }
+    fn add(&mut self, hash: u64, at: usize) {
+        use std::collections::hash_map::Entry;
+        match self.positions.entry(hash) {
+            Entry::Vacant(slot) => {
+                slot.insert(Bucket::One(at));
+            }
+            Entry::Occupied(mut slot) => match slot.get_mut() {
+                Bucket::Many(all) => all.push(at),
+                Bucket::One(first) => {
+                    let first = *first;
+                    slot.insert(Bucket::Many(vec![first, at]));
+                }
+            },
+        }
+    }
+    fn drop_position(&mut self, hash: u64, at: usize) {
+        let Some(bucket) = self.positions.get_mut(&hash) else {
+            return;
+        };
+        match bucket {
+            Bucket::One(_) => {
+                self.positions.remove(&hash);
+            }
+            Bucket::Many(all) => {
+                all.retain(|p| *p != at);
+                if let [only] = all[..] {
+                    *bucket = Bucket::One(only);
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 pub(super) struct PropertyMap {
     entries: Vec<Option<(Key, Property)>>,
-    index: Option<HashMap<Key, usize, BuildKeyHasher>>,
+    index: Option<Index>,
     live: usize,
 }
 
 impl PropertyMap {
     fn position(&self, key: &Key) -> Option<usize> {
+        let matches = |at: usize| self.entries[at].as_ref().is_some_and(|(k, _)| k == key);
         match &self.index {
-            Some(index) => index.get(key).copied(),
+            Some(index) => match index.positions.get(&index.hash(key))? {
+                Bucket::One(at) => matches(*at).then_some(*at),
+                Bucket::Many(all) => all.iter().copied().find(|at| matches(*at)),
+            },
             None => self
                 .entries
                 .iter()
@@ -106,7 +183,8 @@ impl PropertyMap {
     pub(super) fn push(&mut self, (key, property): (Key, Property)) {
         let at = self.entries.len();
         if let Some(index) = &mut self.index {
-            index.insert(key.clone(), at);
+            let hash = index.hash(&key);
+            index.add(hash, at);
         }
         self.entries.push(Some((key, property)));
         self.live += 1;
@@ -118,7 +196,8 @@ impl PropertyMap {
         let at = self.position(key)?;
         let (_, property) = self.entries[at].take()?;
         if let Some(index) = &mut self.index {
-            index.remove(key);
+            let hash = index.hash(key);
+            index.drop_position(hash, at);
         }
         self.live -= 1;
         if self.entries.len() > 2 * self.live + INDEX_AT {
@@ -139,11 +218,15 @@ impl PropertyMap {
     }
     fn reindex(&mut self) {
         self.index = (self.live > INDEX_AT).then(|| {
-            self.entries
-                .iter()
-                .enumerate()
-                .filter_map(|(at, e)| e.as_ref().map(|(k, _)| (k.clone(), at)))
-                .collect()
+            let mut index = Index::default();
+            index.positions.reserve(self.live);
+            for (at, entry) in self.entries.iter().enumerate() {
+                if let Some((k, _)) = entry {
+                    let hash = index.hash(k);
+                    index.add(hash, at);
+                }
+            }
+            index
         });
     }
     pub(super) fn len(&self) -> usize {
@@ -176,6 +259,22 @@ mod tests {
     use super::PropertyMap;
     fn p(n: f64) -> Property {
         Property::data(Value::number(n), true, true, true)
+    }
+    #[test]
+    fn colliding_hashes_share_a_bucket() {
+        let mut index = super::Index::default();
+        index.add(7, 1);
+        index.add(7, 4);
+        index.add(7, 9);
+        index.drop_position(7, 4);
+        assert!(matches!(index.positions.get(&7), Some(super::Bucket::Many(v)) if v == &[1, 9]));
+        index.drop_position(7, 1);
+        assert!(matches!(
+            index.positions.get(&7),
+            Some(super::Bucket::One(9))
+        ));
+        index.drop_position(7, 9);
+        assert!(index.positions.is_empty());
     }
     #[test]
     fn order_and_index() {

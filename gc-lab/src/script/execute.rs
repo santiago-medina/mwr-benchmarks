@@ -1647,13 +1647,20 @@ impl Engine<'_> {
         }
         Err(ScriptError::Runtime("prototype traversal limit"))
     }
+    #[inline]
     pub(super) fn to_primitive(&mut self, v: Value, string: bool) -> Result<Value> {
         self.to_primitive_hint(v, if string { "string" } else { "number" })
     }
+    /// ToPrimitive §7.1.1: step 1 (non-objects are returned as is) inline, the rest out of line.
+    #[inline]
     pub(super) fn to_primitive_hint(&mut self, v: Value, hint: &str) -> Result<Value> {
         if !matches!(v, Value::Object(_)) {
             return Ok(v);
         }
+        self.object_to_primitive(v, hint)
+    }
+    #[inline(never)]
+    fn object_to_primitive(&mut self, v: Value, hint: &str) -> Result<Value> {
         self.protect(&v)?;
         let exotic = self.get_member(v.clone(), Key::Symbol(super::symbols::PRIMITIVE))?;
         self.protect(&exotic)?;

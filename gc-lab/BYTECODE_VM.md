@@ -374,3 +374,34 @@ Remaining hot spots: `plain_set` 2.3k, `lookup_with_base` 2.0k, `initialize` 1.1
 (link/unlink and two lookups), malloc/free about 10%. If round 3 misses 15k, the next
 step is a literature check on the environment representation, then the resolver
 (slot environments) as designed above.
+
+### Stage 2, round 3 (checkpoint 24): clones and calls on the store path
+
+Same benchmark and method (callgrind, `loop_small.js`, 20k iterations):
+
+| step | loop_small | per iteration |
+|---|---:|---:|
+| round 2 (checkpoint 23) | 319.1 M | 16.0 k |
+| `has_direct_using` without a Vec, ToPrimitive step 1 inline, owned key in `assign_member` | 303.9 M | 15.2 k |
+| property index keyed by hash (no key clone per new property) | 294.4 M | 14.7 k |
+
+`fib_small.js`: 105.6 M → 103.4 M.
+
+- `has_direct_using` ran on every block entry and collected `direct_statements` into a
+  `Vec` first (≈ 200 instructions per iteration). It now walks the same statements
+  without collecting.
+- ToPrimitive §7.1.1 step 1 (a non-object is returned unchanged) is an inline check;
+  the object path (`@@toPrimitive`, OrdinaryToPrimitive) stays out of line. `to_number`
+  and the binary operators called it about 9 times per iteration.
+- `assign_member` (PutValue §6.2.5.6 on a property reference) owns its key and passes it
+  by value to OrdinarySet, so a new property no longer clones the key string.
+- `PropertyMap`'s index (objects with more than 8 live keys) maps the seeded key hash to
+  entry positions, `One(at)` or `Many(Vec)` on a collision, and compares against the
+  stored entry. Appending a property no longer clones its key into the index. Insertion
+  order, tombstones and compaction are unchanged (PROPERTIES.md).
+
+Kill line (≤ 15k per iteration): **met** at 14.7k in fix round 3. The property-escape
+timeouts need more than another 1.1x: they need stage 3 (register bytecode, target ≤ 5k per
+iteration), which waits on the literature check and the second opinion. The resolver with
+slot environments (above) stays the first stage 3 prerequisite: bytecode operands need
+`(hops, slot)` resolution.

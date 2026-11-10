@@ -302,3 +302,10 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Callgrind: 20k-iteration loop 470.1 M → 319.1 M instructions (16.0k per iteration, kill line ≤ 15k, round 2 of 3), fib(16) 111.0 M → 105.6 M.
 - Full run: 45918/47708 pass (96.2%), -1. Lost 1: built-ins/Function/prototype/toString/built-in-function-object.js timed out under foreign load (load average ~9.5) and passes alone in 2 s, so it is counted as a load timeout, not a regression. Runner timeouts 456.
 - Next: round 3 (plain_set, lookup_with_base, initialize link/unlink, malloc/free), then the resolver with slot environments.
+
+### Roadmap B stage 2, round 3: clones and calls on the store path (checkpoint 24, 2026-11-10)
+
+- `has_direct_using` walks block statements without collecting a Vec, ToPrimitive §7.1.1 step 1 is an inline check, `assign_member` hands its key to OrdinarySet by value, and the `PropertyMap` index maps seeded key hashes to entry positions (no key clone per new property). BYTECODE_VM.md "Stage 2, round 3".
+- Callgrind: 20k-iteration loop 319.1 M → 294.4 M instructions (14.7k per iteration: the stage-2 kill line ≤ 15k is met), fib(16) 105.6 M → 103.4 M.
+- Full run: 46067/47708 pass (96.6%), +149. Lost 0. Runner timeouts 456 → 307 (the gains are slow cases now finishing under 10 s).
+- Next: stage 3 (register bytecode, with the slot-environment resolver first) waits on the literature check (collab #336) and a second opinion; meanwhile roadmap A buckets.
