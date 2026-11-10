@@ -64,11 +64,16 @@ Size of the gap (full26, 2026-11-10): **483 cases**.
    remove a lone surrogate (concat, slice, fromCharCode, toWellFormed) passes
    through one normalising function.
 
-Literature/engine precedent: SpiderMonkey and V8 use dual representations
-(Latin-1 / two-byte) with a canonical-choice rule; Boa uses UTF-16 throughout
-(its `JsString`); Servo's DOMString question (WTF-16 vs UTF-8) is open and
-handled at the binding boundary by conversion. Option 3 mirrors the
-dual-representation approach with UTF-8 instead of Latin-1 as the narrow form.
+Literature/engine precedent (corrected after literature check #335, Literature
+Review #82, 2026-11-10): SpiderMonkey, V8 and Boa use dual representations
+(Latin-1 / two-byte) **without** a canonical-choice rule: a two-byte string may
+hold only Latin-1 characters, and equality and hashing compare code-unit content.
+So engines are no precedent for derived `Eq`/`Hash`; option 3's soundness rests
+entirely on the invariant, as in WTF-8 well-formedness (Nova is the live Rust
+WTF-8 engine). Servo's DOMString question (WTF-16 vs UTF-8) is open and handled at
+the binding boundary by conversion. Option 3 has no exact precedent: it is a
+canonical-encoding design in the WTF-8 family, with UTF-16 units as the
+ill-formed form.
 
 ## Design
 
@@ -152,3 +157,21 @@ Kill line: 3 fix rounds on a bucket without progress → narrower survey.
   parseFloat 218/220. The 2 failures (`S15.1.3.x_A2.5_T1`) are timeouts that also fail in full27.
 - Still unsupported (9): lone surrogates in source text (comments, RegExp literals, group
   names). They need the lexer to work on code points over UTF-16, not on `&str`.
+
+## Literature check #335 (2026-11-10): verdict and follow-ups
+
+Verdict: adopt with corrections (report: task #2438, docs/literature-check-js-dual-string-repr-2026-11-10.md).
+- Done already: `Repr` is private to `js_string.rs`, there is no `Ord` derive, and relational
+  comparison works on code units.
+- To do, as one small hardening item: a `debug_assert!` of the invariant in every constructor;
+  a property test over random u16 sequences biased to surrogates, with concat/slice/at seams,
+  checking `a == b ⇔ units(a) == units(b)` and equal hashes (and Map/Set keys); a U+FFFF vs
+  U+10000 relational test.
+- Perf controls for the benchmark set: a `+=` builder loop to 1M units (O(n²) check) and an
+  indexed `s[i]`/`charCodeAt` loop over a long non-ASCII string. Pre-decided mitigations if
+  either regresses: a cached unit length / ASCII flag for O(1) indexing, and an in-place append
+  for a uniquely owned string (or a lazy rope node) for `+=`.
+- Fallback if the invariant proves fragile: Boa-style handwritten Eq/Hash over code units
+  (correct without canonicality, at the cost of `encode_utf16` when hashing `Utf8`).
+- Host boundary (roadmap C): decide throw vs U+FFFD per API, matching SpiderMonkey's lossy
+  UTF-8 conversion and Stylo's replacement policy.

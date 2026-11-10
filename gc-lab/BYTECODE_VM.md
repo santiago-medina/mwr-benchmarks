@@ -120,7 +120,7 @@ environments allocated on the GC heap, plus the cost of a recursive AST walk thr
 | **O1. Tree-walker fixes only**: `Rc` bodies, lazy `arguments`, dense elements, interned names | about 2x (the incidental half) | small | low; still about 25k instructions per iteration, short of the 12x needed |
 | **O2. O1 plus resolved bindings** (a scope-analysis pass annotates each `Name` with `(hops, slot)` or Dynamic; environments become `Vec<Value>` plus a fallback map) | about 4-6x | medium | medium; `with`, sloppy eval and mapped arguments need a dynamic path |
 | **O3. O2 plus a register bytecode VM** (Lua 5 / Hermes style: three-address ops over a frame-local `Vec<Value>` register window) | 10-30x over today | large | high, but staged (below) |
-| O3'. Stack bytecode (QuickJS, SpiderMonkey, Boa) | about the same as O3 | large | more dispatches per operation; Shi et al. 2005 measured about 47 % fewer executed VM instructions for registers. Match-based dispatch makes the dispatch count matter more |
+| O3'. Stack bytecode (QuickJS, SpiderMonkey; Boa before v0.21) | about the same as O3 | large | more dispatches per operation. Shi et al. 2005 report a 1.15 speedup for registers with inline-threaded dispatch (the figure literature check #336 verified); the "47 % fewer executed VM instructions" figure cited here earlier could not be sourced by that check and is not load-bearing. No Rust or match-dispatch measurement exists: the stage-3 kill line is the real test |
 | O4. Accumulator plus registers (V8 Ignition) | about the same as O3 | large | denser code, but every op has an implicit operand; no clear win without a JIT tier to feed |
 
 **Choice: O3, reached in stages through O1 and O2.** Each stage ships on its own with
@@ -203,6 +203,26 @@ model, not to the evaluator.
   Hot paths get fast cases before the generic call: Number + Number, dense-element
   get/put, own data property on an ordinary object.
 
+### Stage 3 requirements from literature check #336 (2026-11-10)
+
+Verdict: adopt the register VM and the staged plan. Requirements added to stage 3:
+- Register allocation with reuse from day one (a freelist or live ranges); log the maximum
+  registers per function over test262 as a metric.
+- GC seeds scan only the live window `[0, top)`; registers are cleared at block and loop exit.
+  Tests: a Stress-mode case per opcode family where the handler's abstract operation allocates
+  while its operands are live, and a dead register must not keep a WeakRef target alive.
+- A suspended generator's register window is traced as explicit edges of the generator object.
+- Resolver: "maybe direct eval" is decided by name with a run-time check; the dynamic marking
+  covers the containing function's var environment and every scope between it and the eval.
+  Gate: test262 `language/eval-code`, `language/statements/with`, `language/arguments-object`,
+  `annexB`.
+- Mapped arguments on `(env, slot)`: explicit cases for freeze/defineProperty breaking the
+  mapping, aliasing after return, and captured formals.
+- Differential gate: besides `auto`, run `--engine=vm` with fallback as an error, and report
+  the fallback count at each checkpoint.
+- Optional: a stack-vs-register micro-comparison on `loop_let` at the first coverage step
+  (expressions only), so the choice is measured in this engine.
+
 ### Stage 4 (later, own note): shapes and inline caches
 
 Hidden classes and per-instruction inline caches for `GetProp`/`SetProp` (Deutsch &
@@ -248,7 +268,10 @@ creates. They are out of scope here.
 - R. Ierusalimschy, L. H. de Figueiredo, W. Celes, "The Implementation of Lua 5.0",
   J. UCS 11(7), 2005 (register VM, upvalues).
 - V8 Ignition design (accumulator register machine), 2016. Hermes bytecode (register
-  VM, AOT). QuickJS, SpiderMonkey and Boa (stack bytecode; Boa is a Rust engine).
+  VM, AOT). QuickJS and SpiderMonkey (stack bytecode). Boa (Rust) moved from a stack VM
+  to a register VM in v0.21; Kiesel (register VM over a live-ranges IR) and LibJS (from an
+  accumulator format to explicit src/dst registers) converged on registers too
+  (literature check #336, Literature Review #82, 2026-11-10).
 - L. P. Deutsch, A. M. Schiffman, "Efficient Implementation of the Smalltalk-80 System",
   POPL 1984 (inline caches). U. Hölzle, C. Chambers, D. Ungar, "Optimizing
   Dynamically-Typed Object-Oriented Languages With Polymorphic Inline Caches",
