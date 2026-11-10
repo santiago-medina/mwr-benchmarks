@@ -99,12 +99,7 @@ impl Engine<'_> {
             let values = self.date_components(&args)?;
             self.date_make(values)?
         };
-        let prototype = self.get_member(target, "prototype")?;
-        let prototype = if let Value::Object(id) = prototype {
-            id
-        } else {
-            self.intrinsics.as_ref().unwrap().collection["Date"]
-        };
+        let prototype = self.prototype_from_constructor(target, |i| i.collection["Date"])?;
         let id = self.new_object(Some(prototype))?;
         self.protect(&Value::Object(id))?;
         self.date_write(id, time)?;

@@ -334,13 +334,8 @@ impl Engine<'_> {
             return self.throw_error("TypeError", "Iterator cannot be constructed directly");
         }
         // Step 2: OrdinaryCreateFromConstructor(NewTarget, "%Iterator.prototype%").
-        let p = self.get_member(new_target.clone(), "prototype")?;
-        let proto = if let Value::Object(p) = p {
-            p
-        } else {
-            self.function_realm_check(&new_target)?;
-            self.intrinsics.as_ref().unwrap().collection["Iterator"]
-        };
+        let proto =
+            self.prototype_from_constructor(new_target.clone(), |i| i.collection["Iterator"])?;
         self.new_object(Some(proto)).map(Value::Object)
     }
 

@@ -71,13 +71,20 @@ impl Engine<'_> {
             [Stmt::AsyncFunction(_, params, body)] if asynchronous => (params, body),
             _ => return self.throw_error("SyntaxError", "invalid dynamic function syntax"),
         };
+        // CreateDynamicFunction (§20.2.1.1.1) step 25: GetPrototypeFromConstructor(newTarget,
+        // fallbackProto), whose fallback is read from newTarget's realm (§10.1.14 step 4).
         let prototype = if let Some(target) = new_target {
-            let value = self.get_member(target, "prototype")?;
-            if let Value::Object(id) = value {
-                Some(id)
-            } else {
-                None
-            }
+            Some(self.prototype_from_constructor(target, |i| {
+                if generator && asynchronous {
+                    i.collection["AsyncGeneratorFunction"]
+                } else if generator {
+                    i.collection["GeneratorFunction"]
+                } else if asynchronous {
+                    i.async_function
+                } else {
+                    i.function
+                }
+            })?)
         } else {
             None
         };

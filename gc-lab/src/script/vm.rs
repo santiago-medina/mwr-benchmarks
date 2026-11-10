@@ -181,6 +181,12 @@ pub struct Engine<'host> {
     pub(super) network: super::network::Network,
     pub(super) global: Option<ExternalRoot>,
     pub(super) intrinsics: Option<Intrinsics>,
+    /// Realm Records (§9.3); empty while only realm 0 exists. See REALMS.md.
+    pub(super) realms: Vec<super::realms::RealmSlot>,
+    pub(super) current_realm: usize,
+    pub(super) caller_realm: usize,
+    /// [[Realm]] of objects allocated outside realm 0.
+    pub(super) object_realms: crate::dual::IdMap<u32>,
     pub(super) template_cache: HashMap<u64, Id>,
     pub(super) test_harness: bool,
     pub(super) assertions: usize,
@@ -228,6 +234,10 @@ impl<'host> Engine<'host> {
             modules: super::modules::Registry::default(),
             global: None,
             intrinsics: None,
+            realms: vec![],
+            current_realm: 0,
+            caller_realm: 0,
+            object_realms: Default::default(),
             template_cache: HashMap::new(),
             test_harness: false,
             assertions: 0,
@@ -276,6 +286,10 @@ impl<'host> Engine<'host> {
             modules: self.modules,
             global: self.global,
             intrinsics: self.intrinsics,
+            realms: self.realms,
+            current_realm: self.current_realm,
+            caller_realm: self.caller_realm,
+            object_realms: self.object_realms,
             template_cache: self.template_cache,
             test_harness: self.test_harness,
             assertions: self.assertions,
@@ -390,6 +404,10 @@ impl<'host> Engine<'host> {
         self.remote_nodes
             .retain(|id, _| self.runtime.value(*id).is_ok());
         self.objects.retain(|id, _| self.runtime.value(*id).is_ok());
+        if !self.object_realms.is_empty() {
+            self.object_realms
+                .retain(|id, _| self.runtime.value(*id).is_ok());
+        }
         self.scrub_weak();
         self.template_cache
             .retain(|_, id| self.objects.contains_key(id));
@@ -445,6 +463,7 @@ impl<'host> Engine<'host> {
         self.unhandled.clear();
         self.cancel_weak_jobs();
         self.cancel_host_jobs();
+        self.release_realms();
         if let Some(global) = self.global.take() {
             self.runtime.unroot(global).expect("owned global root");
         }
@@ -527,6 +546,11 @@ impl<'host> Engine<'host> {
             return Err(ScriptError::Host(error));
         }
         let result = self.runtime.allocate(domain, tag, 64);
+        if self.current_realm != 0 {
+            if let Ok(id) = &result {
+                self.object_realms.insert(*id, self.current_realm as u32);
+            }
+        }
         // The budget can trigger backend collection under either policy.
         if self.runtime.collections() != self.seen_collections {
             self.prune_metadata();

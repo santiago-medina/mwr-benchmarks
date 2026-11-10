@@ -181,23 +181,21 @@ impl Engine<'_> {
             if maximum.is_some_and(|max| (max as u64) < length) {
                 return self.throw_error("RangeError", "invalid buffer maximum");
             }
-            let prototype = self.get_member(target, "prototype")?;
+            let shared = name == "SharedArrayBuffer";
+            let prototype = self.prototype_from_constructor(target, |i| {
+                i.collection[if shared {
+                    "SharedArrayBuffer"
+                } else {
+                    "ArrayBuffer"
+                }]
+            })?;
             if length > MAX_BYTES as u64 {
                 return self.throw_error("RangeError", "host buffer allocation limit");
             }
             if maximum.is_some_and(|max| max > MAX_BYTES) {
                 return self.throw_error("RangeError", "invalid buffer maximum");
             }
-            return self.new_buffer_kind(
-                length as usize,
-                maximum,
-                if let Value::Object(id) = prototype {
-                    Some(id)
-                } else {
-                    None
-                },
-                name == "SharedArrayBuffer",
-            );
+            return self.new_buffer_kind(length as usize, maximum, Some(prototype), shared);
         }
         let source = arg(0);
         self.protect(&source)?;
@@ -225,12 +223,7 @@ impl Engine<'_> {
         } else {
             None
         };
-        let prototype = self.get_member(target, "prototype")?;
-        let proto = if let Value::Object(id) = prototype {
-            id
-        } else {
-            self.intrinsics.as_ref().unwrap().collection["DataView"]
-        };
+        let proto = self.prototype_from_constructor(target, |i| i.collection["DataView"])?;
         let id = self.new_object(Some(proto))?;
         self.protect(&Value::Object(id))?;
         let invalid = {

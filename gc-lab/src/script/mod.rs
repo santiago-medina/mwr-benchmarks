@@ -97,6 +97,7 @@ mod dates;
 mod regexp_builtins;
 
 mod proxy;
+mod realms;
 #[cfg(feature = "temporal")]
 mod temporal;
 

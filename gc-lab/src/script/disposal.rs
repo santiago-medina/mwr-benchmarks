@@ -205,13 +205,7 @@ impl Engine<'_> {
     /// §27.3.1.1 DisposableStack ( ) / §27.4.1.1 AsyncDisposableStack ( ) as [[Construct]].
     pub(super) fn construct_disposal(&mut self, name: &str, new_target: Value) -> Result<Value> {
         // Step 2: OrdinaryCreateFromConstructor(NewTarget, "%DisposableStack.prototype%").
-        let p = self.get_member(new_target.clone(), "prototype")?;
-        let proto = if let Value::Object(p) = p {
-            p
-        } else {
-            self.function_realm_check(&new_target)?;
-            self.intrinsics.as_ref().unwrap().collection[name]
-        };
+        let proto = self.prototype_from_constructor(new_target.clone(), |i| i.collection[name])?;
         let id = self.new_object(Some(proto))?;
         let result = Value::Object(id);
         self.protect(&result)?;

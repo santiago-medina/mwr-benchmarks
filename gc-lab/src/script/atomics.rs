@@ -294,8 +294,8 @@ impl Engine<'_> {
                 self.collect();
                 Ok(Value::Undefined)
             }
-            "$262.createRealm" => Err(ScriptError::Unsupported("$262.createRealm (one realm)")),
-            "$262.evalScript" => Err(ScriptError::Unsupported("$262.evalScript")),
+            "$262.createRealm" => self.create_realm(),
+            "$262.evalScript" => self.eval_script(arg(0)),
             "$262.agent.start" | "$262.agent.broadcast" => Err(ScriptError::Unsupported(
                 "test262 agents (one agent per engine)",
             )),

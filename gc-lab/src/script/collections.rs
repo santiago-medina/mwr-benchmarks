@@ -341,12 +341,7 @@ impl Engine<'_> {
         new_target: Value,
         source: Value,
     ) -> Result<Value> {
-        let p = self.get_member(new_target, "prototype")?;
-        let proto = if let Value::Object(p) = p {
-            p
-        } else {
-            self.intrinsics.as_ref().unwrap().collection[name]
-        };
+        let proto = self.prototype_from_constructor(new_target, |i| i.collection[name])?;
         let id = self.new_object(Some(proto))?;
         let result = Value::Object(id);
         self.protect(&result)?;

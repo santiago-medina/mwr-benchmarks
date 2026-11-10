@@ -22,7 +22,10 @@ pub(super) fn site() -> std::result::Result<u64, ()> {
 }
 impl Engine<'_> {
     pub(super) fn template_object(&mut self, t: &Template, mut env: Id) -> Result<Value> {
-        if let Some(id) = self.template_cache.get(&t.site).copied() {
+        // [[TemplateMap]] is per realm (§13.2.8.4 GetTemplateObject): sites are a counter,
+        // so the realm index goes in the high bits of the key.
+        let key = t.site | ((self.current_realm as u64) << 48);
+        if let Some(id) = self.template_cache.get(&key).copied() {
             return Ok(Value::Object(id));
         }
         if self.template_cache.len() >= 8192 {
@@ -79,7 +82,7 @@ impl Engine<'_> {
             }
         }
         self.runtime.link(env, cooked)?;
-        self.template_cache.insert(t.site, cooked);
+        self.template_cache.insert(key, cooked);
         Ok(Value::Object(cooked))
     }
     fn freeze_template(&mut self, id: Id) -> Result<()> {

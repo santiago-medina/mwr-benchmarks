@@ -247,12 +247,7 @@ impl Engine<'_> {
         args: Vec<Value>,
     ) -> Result<Value> {
         let kind = kind(name).unwrap();
-        let prototype = self.get_member(target, "prototype")?;
-        let prototype = if let Value::Object(id) = prototype {
-            id
-        } else {
-            self.intrinsics.as_ref().unwrap().collection[name]
-        };
+        let prototype = self.prototype_from_constructor(target, |i| i.collection[name])?;
         self.protect(&Value::Object(prototype))?;
         let source = args.first().cloned().unwrap_or(Value::Undefined);
         if let Value::Object(source_id) = source.clone() {

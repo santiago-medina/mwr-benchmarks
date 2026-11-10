@@ -1026,7 +1026,12 @@ impl Engine<'_> {
             for a in &args {
                 e.protect(a)?;
             }
-            e.invoke_inner(f, receiver, args)
+            if e.realms.is_empty() {
+                e.invoke_inner(f, receiver, args)
+            } else {
+                let callee = f.clone();
+                e.in_realm_of(&callee, |e| e.invoke_inner(f, receiver, args))
+            }
         });
         self.call_depth -= 1;
         self.completion = completion;
@@ -1155,12 +1160,16 @@ impl Engine<'_> {
                 )?;
                 let result = self.block(&body, local, true)?;
                 if kind == FunctionKind::DerivedConstructor {
-                    return match result {
+                    // §10.2.2 steps 10-12 run after the callee context is popped, so their
+                    // errors belong to the caller's realm.
+                    let caller = self.caller_realm;
+                    return self.in_realm(caller, |e| match result {
                         Some(v @ Value::Object(_)) => Ok(v),
-                        Some(Value::Undefined) | None => self.lookup(local, "this"),
-                        Some(_) => self
-                            .throw_error("TypeError", "derived constructor returned a non-object"),
-                    };
+                        Some(Value::Undefined) | None => e.lookup(local, "this"),
+                        Some(_) => {
+                            e.throw_error("TypeError", "derived constructor returned a non-object")
+                        }
+                    });
                 }
                 Ok(result.unwrap_or(Value::Undefined))
             }
@@ -1233,6 +1242,20 @@ impl Engine<'_> {
         let Value::Object(id) = f.clone() else {
             return self.throw_error("TypeError", "not a constructor");
         };
+        // §10.3.2: a built-in's [[Construct]] runs in F.[[Realm]]; a non-constructor throws
+        // in the caller's realm (EvaluateNew step 7). ECMAScript functions switch in
+        // `invoke_this` (§10.2.2 step 4): their result checks run after the callee context
+        // is popped (steps 10-12), in the caller's realm.
+        if let Some(realm) = (!self.realms.is_empty()
+            && matches!(self.objects.get(&id), Some(Object::Builtin { .. })))
+        .then(|| self.realm_of(id))
+        .filter(|r| *r != self.current_realm && self.constructible(&f))
+        {
+            let previous = self.enter_realm(realm);
+            let result = self.construct_with_new_target(f, args, new_target);
+            self.enter_realm(previous);
+            return result;
+        }
         match self.objects.get(&id).cloned() {
             Some(Object::Bound {
                 target,
@@ -1327,16 +1350,31 @@ impl Engine<'_> {
                         "Object" | "Array" | "String" | "Number" | "Boolean"
                     )
                 {
+                    // GetPrototypeFromConstructor (§10.1.14) with the fallback read from
+                    // GetFunctionRealm(newTarget).
                     let p = self.get_member(new_target.clone(), "prototype")?;
                     self.protect(&p)?;
+                    let p = match p {
+                        Value::Object(p) => Value::Object(p),
+                        _ => {
+                            let realm = self.function_realm(&new_target)?;
+                            let i = self.realm_intrinsics(realm);
+                            let fallback = match name.as_str() {
+                                "Object" => i.object,
+                                "Array" => i.array,
+                                _ => {
+                                    let ctor = i.functions[name.as_str()];
+                                    match self.get_member(Value::Object(ctor), "prototype")? {
+                                        Value::Object(p) => p,
+                                        _ => unreachable!(),
+                                    }
+                                }
+                            };
+                            Value::Object(fallback)
+                        }
+                    };
                     if name == "Object" {
-                        let p = match p {
-                            Value::Object(p) => p,
-                            _ => {
-                                self.function_realm_check(&new_target)?;
-                                self.intrinsics.as_ref().unwrap().object
-                            }
-                        };
+                        let Value::Object(p) = p else { unreachable!() };
                         return self.new_object(Some(p)).map(Value::Object);
                     }
                     let v = if name == "Array" {
@@ -1370,14 +1408,7 @@ impl Engine<'_> {
                 kind: FunctionKind::Ordinary,
                 ..
             }) => {
-                let p = self.get_member(new_target.clone(), "prototype")?;
-                let p = if let Value::Object(p) = p {
-                    p
-                } else {
-                    // §10.1.14 GetPrototypeFromConstructor step 3.a: GetFunctionRealm(constructor).
-                    self.function_realm_check(&new_target)?;
-                    self.intrinsics.as_ref().unwrap().object
-                };
+                let p = self.prototype_from_constructor(new_target.clone(), |i| i.object)?;
                 let id = self.new_object(Some(p))?;
                 let receiver = Value::Object(id);
                 self.protect(&receiver)?;

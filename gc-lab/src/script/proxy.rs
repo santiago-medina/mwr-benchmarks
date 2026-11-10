@@ -8,8 +8,7 @@
 //! Known gaps (2026-11-09):
 //! - Private elements on a proxy (§7.3.31 PrivateFieldAdd works on any object):
 //!   `Object::Proxy` has no storage for them yet (`classes.rs` private_add/get).
-//! - Cross-realm cases need `$262.createRealm` (one realm only); GetFunctionRealm
-//!   (`function_realm_check`) only performs its revoked-proxy TypeError.
+//! - GetFunctionRealm is `function_realm` in realms.rs (REALMS.md).
 use super::{
     objects::{compatible_descriptor, Descriptor, Key, Kind, Property},
     vm::{Engine, Object, ScriptError, Value},
@@ -201,32 +200,6 @@ impl Engine<'_> {
             return Ok(None);
         }
         Ok(self.data(id)?.boxed.clone())
-    }
-
-    /// GetFunctionRealm (§7.3.24). There is one realm, so this only performs the
-    /// abrupt step: a revoked proxy (step 3.a) throws TypeError; bound functions
-    /// (step 2) and live proxies (step 3.b) recurse into their target.
-    pub(super) fn function_realm_check(&mut self, value: &Value) -> Result<()> {
-        let Value::Object(mut id) = value else {
-            return Ok(());
-        };
-        for _ in 0..100_000 {
-            match self.objects.get(&id) {
-                Some(Object::Proxy { target: None, .. }) => {
-                    return self
-                        .throw_error("TypeError", "Cannot perform operation on a revoked proxy")
-                }
-                Some(Object::Proxy {
-                    target: Some(t), ..
-                }) => id = *t,
-                Some(Object::Bound {
-                    target: Value::Object(t),
-                    ..
-                }) => id = *t,
-                _ => return Ok(()),
-            }
-        }
-        Err(ScriptError::Runtime("proxy chain limit"))
     }
 
     /// IsArray (§7.2.2).

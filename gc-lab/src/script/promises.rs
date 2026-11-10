@@ -452,12 +452,7 @@ impl Engine<'_> {
         if !self.callable(&executor) {
             return self.throw_error("TypeError", "promise executor is not callable");
         }
-        let proto = self.get_member(new_target, "prototype")?;
-        let proto = if let Value::Object(id) = proto {
-            id
-        } else {
-            self.intrinsics.as_ref().unwrap().promise
-        };
+        let proto = self.prototype_from_constructor(new_target, |i| i.promise)?;
         let id = self.new_object(Some(proto))?;
         self.protect(&Value::Object(id))?;
         let mut data = self.data(id)?.clone();

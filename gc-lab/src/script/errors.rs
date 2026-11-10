@@ -10,12 +10,7 @@ impl Engine<'_> {
     ) -> Result<Value> {
         let default = self.intrinsics.as_ref().unwrap().errors[name];
         let prototype = if let Some(target) = new_target {
-            let value = self.get_member(target, "prototype")?;
-            if let Value::Object(id) = value {
-                id
-            } else {
-                default
-            }
+            self.prototype_from_constructor(target, |i| i.errors[name])?
         } else {
             default
         };

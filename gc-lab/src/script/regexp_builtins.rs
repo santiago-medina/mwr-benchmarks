@@ -216,11 +216,7 @@ impl Engine<'_> {
         Ok(self.regexp_slot(&value).is_some())
     }
     fn regexp_alloc(&mut self, new_target: Value) -> Result<Id> {
-        let prototype = self.get_member(new_target, "prototype")?;
-        let prototype = match prototype {
-            Value::Object(id) => id,
-            _ => self.regexp_prototype(),
-        };
+        let prototype = self.prototype_from_constructor(new_target, |i| i.collection["RegExp"])?;
         let id = self.new_object(Some(prototype))?;
         self.protect(&Value::Object(id))?;
         self.define(

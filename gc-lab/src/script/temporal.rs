@@ -222,10 +222,10 @@ impl Engine<'_> {
     ) -> Result<Value> {
         let fallback = self.intrinsics.as_ref().unwrap().collection[&format!("Temporal.{kind}")];
         let prototype = match new_target {
-            Some(target) => match self.get_member(target, "prototype")? {
-                Value::Object(id) => id,
-                _ => fallback,
-            },
+            Some(target) => {
+                let key = format!("Temporal.{kind}");
+                self.prototype_from_constructor(target, |i| i.collection[&key])?
+            }
             None => fallback,
         };
         let id = self.new_object(Some(prototype))?;

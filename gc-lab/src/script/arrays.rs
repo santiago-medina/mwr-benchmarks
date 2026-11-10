@@ -242,6 +242,15 @@ impl Engine<'_> {
         if self.is_array(&Value::Object(original))? {
             constructor = self.get_member(Value::Object(original), "constructor")?;
             self.protect(&constructor)?;
+            // Step 5: another realm's %Array% constructor means "make a plain array here".
+            if matches!(constructor, Value::Object(_)) && !self.realms.is_empty() {
+                let realm = self.function_realm(&constructor)?;
+                if realm != self.current_realm
+                    && constructor == Value::Object(self.realm_intrinsics(realm).functions["Array"])
+                {
+                    constructor = Value::Undefined;
+                }
+            }
             if matches!(constructor, Value::Object(_)) {
                 constructor = self.get_member(constructor, Key::Symbol(2))?;
                 self.protect(&constructor)?;

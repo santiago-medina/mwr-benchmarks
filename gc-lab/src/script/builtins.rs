@@ -33,6 +33,7 @@ const ERRORS: &[&str] = &[
 ];
 const METHODS: &[(&str, &[&str])] = &[
     ("Error.prototype", &["toString"]),
+    ("Error", &["isError"]),
     ("Map", &["groupBy"]),
     ("Proxy", &["revocable"]),
     ("JSON", &["parse", "stringify"]),
@@ -1186,6 +1187,17 @@ impl Engine<'_> {
         }
         if name == "Error.prototype.toString" {
             return self.error_to_string(receiver);
+        }
+        if name == "Error.isError" {
+            // Error.isError (§20.5.2.1): IsError(arg) is true only for an object with an
+            // [[ErrorData]] slot; proxies have none (no unwrapping).
+            return Ok(Value::Bool(match arg(0) {
+                Value::Object(id) if !self.is_proxy(id) => self
+                    .data(id)
+                    .map(|d| d.error_class.is_some())
+                    .unwrap_or(false),
+                _ => false,
+            }));
         }
         if name == "Test262Error.thrower" {
             let message = match args.first() {

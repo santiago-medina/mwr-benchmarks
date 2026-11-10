@@ -316,3 +316,13 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Bucket: 89/100; the other 11 are import-text / import-bytes, Unsupported by design.
 - Full run: 46177/47708 pass (96.8%), +110. Failed 933 (-21), unsupported 598 (-89). Lost 90, all RegExp property-escapes/generated runner timeouts under load (load average ~9.6); each passes alone in 4.3 s on average, 7.3 s at most, so they are counted as load timeouts.
 - Next: realms (createRealm 181, ShadowRealm 64; needs a design note) or test262 agents (Atomics, 109).
+
+### Realms: `$262.createRealm`, `$262.evalScript`, `Error.isError` (checkpoint 26, 2026-11-10)
+
+- Realm Records (§9.3) in one Engine: the running realm's intrinsics and global environment stay in `intrinsics`/`global`, others wait in `realms` slots; objects allocated outside realm 0 are tagged in an allocation-time side table. Design and options: REALMS.md.
+- Execution-context realm switch for built-ins and ECMAScript functions (§10.2.1.1, §10.3.1); proxies and bound functions push no context. GetFunctionRealm (§7.3.24), GetPrototypeFromConstructor's cross-realm fallback (§10.1.14) in every constructor (including CreateDynamicFunction), ArraySpeciesCreate step 5 (§10.4.2.3), per-realm [[TemplateMap]] (§13.2.8.4). [[Construct]] steps 10-12 and a non-constructor `new` throw in the caller's realm.
+- `$262.evalScript` runs ParseScript + GlobalDeclarationInstantiation (§16.1.7, with CanDeclareGlobalFunction/Var and the lexical clash checks) + ScriptEvaluation and returns the completion value. Unimplemented syntax stays Unsupported.
+- `Error.isError` (§20.5.2.1): 12/12 in its directory.
+- Bucket: 194/194 (181 createRealm + 13 evalScript). Fix rounds: 3 of 3.
+- Full run: 46330/47708 pass (97.1%), +153. Failed 974 (+41), unsupported 404 (-194). Lost 118, all runner timeouts in RegExp property-escapes / CharacterClassEscapes under foreign load (load average ~8); all 118 pass alone (6.1 s on average). They are counted as load timeouts.
+- Not done: ShadowRealm (Stage 2.7 proposal, 57 cases), per-realm release (a roadmap C/D item), the embedding RealmId API (roadmap C note).

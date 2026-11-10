@@ -482,18 +482,13 @@ impl Engine<'_> {
             self.pending_construct = None;
             return r;
         }
-        let p = self.get_member(new_target.clone(), "prototype")?;
-        let p = if let Value::Object(p) = p {
-            p
-        } else {
-            // §10.1.14 GetPrototypeFromConstructor step 3.a: GetFunctionRealm(constructor).
-            self.function_realm_check(&new_target)?;
-            self.intrinsics.as_ref().unwrap().object
-        };
+        let p = self.prototype_from_constructor(new_target.clone(), |i| i.object)?;
         let id = self.new_object(Some(p))?;
         let receiver = Value::Object(id);
         self.protect(&receiver)?;
-        self.initialize_fields(&f, receiver.clone())?;
+        // InitializeInstanceElements runs in F's execution context (§10.2.2 step 6.b).
+        let target = f.clone();
+        self.in_realm_of(&target, |e| e.initialize_fields(&f, receiver.clone()))?;
         self.pending_construct = Some((new_target, f.clone()));
         let r = self.invoke_this(f, receiver.clone(), args);
         self.pending_construct = None;
