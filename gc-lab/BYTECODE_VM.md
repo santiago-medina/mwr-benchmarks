@@ -295,9 +295,9 @@ Done:
 - Shared loop environment: `for (let ...)` skips CreatePerIterationEnvironment
   (§14.7.4.4) when init, test, update and body contain nothing that can capture a
   binding (function, arrow, class, method, accessor, direct `eval`).
-- Both predicates are conservative scans of the AST's derived `Debug` text
-  (`src/script/ast_scan.rs`, stops at the first match). A false positive only keeps the
-  spec-literal path. The stage-2 resolver replaces them with real scope analysis.
+- Both predicates are conservative structural walks of the AST
+  (`src/script/ast_scan.rs`, `Walk`, stops at the first match; any string equal to
+  `arguments` or `eval` counts). A false positive only keeps the spec-literal path. The stage-2 resolver replaces them with real scope analysis.
 
 | case (small variant) | baseline 9acf139 | stage 1 | ratio |
 |---|---:|---:|---:|
@@ -563,9 +563,9 @@ gives 200/201 on both. Fallback mix over 600 sampled cases (`vmstats.sh`, task w
 - *Register-resident*: the default, as before.
 - *Environment-resident* (`Compiler::captured`): every declared name (parameter, `var`, top-level
   `let`/`const`) mentioned inside a closure subtree of the body, plus every top-level function
-  declaration's name. `ast_scan::captured_names` finds the closure subtrees (arrow, function, async,
-  generator, class, accessor and class-init variants) in the body's `Debug` text, skipping string
-  literals, and looks for each name quoted inside them. A false positive only moves a binding to its
+  declaration's name. `ast_scan::captured_names` walks the body to the closure subtrees (arrow, function, async,
+  generator, class, accessor and class-init nodes, `ast_scan::is_closure`) and collects every
+  string inside them that equals a declared name. A false positive only moves a binding to its
   environment record; it cannot change semantics.
 
 An environment-resident name gets no register. Reads and writes compile as free names

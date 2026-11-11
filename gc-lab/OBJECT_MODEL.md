@@ -351,3 +351,30 @@ The next cheap win, found in this profile, is `ast_scan::mentions`. It scans the
 formatting it with `Debug` and searching the text: about 22 M instructions (about 8%) on
 decode_tiny, all compile-time. A structural walker would remove it, and on real pages this
 cost scales with script size.
+
+### Structural AST walker (checkpoint 42)
+
+`ast_scan.rs` now walks the AST with a `Walk` trait (`Node` = expression, statement,
+pattern, property, class member or string; the visitor can continue, skip a subtree or
+stop). Every match is exhaustive with no `..` rest pattern, so a new AST field fails to
+compile until the walker covers it. Every query is now a predicate on nodes:
+
+| query | before (Debug text) | now |
+|---|---|---|
+| direct eval, argumentsObjectNeeded | quoted needle | `Name`/`Pattern::Name` or exact string |
+| `touches_locals`, switch TDZ, `named` | quoted name | exact string, `HashSet` of locals |
+| `captured_names` | bracket-matched text regions | closure nodes (`is_closure`), strings inside |
+| for-let capture, elision | variant names as substrings | node kinds |
+| `writes` (operand reuse) | `Assign(Name(x)`, `Update(Name(x)`, `", Name(x), ` | `Assign`/`Compound`/`Update` on `x`, and `Destructure` naming `x` |
+
+A temporary differential build ran both versions side by side over 7951 test262 files (every
+sixth file of language/ and built-ins/, VM engine) and logged every disagreement. There were
+none. On hand-written cases they disagree only where the text scan was wrong: identifiers
+such as `Arrow` or `Function` used to count as closures. The old `writes` also missed one case,
+which was a real bug: `x + ([x] = [5], 0)` evaluated to 5 instead of 1, because a destructuring
+assignment (§13.15.5) overwrote the register the left operand still pointed at. The fix is in
+this checkpoint, and `vmprobe/operands.js` covers it.
+
+| benchmark | before (slice 3) | after | delta |
+|---|---:|---:|---:|
+| decode_tiny | 271.4 M | 256.0 M | -5.7% |

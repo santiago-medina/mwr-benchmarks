@@ -373,6 +373,12 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - pe-bench (10 fixed RegExp property-escape cases, run alone): tree 37.1 s, VM 10.3 s (3.6x).
 - Full run on the VM: 47223/47708 pass (99.0%), +27 against full38. Failed 148 (-27), unsupported 337. Gained 27 (17 property-escape timeouts, 9 logical-assignment cases, 1 other), lost 0. The full run took ~10 min instead of ~39. Five timeouts remain on both engines: TypedArray copyWithin coerced-values-*-detached (3) and decodeURI/decodeURIComponent S15.1.3.x_A2.5_T1 (2); top-level script code still runs on the tree-walker.
 
+### Structural AST walker for the compile-time scans (checkpoint 42, 2026-11-11)
+
+- `ast_scan.rs` uses an exhaustive structural walker (`Walk`, `Node`, `Flow`) instead of searching the derived `Debug` text. The direct-eval, argumentsObjectNeeded, captured-name, for-let capture, elision, operand-reuse and switch-TDZ checks are node predicates (OBJECT_MODEL.md, "Structural AST walker").
+- Bug fixed: operand reuse missed writes made by destructuring assignment, so `x + ([x] = [5], 0)` gave 5 on the VM instead of 1 (§13.15.5). New probe `vmprobe/operands.js`.
+- Callgrind: `vm-bench/decode_tiny.js` 271.4M to 256.0M instructions (-5.7%). A differential build found no disagreement with the old scans over 7951 test262 files.
+
 ### Object model slice 3: global-name slot hints (checkpoint 41, 2026-11-11)
 
 - Slice 3 (part a) of `OBJECT_MODEL.md`: each compiled chunk keeps one hint per name, the entry index of the name in the global object's `PropertyMap` (`script/global_names.rs`). The environment walk of GetIdentifierReference (§9.1.2.1) still runs on every access; the hint only replaces the global object record's HasBinding / GetBindingValue / SetMutableBinding (§9.1.1.4) for an ordinary global with an own data property (writable for sets). Hints are validated by key on every use, so no invalidation epoch is needed; accessors and read-only properties mark the hint failed. Interned keys (JsAtom, `Key::Index`) are deferred.

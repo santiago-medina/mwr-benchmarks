@@ -12,7 +12,7 @@
 //! TDZ is resolved statically (§14.3.1, §9.1.1.1.1 GetBindingValue step 3): without
 //! closures, `switch` or `eval`, a reference to a lexical binding executes after its
 //! declaration exactly when it is textually after the end of that declaration.
-use super::ast_scan::{captured_names, mentions};
+use super::ast_scan::{self, captured_names, is_name, mentions, Node};
 use super::js_string::JsString;
 use super::parser::{self, Expr, Param, Property, Stmt};
 use super::patterns::{Pattern, PatternKey};
@@ -461,7 +461,7 @@ struct Compiler {
     function: HashMap<String, Reg>,
     scopes: Vec<HashMap<String, Binding>>,
     controls: Vec<Control>,
-    needles: Vec<String>,
+    needles: HashSet<String>,
     /// Moves whose destination is a discarded statement result; `finish` drops them.
     dead: Vec<usize>,
     handlers: Vec<Handler>,
@@ -509,7 +509,7 @@ fn compile_body(params: &[Param], body: &[Stmt], script: bool) -> CResult<Chunk>
     // (§19.2.1.3 EvalDeclarationInstantiation). Every binding of such a body is then
     // environment-resident and the eval call itself runs through a hatch against the
     // function environment (BYTECODE_VM.md, stage 3 coverage step 9).
-    let direct_eval = mentions(&[&params, &body], &["Name(\"eval\")"]);
+    let direct_eval = ast_scan::any(&[&params, &body], |n| is_name(n, "eval"));
     let uses_arguments = super::execute::arguments_needed(params, body);
     let mut c = Compiler {
         code: vec![],
@@ -522,7 +522,7 @@ fn compile_body(params: &[Param], body: &[Stmt], script: bool) -> CResult<Chunk>
         function: HashMap::new(),
         scopes: vec![],
         controls: vec![],
-        needles: vec![],
+        needles: HashSet::new(),
         dead: vec![],
         handlers: vec![],
         finally: vec![],
@@ -605,7 +605,7 @@ fn compile_body(params: &[Param], body: &[Stmt], script: bool) -> CResult<Chunk>
     c.needles = all
         .iter()
         .filter(|n| !c.captured.contains(*n))
-        .map(|n| format!("{n:?}"))
+        .cloned()
         .collect();
     c.block_body(body, true)?;
     c.emit(Insn::ReturnUndefined);
@@ -660,21 +660,27 @@ fn elidable(
         && c.captured.is_empty()
         && c.layouts.is_empty()
         && !c.code.iter().any(|i| matches!(i, Insn::Hatch { .. }))
-        && !mentions(
-            &[&params, &body],
-            &[
-                "This",
-                "NewTarget",
-                "Super",
-                "Arrow",
-                "Function",
-                "Class",
-                "With(",
-                "ImportMeta",
-                "ImportCall",
-                "Name(\"arguments\")",
-                "Name(\"eval\")",
-            ],
+        && !ast_scan::any(&[&params, &body], needs_own_environment)
+}
+
+/// Syntax that reads the function's own environment or `this` binding by itself: `this`,
+/// `new.target`, `super`, a closure or class, `with`, `import.meta`, `import()`, or a
+/// reference to `arguments` or `eval`.
+fn needs_own_environment(node: Node<'_>) -> bool {
+    ast_scan::is_closure(node)
+        || is_name(node, "arguments")
+        || is_name(node, "eval")
+        || matches!(
+            node,
+            Node::Expr(
+                Expr::This
+                    | Expr::NewTarget
+                    | Expr::SuperMember(_)
+                    | Expr::SuperComputed(_)
+                    | Expr::SuperCall(_)
+                    | Expr::ImportMeta
+                    | Expr::ImportCall(..)
+            ) | Node::Stmt(Stmt::With(..))
         )
 }
 
@@ -826,24 +832,25 @@ impl Compiler {
             }
         }
     }
-    /// Whether `e` mentions a name this body declares (a conservative textual check).
+    /// Whether `e` mentions a name this body declares (any string equal to one counts).
     fn touches_locals(&self, e: &Expr) -> bool {
-        let needles: Vec<&str> = self.needles.iter().map(String::as_str).collect();
-        !needles.is_empty() && mentions(&[e], &needles)
+        ast_scan::mentions_any(&[e], &self.needles)
     }
     /// Whether evaluating any of `later` can assign the local `name`.
     fn writes(later: &[&Expr], name: &str) -> bool {
         if later.is_empty() {
             return false;
         }
-        let quoted = format!("Name({name:?})");
-        let needles = [
-            format!("Assign({quoted}"),
-            format!("Update({quoted}"),
-            format!("\", {quoted}, "),
-        ];
-        let needles: Vec<&str> = needles.iter().map(String::as_str).collect();
-        later.iter().any(|e| mentions(&[e], &needles))
+        let local = |e: &Expr| matches!(e, Expr::Name(n) if n == name);
+        later.iter().any(|e| {
+            ast_scan::any(&[e], |node| match node {
+                Node::Expr(Expr::Assign(target, _) | Expr::Compound(_, target, _)) => local(target),
+                Node::Expr(Expr::Update(target, ..)) => local(target),
+                // §13.15.5 DestructuringAssignmentEvaluation writes every target.
+                Node::Expr(Expr::Destructure(pattern, _)) => mentions(&[pattern], name),
+                _ => false,
+            })
+        })
     }
 
     // ----- scopes and statements -----
@@ -1924,14 +1931,11 @@ impl Compiler {
         // TDZ at compile time, which a jump into a later clause would bypass.
         let lexicals: Vec<String> = self.scopes.last().unwrap().keys().cloned().collect();
         for name in &lexicals {
-            let needle = format!("{name:?}");
             let declared = cases
                 .iter()
-                .position(|(_, body)| mentions(&[&body], &[needle.as_str()]))
+                .position(|(_, body)| mentions(&[body], name))
                 .unwrap_or(cases.len());
-            if declared + 1 < cases.len()
-                && mentions(&[&&cases[declared + 1..]], &[needle.as_str()])
-            {
+            if declared + 1 < cases.len() && mentions(&[&&cases[declared + 1..]], name) {
                 return Err("vm: switch lexical across clauses");
             }
         }
@@ -2657,9 +2661,8 @@ impl Compiler {
             });
             return Ok(());
         }
-        let quoted = format!("{name:?}");
         // Compile straight into the binding unless the value still reads it.
-        if mentions(&[value], &[quoted.as_str()]) {
+        if mentions(&[value], name) {
             let src = self.alloc()?;
             self.named(value, src, name)?;
             self.emit(Insn::Move {

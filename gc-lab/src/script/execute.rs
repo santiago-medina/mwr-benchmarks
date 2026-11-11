@@ -1958,12 +1958,11 @@ fn literal_method(p: &Literal) -> bool {
 /// Conservative argumentsObjectNeeded (§10.2.11 FunctionDeclarationInstantiation steps 15-18):
 /// the arguments object is unobservable unless the parameters or body name `arguments`
 /// (also through a nested arrow, `var arguments`, or the implicit derived constructor's
-/// `%forward`) or contain a direct `eval` that could name it. Scanning the derived `Debug`
-/// text covers every AST variant; any match (string literals included) keeps the eager
-/// object. The scope-analysis pass of BYTECODE_VM.md stage 2 replaces this.
+/// `%forward`) or contain a direct `eval` that could name it. Any string counts (string
+/// literals included), so a match keeps the eager object. A scope-analysis pass would
+/// make this exact.
 pub(super) fn arguments_needed(params: &[Param], body: &[Stmt]) -> bool {
-    super::ast_scan::mentions(
-        &[&params, &body],
-        &["\"arguments\"", "\"eval\"", "%forward"],
-    )
+    super::ast_scan::any_str(&[&params, &body], |s| {
+        s == "arguments" || s == "eval" || s.contains("%forward")
+    })
 }

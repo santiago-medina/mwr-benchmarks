@@ -124,12 +124,7 @@ impl Engine<'_> {
         // CreatePerIterationEnvironment (§14.7.4.4) copies are observable only through
         // closures (or direct eval) that capture the bindings; without any, one shared
         // environment behaves identically (BYTECODE_VM.md, stage 1).
-        if !names.is_empty()
-            && !super::ast_scan::mentions(
-                &[&init, &test, &update, &body],
-                super::ast_scan::CAPTURES,
-            )
-        {
+        if !names.is_empty() && !super::ast_scan::may_capture(&[&init, &test, &update, &body]) {
             names.clear();
         }
         if !names.is_empty() {
