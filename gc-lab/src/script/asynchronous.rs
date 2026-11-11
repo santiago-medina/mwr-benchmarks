@@ -1,6 +1,7 @@
 //! Resumable control flow; await-free operations reuse the existing evaluator.
 use super::{
-    parser::{Expr, Param, Property, Stmt},
+    parser::{Expr, Param, Pattern, Property, Stmt},
+    patterns::PatternKey,
     vm::{Engine, FunctionKind, ScriptError, Value},
 };
 use crate::dual::Id;
@@ -79,6 +80,28 @@ pub(super) enum Op {
     DisposeAsync(usize, usize, usize),
     /// Catch target for a rejected async disposal: it becomes the pending throw.
     DisposeRejected,
+    /// A destructuring array pattern's guard (§8.6.3 IteratorBindingInitialization,
+    /// §13.15.5.5): a handler that closes the iterator in the register on an abrupt
+    /// completion while its [[Done]] is false; the address is past the pattern.
+    Destructure(usize, usize),
+    /// The end of an array pattern: pop its guard and, if [[Done]] is still false,
+    /// IteratorClose with a normal completion.
+    EndDestructure,
+    /// RequireObjectCoercible on the register (object patterns).
+    Coercible(usize),
+    /// Object rest: CopyDataProperties(new object, source, excluded keys) (§14.6.3).
+    CopyRest(usize, Vec<usize>, usize),
+    /// A catch clause whose parameter pattern suspends: create and enter the parameter
+    /// scope, leaving the thrown value in the register for the pattern ops.
+    CatchParam(super::parser::Pattern, usize),
+}
+/// How a lowered destructuring pattern stores its leaves.
+#[derive(Clone, Copy)]
+enum PatternMode {
+    /// DestructuringAssignmentEvaluation (§13.15.5): PutValue on each target.
+    Assign,
+    /// BindingInitialization (§8.6.2): initialize, in the var environment if `true`.
+    Bind(bool),
 }
 pub(super) struct Program {
     ops: Vec<Op>,
@@ -216,6 +239,18 @@ struct Compiler {
     ops: Vec<Op>,
     next: usize,
     async_generator: bool,
+    /// Short-circuit branches of the optional chains being lowered, innermost last.
+    chains: Vec<Vec<usize>>,
+}
+/// Whether `e` contains an `Optional` link on its chain spine that its own
+/// `OptionalChain` boundary does not enclose: evaluating it alone could short-circuit
+/// past the op that would catch it.
+fn open_optional(e: &Expr) -> bool {
+    match e {
+        Expr::Optional(_) => true,
+        Expr::Member(a, _) | Expr::Computed(a, _) | Expr::Call(a, _) => open_optional(a),
+        _ => false,
+    }
 }
 impl Compiler {
     fn emit(&mut self, op: Op) -> usize {
@@ -230,6 +265,11 @@ impl Compiler {
     }
     /// An initializer for `name`: anonymous functions and classes get NamedEvaluation.
     fn named(&mut self, e: &Expr, name: &str) -> Result<usize> {
+        if let Expr::Class(c) = e {
+            if c.name.is_none() && expr_await(e) {
+                return self.class(c, Some(name));
+            }
+        }
         if e.anonymous_function() && !expr_await(e) {
             let r = self.reg();
             self.emit(Op::EvalNamed(e.clone(), name.into(), r));
@@ -241,6 +281,18 @@ impl Compiler {
         let r = self.reg();
         self.emit(Op::Eval(e, r));
         r
+    }
+    /// An `Optional` link: a nullish value leaves the innermost chain being lowered.
+    fn optional_check(&mut self, value: usize) -> Result<()> {
+        if self.chains.is_empty() {
+            return Err(ScriptError::Unsupported("optional link outside its chain"));
+        }
+        let test = self.nullish(value);
+        let branch = self.emit(Op::Branch(test, 0, 0));
+        let next = self.ops.len();
+        self.ops[branch] = Op::Branch(test, 0, next);
+        self.chains.last_mut().unwrap().push(branch);
+        Ok(())
     }
     fn nullish(&mut self, value: usize) -> usize {
         self.eval(Expr::Binary(
@@ -290,10 +342,35 @@ impl Compiler {
         }
     }
     fn expression(&mut self, e: &Expr) -> Result<usize> {
-        if !expr_await(e) {
+        if !expr_await(e) && !open_optional(e) {
             return Ok(self.eval(e.clone()));
         }
         Ok(match e {
+            // §13.3.9.1 OptionalExpression: every `?.` link of the chain branches to one
+            // exit that yields undefined.
+            Expr::OptionalChain(chain) => {
+                self.chains.push(vec![]);
+                let value = self.expression(chain)?;
+                let out = self.reg();
+                self.emit(Op::Eval(read(value), out));
+                let jump = self.emit(Op::Jump(0));
+                let short = self.ops.len();
+                self.emit(Op::Eval(Expr::Undefined, out));
+                let end = self.ops.len();
+                self.ops[jump] = Op::Jump(end);
+                for branch in self.chains.pop().unwrap_or_default() {
+                    let Op::Branch(test, _, next) = self.ops[branch] else {
+                        unreachable!()
+                    };
+                    self.ops[branch] = Op::Branch(test, short, next);
+                }
+                out
+            }
+            Expr::Optional(base) => {
+                let value = self.expression(base)?;
+                self.optional_check(value)?;
+                value
+            }
             Expr::Sequence(items) => {
                 let mut out = self.eval(Expr::Undefined);
                 for item in items {
@@ -373,13 +450,23 @@ impl Compiler {
             }
             Expr::Call(callee, args) | Expr::New(callee, args) => {
                 let new = matches!(e, Expr::New(..));
-                let (receiver, callee) =
-                    if !new && matches!(callee.as_ref(), Expr::Member(..) | Expr::Computed(..)) {
+                let (receiver, callee) = match callee.as_ref() {
+                    Expr::Member(..) | Expr::Computed(..) if !new => {
                         let (base, expr) = self.reference(callee)?;
                         (Some(base), self.eval(expr))
-                    } else {
-                        (None, self.expression(callee)?)
-                    };
+                    }
+                    // `a.b?.()`: the call keeps `a` as its this value (§13.3.9.1 step 4).
+                    Expr::Optional(inner)
+                        if !new
+                            && matches!(inner.as_ref(), Expr::Member(..) | Expr::Computed(..)) =>
+                    {
+                        let (base, expr) = self.reference(inner)?;
+                        let value = self.eval(expr);
+                        self.optional_check(value)?;
+                        (Some(base), value)
+                    }
+                    _ => (None, self.expression(callee)?),
+                };
                 let out = self.reg();
                 if args.iter().any(|e| matches!(e, Expr::Spread(_))) {
                     let list = self.reg();
@@ -469,13 +556,13 @@ impl Compiler {
                 out
             }
             Expr::Destructure(pattern, value) => {
-                if pattern.expressions().into_iter().any(expr_await) {
-                    return Err(ScriptError::Unsupported(
-                        "resumable assignment pattern expressions",
-                    ));
-                }
                 let value = self.expression(value)?;
-                self.eval(Expr::Destructure(pattern.clone(), Box::new(read(value))))
+                if pattern.expressions().into_iter().any(expr_await) {
+                    self.destructure(pattern, value, PatternMode::Assign)?;
+                    value
+                } else {
+                    self.eval(Expr::Destructure(pattern.clone(), Box::new(read(value))))
+                }
             }
             Expr::Assign(target, value) => {
                 let target = self.assignment_target(target)?;
@@ -569,7 +656,218 @@ impl Compiler {
                 }
                 out
             }
+            Expr::Class(c) => self.class(c, None)?,
             _ => return Err(ScriptError::Unsupported("await expression shape")),
+        })
+    }
+    /// A destructuring pattern whose initializers, computed keys or targets suspend,
+    /// lowered to ops step by step: DestructuringAssignmentEvaluation (§13.15.5) or
+    /// BindingInitialization (§8.6.2), mirroring `Engine::pattern_value`.
+    fn destructure(&mut self, pattern: &Pattern, value: usize, mode: PatternMode) -> Result<()> {
+        let target = self.pattern_target(pattern, mode)?;
+        self.pattern_value(pattern, value, mode, target)
+    }
+    /// The reference a leaf target evaluates before its value is fetched
+    /// (§13.15.5.5 step 1, §13.15.5.6 step 1); binding leaves resolve when initialized.
+    fn pattern_target(&mut self, pattern: &Pattern, mode: PatternMode) -> Result<Option<Expr>> {
+        if let PatternMode::Bind(_) = mode {
+            return Ok(None);
+        }
+        match pattern {
+            Pattern::Name(n) => Ok(Some(Expr::Name(n.clone()))),
+            Pattern::Target(e) => Ok(Some(self.assignment_target(e)?)),
+            Pattern::Default(inner, _) => self.pattern_target(inner, mode),
+            _ => Ok(None),
+        }
+    }
+    fn pattern_value(
+        &mut self,
+        pattern: &Pattern,
+        value: usize,
+        mode: PatternMode,
+        target: Option<Expr>,
+    ) -> Result<()> {
+        match pattern {
+            Pattern::Name(n) if matches!(mode, PatternMode::Bind(_)) => {
+                let PatternMode::Bind(var) = mode else {
+                    unreachable!()
+                };
+                self.emit(Op::Init(n.clone(), value, var));
+            }
+            Pattern::Name(_) | Pattern::Target(_) => {
+                let target =
+                    target.ok_or(ScriptError::Runtime("missing assignment pattern reference"))?;
+                self.eval(Expr::Assign(Box::new(target), Box::new(read(value))));
+            }
+            // Initializer: only when the value is undefined; an anonymous function
+            // bound to a single name gets NamedEvaluation.
+            Pattern::Default(inner, default) => {
+                let out = self.reg();
+                self.emit(Op::Eval(read(value), out));
+                let test = self.eval(Expr::Binary(
+                    "===".into(),
+                    Box::new(read(value)),
+                    Box::new(Expr::Undefined),
+                ));
+                let branch = self.emit(Op::Branch(test, 0, 0));
+                let start = self.ops.len();
+                let initial = match inner.as_ref() {
+                    Pattern::Name(n) => self.named(default, n)?,
+                    _ => self.expression(default)?,
+                };
+                self.emit(Op::Eval(read(initial), out));
+                let end = self.ops.len();
+                self.ops[branch] = Op::Branch(test, start, end);
+                self.pattern_value(inner, out, mode, target)?;
+            }
+            // §13.15.5.2 / §8.6.2: RequireObjectCoercible, then each property in order
+            // (key, then target reference, then GetV), then the rest object.
+            Pattern::Object(properties, rest) => {
+                self.emit(Op::Coercible(value));
+                let mut excluded = vec![];
+                for (key, property) in properties {
+                    let key = match key {
+                        PatternKey::Static(k) => self.eval(Expr::String(k.clone())),
+                        PatternKey::Computed(e) => {
+                            let raw = self.expression(e)?;
+                            let key = self.reg();
+                            self.emit(Op::PropertyKey(value, raw, key));
+                            key
+                        }
+                    };
+                    excluded.push(key);
+                    let target = self.pattern_target(property, mode)?;
+                    let v = self.eval(Expr::Computed(Box::new(read(value)), Box::new(read(key))));
+                    self.pattern_value(property, v, mode, target)?;
+                }
+                if let Some(rest) = rest {
+                    let target = self.pattern_target(rest, mode)?;
+                    let out = self.reg();
+                    self.emit(Op::CopyRest(value, excluded, out));
+                    self.pattern_value(rest, out, mode, target)?;
+                }
+            }
+            // §13.15.5.5 / §8.6.3: GetIterator, one IteratorStepValue per element while
+            // [[Done]] is false, and IteratorClose at the end or on an abrupt completion.
+            Pattern::Array(items, rest) => {
+                let iterator = self.reg();
+                let next = self.reg();
+                self.emit(Op::Iterator(value, iterator, next));
+                let guard = self.emit(Op::Destructure(0, iterator));
+                let done = self.eval(Expr::Bool(false));
+                for item in items {
+                    let target = match item {
+                        Some(p) => self.pattern_target(p, mode)?,
+                        None => None,
+                    };
+                    let v = self.reg();
+                    let branch = self.emit(Op::Branch(done, 0, 0));
+                    let call = self.ops.len();
+                    self.emit(Op::IteratorNext(iterator, next, v, done, true));
+                    let jump = self.emit(Op::Jump(0));
+                    let skip = self.ops.len();
+                    self.emit(Op::Eval(Expr::Undefined, v));
+                    let end = self.ops.len();
+                    self.ops[jump] = Op::Jump(end);
+                    self.ops[branch] = Op::Branch(done, skip, call);
+                    if let Some(p) = item {
+                        self.pattern_value(p, v, mode, target)?;
+                    }
+                }
+                if let Some(rest) = rest {
+                    let target = self.pattern_target(rest, mode)?;
+                    let array = self.reg();
+                    self.emit(Op::Array(array, 0));
+                    let again = self.ops.len();
+                    let first = self.emit(Op::Branch(done, 0, 0));
+                    let call = self.ops.len();
+                    let v = self.reg();
+                    self.emit(Op::IteratorNext(iterator, next, v, done, true));
+                    let second = self.emit(Op::Branch(done, 0, 0));
+                    let append = self.ops.len();
+                    self.emit(Op::Append(array, Some(v), false));
+                    self.emit(Op::Jump(again));
+                    let after = self.ops.len();
+                    self.ops[first] = Op::Branch(done, after, call);
+                    self.ops[second] = Op::Branch(done, after, append);
+                    self.pattern_value(rest, array, mode, target)?;
+                }
+                self.emit(Op::EndDestructure);
+                let stop = self.ops.len();
+                self.ops[guard] = Op::Destructure(stop, iterator);
+            }
+        }
+        Ok(())
+    }
+    /// ClassDefinitionEvaluation (§15.7.14) whose heritage or computed keys suspend.
+    /// The heritage (step 8) and, in source order, every computed key up to the last
+    /// one that suspends (ClassElementEvaluation: the key's evaluation and its
+    /// ToPropertyKey, §13.2.5.4 ComputedPropertyName) run here as ops; the class itself
+    /// then evaluates with those keys already canonical, so the remaining steps and the
+    /// later keys keep the spec order. The class scope (step 4) and its private
+    /// environment (step 6) do not exist yet while these ops run, so an expression that
+    /// names the class binding or one of the class's private names is unsupported
+    /// rather than resolved against the wrong environment.
+    fn class(&mut self, c: &super::parser::Class, name: Option<&str>) -> Result<usize> {
+        use super::parser::ClassKey;
+        let last = c
+            .members
+            .iter()
+            .rposition(|m| matches!(&m.key, ClassKey::Computed(k) if expr_await(k)));
+        let early: Vec<&Expr> = c
+            .members
+            .iter()
+            .take(last.map_or(0, |l| l + 1))
+            .filter_map(|m| match &m.key {
+                ClassKey::Computed(k) => Some(k),
+                _ => None,
+            })
+            .chain(c.heritage.as_ref())
+            .collect();
+        let privates: std::collections::HashSet<String> = c
+            .members
+            .iter()
+            .filter_map(|m| match &m.key {
+                ClassKey::Private(n) => Some(n.clone()),
+                _ => None,
+            })
+            .collect();
+        let walks: Vec<&dyn super::ast_scan::Walk> = early
+            .iter()
+            .map(|e| *e as &dyn super::ast_scan::Walk)
+            .collect();
+        if c.name
+            .as_deref()
+            .is_some_and(|n| super::ast_scan::mentions(&walks, n))
+            || super::ast_scan::mentions_any(&walks, &privates)
+        {
+            return Err(ScriptError::Unsupported(
+                "resumable class element naming its own class scope",
+            ));
+        }
+        let mut class = c.clone();
+        if let Some(heritage) = &c.heritage {
+            class.heritage = Some(read(self.expression(heritage)?));
+        }
+        if let Some(last) = last {
+            let base = self.eval(Expr::Bool(true));
+            for member in class.members.iter_mut().take(last + 1) {
+                if let ClassKey::Computed(k) = &member.key {
+                    let value = self.expression(k)?;
+                    let key = self.reg();
+                    self.emit(Op::PropertyKey(base, value, key));
+                    member.key = ClassKey::Computed(read(key));
+                }
+            }
+        }
+        let class = Expr::Class(Box::new(class));
+        Ok(match name {
+            Some(name) => {
+                let r = self.reg();
+                self.emit(Op::EvalNamed(class, name.into(), r));
+                r
+            }
+            None => self.eval(class),
         })
     }
     fn property(&mut self, object: usize, p: &Property) -> Result<Property> {
@@ -720,12 +1018,11 @@ impl Compiler {
                 pattern,
                 init,
             } => {
-                if pattern.expressions().into_iter().any(expr_await) {
-                    return Err(ScriptError::Unsupported(
-                        "resumable binding pattern expressions",
-                    ));
-                }
-                if let Some(init) = init {
+                let resumable = pattern.expressions().into_iter().any(expr_await);
+                if let (true, Some(init)) = (resumable, init) {
+                    let value = self.expression(init)?;
+                    self.destructure(pattern, value, PatternMode::Bind(kind == "var"))?;
+                } else if let Some(init) = init {
                     let value = if let super::parser::Pattern::Name(n) = pattern {
                         self.named(init, n)?
                     } else {
@@ -891,12 +1188,16 @@ impl Compiler {
                 self.body(body, true)?;
                 self.emit(Op::EndTry);
                 let catch_ip = if let Some((pattern, body)) = catch {
-                    if pattern.iter().flat_map(|p| p.expressions()).any(expr_await) {
-                        return Err(ScriptError::Unsupported(
-                            "resumable catch binding expressions",
-                        ));
-                    }
-                    let at = self.emit(Op::Catch(pattern.clone(), body.clone()));
+                    let at = match pattern {
+                        Some(p) if p.expressions().into_iter().any(expr_await) => {
+                            let value = self.reg();
+                            let at = self.emit(Op::CatchParam(p.clone(), value));
+                            self.destructure(p, value, PatternMode::Bind(false))?;
+                            self.emit(Op::Enter(body.clone()));
+                            at
+                        }
+                        _ => self.emit(Op::Catch(pattern.clone(), body.clone())),
+                    };
                     for s in body {
                         self.statement(s)?;
                     }
@@ -942,11 +1243,7 @@ impl Compiler {
                     }
                 );
                 let lexical = kind == "let" || kind == "const" || super::parser::is_using(kind);
-                if binding.expressions().into_iter().any(expr_await) {
-                    return Err(ScriptError::Unsupported(
-                        "resumable loop binding expressions",
-                    ));
-                }
+                let resumable = binding.expressions().into_iter().any(expr_await);
                 let declaration = Stmt::Bind {
                     kind: if kind == "var" {
                         "let".into()
@@ -993,7 +1290,14 @@ impl Compiler {
                 }
                 let declarations = [declaration];
                 self.using_scope(&declarations, |c| {
-                    if kind == "assignment" {
+                    if resumable {
+                        let mode = if kind == "assignment" {
+                            PatternMode::Assign
+                        } else {
+                            PatternMode::Bind(kind == "var")
+                        };
+                        c.destructure(binding, value, mode)?;
+                    } else if kind == "assignment" {
                         c.eval(Expr::Destructure(
                             Box::new(binding.clone()),
                             Box::new(read(value)),
@@ -1030,6 +1334,7 @@ pub(super) fn compile_kind(body: &[Stmt], async_generator: bool) -> Result<Arc<P
         ops: vec![],
         next: 0,
         async_generator,
+        chains: vec![],
     };
     c.body(body, false)?;
     if c.ops.len() > 16384 {
@@ -1707,6 +2012,54 @@ impl Engine<'_> {
                         }),
                         Op::EndLoop => {
                             frame.handlers.pop();
+                        }
+                        Op::Destructure(stop, iterator) => frame.handlers.push(Handler {
+                            loop_to: Some((stop, usize::MAX)),
+                            label: None,
+                            iterator: Some(iterator),
+                            catch: None,
+                            finally: None,
+                            end: stop,
+                            depth: frame.envs.len(),
+                            phase: Phase::Try,
+                            pending: Completion::Normal,
+                        }),
+                        Op::EndDestructure => {
+                            let h = frame.handlers.pop().unwrap();
+                            if let Some(iterator) = h.iterator {
+                                let iterator = e.register(&frame, iterator)?;
+                                e.close_iterator(iterator, Ok(None))?;
+                            }
+                        }
+                        Op::Coercible(r) => {
+                            let v = e.register(&frame, r)?;
+                            e.object_coercible(v)?;
+                        }
+                        Op::CopyRest(source, excluded, out) => {
+                            let source = e.register(&frame, source)?;
+                            let mut keys = vec![];
+                            for k in excluded {
+                                let k = e.register(&frame, k)?;
+                                keys.push(e.to_key(k)?);
+                            }
+                            let object =
+                                e.new_object(Some(e.intrinsics.as_ref().unwrap().object))?;
+                            e.protect(&Value::Object(object))?;
+                            e.copy_properties(object, source, &keys)?;
+                            e.store(&frame, out, Value::Object(object))?;
+                        }
+                        Op::CatchParam(pattern, out) => {
+                            let value = frame.incoming.take().unwrap();
+                            e.protect(&value)?;
+                            let declarations = vec![Stmt::Bind {
+                                kind: "let".into(),
+                                pattern,
+                                init: Some(Expr::Undefined),
+                            }];
+                            let scope = e.new_environment(Some(env), &declarations, false)?;
+                            e.protect(&Value::Object(scope))?;
+                            frame.envs.push(scope);
+                            e.store(&frame, out, value)?;
                         }
                         Op::CloneIteration(names) => {
                             let next = e.clone_iteration(env, &names)?;
