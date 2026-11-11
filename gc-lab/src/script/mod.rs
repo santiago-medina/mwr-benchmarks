@@ -83,9 +83,11 @@ mod bigint;
 
 mod bigint_vm;
 
+mod agents;
 mod atomics;
 mod buffer_elements;
 mod buffers;
+mod shared_block;
 
 mod typed_arrays;
 

@@ -1,20 +1,22 @@
 //! Atomics (ECMA-262 §25.4), the waiter lists behind Atomics.wait / waitAsync / notify, and
 //! the test262 host object `$262` (harness only). Design: SHARED_MEMORY.md.
 //!
-//! One agent per engine: shared bytes are the `Vec<u8>` behind a `Store`, so every access
-//! is trivially sequentially consistent. A sync wait can only time out (no other agent can
-//! notify), and async waiters are settled through host jobs that the embedder drains with
-//! `run_host_jobs` (js_check does; the Servo bridge must too, see SHARED_MEMORY.md).
+//! Shared bytes live in a `SharedBlock` whose mutex is also the WaiterList critical section,
+//! so agents on other threads (one engine each, AGENTS.md) can wait and notify. Async waiters
+//! are settled through host jobs that the embedder drains with `run_host_jobs` (js_check
+//! does; the Servo bridge must too, see SHARED_MEMORY.md).
 use super::{
+    agents::AgentLink,
     buffer_elements::Element,
     buffers::Store,
     objects::{Descriptor, Key},
+    shared_block::{Event, Mailbox, SharedBlock, SharedWaiter, WaiterKind},
     vm::{Engine, ScriptError, Value},
 };
 use crate::dual::{ExternalRoot, Id};
 use std::{
     collections::HashMap,
-    rc::Rc,
+    sync::Arc,
     time::{Duration, Instant},
 };
 type Result<T> = std::result::Result<T, ScriptError>;
@@ -36,20 +38,17 @@ const ATOMICS_METHODS: &[(&str, usize)] = &[
     ("xor", 3),
 ];
 
-/// A waiter of an async wait (§25.4.3.14 Waiter Record): the promise's resolve function and
-/// the timer that settles it with "timed-out".
+/// This agent's side of an async waiter (§25.4.3.14 Waiter Record): the promise's resolve
+/// function. The record itself sits in the block's WaiterList.
 struct Waiter {
     id: u64,
-    store: Store,
-    byte_index: usize,
+    block: Arc<SharedBlock>,
     resolve: ExternalRoot,
 }
 
 enum HostJob {
     /// `setTimeout(callback)` from the test harness host.
     Callback(ExternalRoot),
-    /// EnqueueResolveInAgentJob (§25.4.3.12): resolve a notified waiter's promise with "ok".
-    Resolve(ExternalRoot, &'static str),
     /// EnqueueAtomicsWaitAsyncTimeoutJob (§25.4.3.15).
     WaitTimeout(u64),
 }
@@ -63,10 +62,14 @@ struct Timer {
 pub(super) struct AtomicsState {
     /// AgentCanSuspend() (§9.7 [[CanBlock]]). False by default: a window's main thread.
     pub can_block: bool,
-    epoch: Instant,
+    pub epoch: Instant,
     waiters: Vec<Waiter>,
     timers: Vec<Timer>,
     next: u64,
+    /// Events other agents post to this one (notified async waiters, broadcasts).
+    pub mailbox: Arc<Mailbox>,
+    /// The test262 agent cluster this engine belongs to, if any (AGENTS.md).
+    pub agent: AgentLink,
 }
 impl Default for AtomicsState {
     fn default() -> Self {
@@ -76,6 +79,8 @@ impl Default for AtomicsState {
             waiters: vec![],
             timers: vec![],
             next: 0,
+            mailbox: Arc::default(),
+            agent: AgentLink::None,
         }
     }
 }
@@ -99,12 +104,44 @@ impl Engine<'_> {
     pub fn set_can_block(&mut self, can_block: bool) {
         self.atomics.can_block = can_block;
     }
-    /// The earliest pending host job (timer or async-waiter settlement), if any.
+    /// The earliest pending host job (timer, async-waiter settlement or an event another
+    /// agent posted), if any.
     pub fn next_host_job(&self) -> Option<Instant> {
+        if !self.atomics.mailbox.is_empty() {
+            return Some(Instant::now());
+        }
         self.atomics.timers.iter().map(|t| t.deadline).min()
     }
-    /// Run every host job whose deadline has passed, in deadline then FIFO order.
+    /// Block until another agent posts an event or `deadline` passes; embedders call it
+    /// instead of sleeping until `next_host_job()` (AGENTS.md).
+    pub fn wait_for_host_event(&self, deadline: Instant) {
+        self.atomics.mailbox.wait(deadline);
+    }
+    /// Async waiters (`Atomics.waitAsync`) that another agent may still notify.
+    pub fn has_pending_waiters(&self) -> bool {
+        !self.atomics.waiters.is_empty() && self.has_peer_agents()
+    }
+    /// Run the events other agents posted, then every host job whose deadline has passed,
+    /// in deadline then FIFO order.
     pub fn run_host_jobs(&mut self) -> Result<()> {
+        let mut first = Ok(());
+        for event in self.atomics.mailbox.take() {
+            self.steps_for_external_event();
+            let result = match event {
+                // EnqueueResolveInAgentJob (§25.4.1.7) from NotifyWaiter.
+                Event::Notified(id) => match self.atomics.waiters.iter().position(|w| w.id == id) {
+                    Some(at) => {
+                        let w = self.atomics.waiters.remove(at);
+                        self.run_rooted(w.resolve, Some("ok"))
+                    }
+                    None => Ok(()),
+                },
+                Event::Broadcast(message) => self.receive_broadcast(message),
+            };
+            if first.is_ok() {
+                first = result;
+            }
+        }
         let now = Instant::now();
         let mut due: Vec<Timer> = vec![];
         let mut rest = vec![];
@@ -117,17 +154,28 @@ impl Engine<'_> {
         }
         self.atomics.timers = rest;
         due.sort_by_key(|t| (t.deadline, t.seq));
-        let mut first = Ok(());
         for timer in due {
             self.steps_for_external_event();
             let result = match timer.job {
                 HostJob::Callback(root) => self.run_rooted(root, None),
-                HostJob::Resolve(root, value) => self.run_rooted(root, Some(value)),
                 HostJob::WaitTimeout(id) => {
                     match self.atomics.waiters.iter().position(|w| w.id == id) {
                         Some(at) => {
-                            let w = self.atomics.waiters.remove(at);
-                            self.run_rooted(w.resolve, Some("timed-out"))
+                            // Under the critical section: still listed → timed out; else a
+                            // notification is already in this agent's mailbox.
+                            let listed = {
+                                let block = self.atomics.waiters[at].block.clone();
+                                let mut state = block.lock();
+                                let before = state.waiters.len();
+                                state.waiters.retain(|w| w.id != id);
+                                state.waiters.len() != before
+                            };
+                            if listed {
+                                let w = self.atomics.waiters.remove(at);
+                                self.run_rooted(w.resolve, Some("timed-out"))
+                            } else {
+                                Ok(())
+                            }
                         }
                         None => Ok(()),
                     }
@@ -160,13 +208,15 @@ impl Engine<'_> {
     }
     pub(super) fn cancel_host_jobs(&mut self) {
         for t in std::mem::take(&mut self.atomics.timers) {
-            if let HostJob::Callback(root) | HostJob::Resolve(root, _) = t.job {
+            if let HostJob::Callback(root) = t.job {
                 let _ = self.runtime.unroot(root);
             }
         }
         for w in std::mem::take(&mut self.atomics.waiters) {
+            w.block.lock().waiters.retain(|x| x.id != w.id);
             let _ = self.runtime.unroot(w.resolve);
         }
+        self.release_agent_roots();
     }
 
     pub(super) fn bootstrap_atomics(
@@ -213,13 +263,25 @@ impl Engine<'_> {
         let agent = self.new_object(Some(object))?;
         self.runtime.link(env, agent)?;
         self.put_data(host, "agent", Value::Object(agent))?;
-        for (method, length) in [
-            ("start", 1),
-            ("broadcast", 2),
-            ("getReport", 0),
-            ("sleep", 1),
-            ("monotonicNow", 0),
-        ] {
+        // INTERPRETING.md: the main agent's API, or the one a started agent sees.
+        let methods: &[(&str, usize)] = if self.is_child_agent() {
+            &[
+                ("receiveBroadcast", 1),
+                ("report", 1),
+                ("leaving", 0),
+                ("sleep", 1),
+                ("monotonicNow", 0),
+            ]
+        } else {
+            &[
+                ("start", 1),
+                ("broadcast", 2),
+                ("getReport", 0),
+                ("sleep", 1),
+                ("monotonicNow", 0),
+            ]
+        };
+        for &(method, length) in methods {
             self.host_method(env, function, agent, "$262.agent", method, length)?;
         }
         let timeout = self.intrinsic_function(env, "setTimeout", Some(function))?;
@@ -299,10 +361,12 @@ impl Engine<'_> {
             }
             "$262.createRealm" => self.create_realm(),
             "$262.evalScript" => self.eval_script(arg(0)),
-            "$262.agent.start" | "$262.agent.broadcast" => Err(ScriptError::Unsupported(
-                "test262 agents (one agent per engine)",
-            )),
-            "$262.agent.getReport" => Ok(Value::Null),
+            "$262.agent.start"
+            | "$262.agent.broadcast"
+            | "$262.agent.getReport"
+            | "$262.agent.receiveBroadcast"
+            | "$262.agent.report"
+            | "$262.agent.leaving" => self.agent_builtin(name, arg(0), arg(1)),
             "$262.agent.sleep" => {
                 let ms = self.to_number(arg(0))?;
                 if ms.is_finite() && ms > 0.0 {
@@ -338,10 +402,9 @@ impl Engine<'_> {
                 let access = self.atomic_access(arg(0), arg(1), false, false)?;
                 self.revalidate_atomic_access(&access)?;
                 let size = access.kind.size();
-                let b = access.store.borrow();
-                Ok(access
-                    .kind
-                    .read(&b.bytes[access.byte_index..access.byte_index + size], true))
+                let at = access.byte_index;
+                let bytes = access.store.borrow().bytes.get(at, at + size);
+                Ok(access.kind.read(&bytes, true))
             }
             "Atomics.store" => {
                 // §25.4.12 Atomics.store ( typedArray, index, value ).
@@ -349,8 +412,11 @@ impl Engine<'_> {
                 let v = self.atomic_operand(access.kind, arg(2))?;
                 self.revalidate_atomic_access(&access)?;
                 let bytes = access.kind.bytes(&v, true);
-                let mut b = access.store.borrow_mut();
-                b.bytes[access.byte_index..access.byte_index + bytes.len()].copy_from_slice(&bytes);
+                access
+                    .store
+                    .borrow_mut()
+                    .bytes
+                    .set(access.byte_index, &bytes);
                 Ok(v)
             }
             "Atomics.compareExchange" => {
@@ -363,12 +429,15 @@ impl Engine<'_> {
                 let expected = access.kind.bytes(&expected, true);
                 let replacement = access.kind.bytes(&replacement, true);
                 let range = access.byte_index..access.byte_index + access.kind.size();
-                let mut b = access.store.borrow_mut();
-                let old = access.kind.read(&b.bytes[range.clone()], true);
-                if b.bytes[range.clone()] == expected[..] {
-                    b.bytes[range].copy_from_slice(&replacement);
-                }
-                Ok(old)
+                // One critical section for the read and the conditional write.
+                let old = access.store.borrow_mut().bytes.with_mut(|b| {
+                    let old = b[range.clone()].to_vec();
+                    if old == expected {
+                        b[range].copy_from_slice(&replacement);
+                    }
+                    old
+                });
+                Ok(access.kind.read(&old, true))
             }
             "Atomics.add" | "Atomics.and" | "Atomics.exchange" | "Atomics.or" | "Atomics.sub"
             | "Atomics.xor" => {
@@ -379,20 +448,23 @@ impl Engine<'_> {
                 let operand = raw(&access.kind.bytes(&v, true));
                 let size = access.kind.size();
                 let range = access.byte_index..access.byte_index + size;
-                let mut b = access.store.borrow_mut();
-                let old_bytes = b.bytes[range.clone()].to_vec();
-                let old = raw(&old_bytes);
-                let new = match name {
-                    "Atomics.add" => old.wrapping_add(operand),
-                    "Atomics.sub" => old.wrapping_sub(operand),
-                    "Atomics.and" => old & operand,
-                    "Atomics.or" => old | operand,
-                    "Atomics.xor" => old ^ operand,
-                    _ => operand,
-                };
-                for (i, byte) in b.bytes[range].iter_mut().enumerate() {
-                    *byte = (new >> (i * 8)) as u8;
-                }
+                // One critical section for the read and the write.
+                let old_bytes = access.store.borrow_mut().bytes.with_mut(|b| {
+                    let old_bytes = b[range.clone()].to_vec();
+                    let old = raw(&old_bytes);
+                    let new = match name {
+                        "Atomics.add" => old.wrapping_add(operand),
+                        "Atomics.sub" => old.wrapping_sub(operand),
+                        "Atomics.and" => old & operand,
+                        "Atomics.or" => old | operand,
+                        "Atomics.xor" => old ^ operand,
+                        _ => operand,
+                    };
+                    for (i, byte) in b[range].iter_mut().enumerate() {
+                        *byte = (new >> (i * 8)) as u8;
+                    }
+                    old_bytes
+                });
                 Ok(access.kind.read(&old_bytes, true))
             }
             "Atomics.wait" | "Atomics.waitAsync" => {
@@ -509,17 +581,7 @@ impl Engine<'_> {
         if !asynchronous && !self.atomics.can_block {
             return self.throw_error("TypeError", "Atomics.wait cannot block this agent");
         }
-        // Steps 13-14: compare the current value (no other agent can change it meanwhile).
-        let current = {
-            let b = store.borrow();
-            let end = byte_index + record.kind.size();
-            if end > b.bytes.len() {
-                None
-            } else {
-                Some(b.bytes[byte_index..end].to_vec())
-            }
-        };
-        let equal = current.as_deref() == Some(&expected[..]);
+        let block = store.borrow().bytes.block().cloned().unwrap();
         let result = |e: &mut Self, sync: bool, value: Value| -> Result<Value> {
             let object = e.new_object(Some(e.intrinsics.as_ref().unwrap().object))?;
             e.protect(&Value::Object(object))?;
@@ -527,7 +589,14 @@ impl Engine<'_> {
             e.put_data(object, "value", value)?;
             Ok(Value::Object(object))
         };
+        let size = record.kind.size();
+        // Steps 10-16 run in the WaiterList critical section (the block's lock).
+        let mut state = block.lock();
+        // Steps 13-14: compare the current value.
+        let end = byte_index + size;
+        let equal = end <= state.bytes.len() && state.bytes[byte_index..end] == expected[..];
         if !equal {
+            drop(state);
             let s = Value::String("not-equal".into());
             return if asynchronous {
                 result(self, true, s)
@@ -535,32 +604,69 @@ impl Engine<'_> {
                 Ok(s)
             };
         }
+        let id = SharedBlock::next_waiter_id();
         if !asynchronous {
-            // Step 17 SuspendThisAgent: with one agent nobody can notify, so the wait
-            // always times out; an unbounded wait could never return.
-            if !t.is_finite() {
+            // An unbounded wait that no other agent could ever end would just hang.
+            if !t.is_finite() && !self.has_peer_agents() {
                 return Err(ScriptError::Unsupported(
                     "Atomics.wait without a timeout in a single agent",
                 ));
             }
-            std::thread::sleep(Duration::from_secs_f64(t.min(10_000.0) / 1000.0));
-            return Ok(Value::String("timed-out".into()));
+            // Steps 16-17: AddWaiter, then SuspendThisAgent until notified or timed out.
+            state.waiters.push(SharedWaiter {
+                id,
+                byte_index,
+                kind: WaiterKind::Sync,
+            });
+            let deadline = t
+                .is_finite()
+                .then(|| Instant::now() + Duration::from_secs_f64(t.min(1e9) / 1000.0));
+            loop {
+                if !state.waiters.iter().any(|w| w.id == id) {
+                    return Ok(Value::String("ok".into()));
+                }
+                match deadline {
+                    Some(deadline) => {
+                        let now = Instant::now();
+                        if now >= deadline {
+                            // Step 18-19: still in the list → remove it, "timed-out".
+                            state.waiters.retain(|w| w.id != id);
+                            return Ok(Value::String("timed-out".into()));
+                        }
+                        state = block
+                            .wake
+                            .wait_timeout(state, deadline - now)
+                            .unwrap_or_else(|e| e.into_inner())
+                            .0;
+                    }
+                    None => {
+                        state = block.wake.wait(state).unwrap_or_else(|e| e.into_inner());
+                    }
+                }
+            }
         }
         // Step 15: t = 0 → a synchronous "timed-out" result.
         if t == 0.0 {
+            drop(state);
             return result(self, true, Value::String("timed-out".into()));
         }
-        let promise_ctor = Value::Object(self.intrinsics.as_ref().unwrap().functions["Promise"]);
-        let capability = self.capability(promise_ctor)?;
-        let resolve = self.runtime.root(capability.resolve.id().unwrap())?;
-        let id = self.atomics.next;
-        self.atomics.next += 1;
-        self.atomics.waiters.push(Waiter {
+        state.waiters.push(SharedWaiter {
             id,
-            store,
             byte_index,
-            resolve,
+            kind: WaiterKind::Async(self.atomics.mailbox.clone()),
         });
+        drop(state);
+        let promise_ctor = Value::Object(self.intrinsics.as_ref().unwrap().functions["Promise"]);
+        let capability = self.capability(promise_ctor);
+        let capability = match capability {
+            Ok(c) => c,
+            Err(err) => {
+                block.lock().waiters.retain(|w| w.id != id);
+                return Err(err);
+            }
+        };
+        let resolve = self.runtime.root(capability.resolve.id().unwrap())?;
+        self.atomics.waiters.push(Waiter { id, block, resolve });
         // Step 18: EnqueueAtomicsWaitAsyncTimeoutJob for a finite timeout.
         if t.is_finite() {
             self.add_host_job(
@@ -582,22 +688,31 @@ impl Engine<'_> {
             self.integer(count)?.max(0.0)
         };
         // Step 5: a non-shared buffer has no waiters.
-        if !access.store.borrow().shared {
+        let Some(block) = access.store.borrow().bytes.block().cloned() else {
             return Ok(Value::number(0.0));
-        }
+        };
+        // Steps 6-11 in the WaiterList critical section: RemoveWaiters, then NotifyWaiter.
         let mut n = 0usize;
-        let mut at = 0;
-        while at < self.atomics.waiters.len() && (n as f64) < c {
-            let w = &self.atomics.waiters[at];
-            if Rc::ptr_eq(&w.store, &access.store) && w.byte_index == access.byte_index {
-                let w = self.atomics.waiters.remove(at);
-                // NotifyWaiter → EnqueueResolveInAgentJob; the waiter's timeout job is
-                // dropped when it finds the waiter gone.
-                self.add_host_job(Duration::ZERO, HostJob::Resolve(w.resolve, "ok"));
-                n += 1;
-            } else {
-                at += 1;
+        let mut woke = false;
+        {
+            let mut state = block.lock();
+            let mut at = 0;
+            while at < state.waiters.len() && (n as f64) < c {
+                if state.waiters[at].byte_index == access.byte_index {
+                    let w = state.waiters.remove(at);
+                    match w.kind {
+                        WaiterKind::Sync => woke = true,
+                        // EnqueueResolveInAgentJob; the waiter's timeout job finds it gone.
+                        WaiterKind::Async(mailbox) => mailbox.post(Event::Notified(w.id)),
+                    }
+                    n += 1;
+                } else {
+                    at += 1;
+                }
             }
+        }
+        if woke {
+            block.wake.notify_all();
         }
         Ok(Value::number(n as f64))
     }

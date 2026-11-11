@@ -406,6 +406,9 @@ impl<'host> Engine<'host> {
     pub fn set_step_limit(&mut self, steps: usize) {
         self.step_limit = steps;
     }
+    pub(super) fn step_limit(&self) -> usize {
+        self.step_limit
+    }
     pub fn live_objects(&self) -> usize {
         self.runtime.live_objects()
     }

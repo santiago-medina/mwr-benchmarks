@@ -21,29 +21,29 @@ The engine is single-threaded and `#![forbid(unsafe_code)]`. Buffer storage is
 - Growable SABs (`grow`, §25.2.5.3) only ever increase in length. Because nothing else observes the
   buffer, the length can be updated in place.
 
-### Deferred: multiple agents
+### Multiple agents (AGENTS.md)
 
-test262 multi-agent cases use `$262.agent.start/broadcast/getReport`. Those return
-`Unsupported`, so they are counted as unsupported, never as passes (109 cases in
-`built-ins/Atomics`). Real agents (Web Workers in Servo, roadmap D) need:
+Multiple agents are implemented (AGENTS.md, Atomics agents gap, 2026-11-11). A SharedArrayBuffer
+holds `Bytes::Shared(Arc<SharedBlock>)`: a `Mutex<BlockState>` with the bytes and the block's
+WaiterList, plus a `Condvar`. Every agent is a thread with its own engine and heap.
+- `$262.agent.start` spawns one.
+- `broadcast` hands every agent a SharedArrayBuffer object over the same block.
+- Async notifications travel through each engine's `Mailbox`.
 
-1. A `Send + Sync` byte store for shared buffers, e.g. `Arc<[AtomicU8]>`, or `AtomicU32` words
-   with byte-lane access, still in safe Rust. `Rc<RefCell<Vec<u8>>>` cannot cross threads.
-2. Each agent's engine on its own thread, with a shared waiter list (`Mutex` + `Condvar`) that
-   implements the §25.4.1 WaiterList critical section.
-3. Race semantics for non-atomic accesses (§29): with safe Rust atomics per byte, tearing is
-   allowed by the spec, so relaxed per-byte access is enough.
-
-That is a GC and threading change, so it gets its own design note before it starts.
+The sections below describe the single-agent behaviour, which still holds when no agent was
+started.
 
 ## [[CanBlock]] and Atomics.wait
 
 `AgentCanSuspend()` is false by default (`AtomicsState::can_block`), which is the value for a
 browser main thread. With it false, synchronous `Atomics.wait` throws a TypeError (DoWait step 10).
-Embedders call `Engine::set_can_block(true)`. `js_check --can-block` does it, and
-`conformance/run.py` passes the flag for tests flagged `CanBlockIsTrue`.
+Embedders call `Engine::set_can_block(true)`. `js_check --can-block` does it.
+`conformance/run.py` passes the flag for every case except those flagged `CanBlockIsFalse`, as
+the d8 and SpiderMonkey shells do: test262's `safeBroadcast` probes `Atomics.wait` on the main
+agent in unflagged cases. Started agents always have `[[CanBlock]] = true`.
 
-With one agent no other agent can notify, so a blocking wait:
+With one agent no other agent can notify, so a blocking wait (with live agents, it really
+waits; see AGENTS.md):
 - returns `"not-equal"` when the value differs,
 - otherwise sleeps the thread for the timeout and returns `"timed-out"`,
 - with an infinite timeout would block forever, so it returns `Unsupported` instead of hanging.
@@ -83,8 +83,9 @@ Only with `test_harness` on, the engine defines:
   - `gc`: a full collection.
   - `global`.
   - `createRealm` and `evalScript`: Unsupported, because there is a single realm.
-  - `agent`: `start` and `broadcast` are Unsupported, `getReport` returns null, `sleep` blocks the
-    thread, `monotonicNow` returns elapsed milliseconds.
+  - `agent`: `start`, `broadcast`, `getReport` (main agent) and `receiveBroadcast`, `report`,
+    `leaving` (started agents) as in AGENTS.md. `sleep` blocks the thread, and `monotonicNow`
+    returns milliseconds since the cluster's epoch.
 - `setTimeout(fn, ms)`: queues a host job. `atomicsHelper.js` falls back to a busy promise loop
   without it, which burns the step budget.
 

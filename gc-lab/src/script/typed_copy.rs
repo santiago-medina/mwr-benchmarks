@@ -44,17 +44,18 @@ impl Engine<'_> {
         let to = target.view.offset + to * size;
         let bytes = count * size;
         if snapshot {
-            let values = source_store.borrow().bytes[from..from + bytes].to_vec();
-            target_store.borrow_mut().bytes[to..to + bytes].copy_from_slice(&values);
+            let values = source_store.borrow().bytes.get(from, from + bytes);
+            target_store.borrow_mut().bytes.set(to, &values);
         } else if Rc::ptr_eq(&source_store, &target_store) {
-            let mut buffer = source_store.borrow_mut();
-            for index in 0..bytes {
-                let value = buffer.bytes[from + index];
-                buffer.bytes[to + index] = value;
-            }
+            source_store.borrow_mut().bytes.with_mut(|buffer| {
+                for index in 0..bytes {
+                    buffer[to + index] = buffer[from + index];
+                }
+            });
         } else {
-            target_store.borrow_mut().bytes[to..to + bytes]
-                .copy_from_slice(&source_store.borrow().bytes[from..from + bytes]);
+            // Read first, then write: two SAB objects may alias one shared block.
+            let values = source_store.borrow().bytes.get(from, from + bytes);
+            target_store.borrow_mut().bytes.set(to, &values);
         }
         Ok(())
     }
@@ -193,10 +194,11 @@ impl Engine<'_> {
                     self.tick()?;
                     let left = typed.view.offset + index * size;
                     let right = typed.view.offset + (length - index - 1) * size;
-                    let mut buffer = store.borrow_mut();
-                    for byte in 0..size {
-                        buffer.bytes.swap(left + byte, right + byte);
-                    }
+                    store.borrow_mut().bytes.with_mut(|buffer| {
+                        for byte in 0..size {
+                            buffer.swap(left + byte, right + byte);
+                        }
+                    });
                 }
                 Ok(receiver)
             }
@@ -220,7 +222,7 @@ impl Engine<'_> {
                 for index in start..end {
                     self.tick()?;
                     let begin = typed.view.offset + index * bytes.len();
-                    store.borrow_mut().bytes[begin..begin + bytes.len()].copy_from_slice(&bytes);
+                    store.borrow_mut().bytes.set(begin, &bytes);
                 }
                 Ok(receiver)
             }
@@ -251,7 +253,7 @@ impl Engine<'_> {
                         store
                             .borrow_mut()
                             .bytes
-                            .copy_within(start..start + count * size, to);
+                            .with_mut(|b| b.copy_within(start..start + count * size, to));
                     }
                 }
                 Ok(receiver)

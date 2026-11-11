@@ -282,8 +282,7 @@ impl Engine<'_> {
                     .unwrap()
                     .clone();
                 let start = typed.view.offset;
-                buffer.borrow_mut().bytes[start..start + decoded.bytes.len()]
-                    .copy_from_slice(&decoded.bytes);
+                buffer.borrow_mut().bytes.set(start, &decoded.bytes);
                 if decoded.error {
                     return self.throw_error("SyntaxError", "invalid encoded string");
                 }
@@ -363,7 +362,7 @@ impl Engine<'_> {
             .unwrap()
             .borrow();
         let start = typed.view.offset;
-        Ok(buffer.bytes[start..start + length].to_vec())
+        Ok(buffer.bytes.get(start, start + length))
     }
 
     /// Throws the decoder's SyntaxError, else AllocateTypedArray(%Uint8Array%) with the bytes.
@@ -383,7 +382,7 @@ impl Engine<'_> {
             .as_ref()
             .unwrap()
             .clone();
-        buffer.borrow_mut().bytes[..decoded.bytes.len()].copy_from_slice(&decoded.bytes);
+        buffer.borrow_mut().bytes.set(0, &decoded.bytes);
         Ok(array)
     }
 }

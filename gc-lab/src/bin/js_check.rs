@@ -249,13 +249,14 @@ fn main() {
                 .run_finalization_cleanup()
                 .and_then(|_| e.microtask_checkpoint(10_000).map(|_| ()));
         } else if let Some(deadline) = e.next_host_job() {
-            let now = std::time::Instant::now();
-            if deadline > now {
-                std::thread::sleep(deadline - now);
-            }
+            // Sleeps until the deadline, or until another agent posts an event.
+            e.wait_for_host_event(deadline);
             result = e
                 .run_host_jobs()
                 .and_then(|_| e.microtask_checkpoint(10_000).map(|_| ()));
+        } else if e.has_pending_waiters() {
+            // A waitAsync promise another agent can still notify (test262 agents).
+            e.wait_for_host_event(std::time::Instant::now() + std::time::Duration::from_millis(50));
         } else {
             break;
         }

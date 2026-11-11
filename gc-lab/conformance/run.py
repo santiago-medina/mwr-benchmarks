@@ -55,7 +55,7 @@ def main():
         expected=re.search(r'type:\s*(\w+)',negative) if negative else None
         parse_negative=bool(negative) and re.search(r'phase:\s*parse',negative) is not None
         resolution_negative=bool(negative) and re.search(r'phase:\s*resolution',negative) is not None
-        command=[str(binary),str(path)] + ([expected.group(1)] if expected else []) + (['--negative-parse'] if parse_negative else []) + (['--negative-resolution'] if resolution_negative else []) + (['--module'] if 'module' in flags else []) + (['--strict-only'] if parse_negative and 'onlyStrict' in flags else []) + (['--async'] if 'async' in flags else []) + (['--can-block'] if 'CanBlockIsTrue' in flags else []) + (['--sloppy'] if 'noStrict' in flags or 'raw' in flags else []) + (['--include='+str(root.parent/'harness'/i) for i in includes] if args.profile in ('temporal','full') and 'raw' not in flags else [])
+        command=[str(binary),str(path)] + ([expected.group(1)] if expected else []) + (['--negative-parse'] if parse_negative else []) + (['--negative-resolution'] if resolution_negative else []) + (['--module'] if 'module' in flags else []) + (['--strict-only'] if parse_negative and 'onlyStrict' in flags else []) + (['--async'] if 'async' in flags else []) + (['--can-block'] if 'CanBlockIsFalse' not in flags else []) + (['--sloppy'] if 'noStrict' in flags or 'raw' in flags else []) + (['--include='+str(root.parent/'harness'/i) for i in includes] if args.profile in ('temporal','full') and 'raw' not in flags else [])
         try:
             r=subprocess.run(command,capture_output=True,text=True,timeout=10)
             data=json.loads(r.stdout)

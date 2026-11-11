@@ -109,9 +109,10 @@ impl Engine<'_> {
             .as_ref()
             .unwrap()
             .borrow();
-        Ok(typed
-            .kind
-            .read(&buffer.bytes[start..start + typed.kind.size()], true))
+        let size = typed.kind.size();
+        Ok(buffer
+            .bytes
+            .with(|s| typed.kind.read(&s[start..start + size], true)))
     }
     pub(super) fn typed_valid(&self, typed: &Typed, index: f64) -> Result<bool> {
         Ok(index.is_finite()
@@ -133,7 +134,7 @@ impl Engine<'_> {
                 .as_ref()
                 .unwrap()
                 .clone();
-            buffer.borrow_mut().bytes[start..start + typed.kind.size()].copy_from_slice(&bytes);
+            buffer.borrow_mut().bytes.set(start, &bytes);
         }
         Ok(())
     }
@@ -310,15 +311,15 @@ impl Engine<'_> {
                         .as_ref()
                         .unwrap()
                         .borrow()
-                        .bytes[typed.view.offset..typed.view.offset + length * kind.size()]
-                        .to_vec();
+                        .bytes
+                        .get(typed.view.offset, typed.view.offset + length * kind.size());
                     self.data(destination.view.buffer)?
                         .buffer
                         .as_ref()
                         .unwrap()
                         .borrow_mut()
-                        .bytes[..bytes.len()]
-                        .copy_from_slice(&bytes);
+                        .bytes
+                        .set(0, &bytes);
                 } else {
                     for index in 0..length {
                         self.tick()?;

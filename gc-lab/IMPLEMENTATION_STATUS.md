@@ -227,11 +227,11 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 
 - Design: SHARED_MEMORY.md. A SharedArrayBuffer is a `Buffer` with `shared: true` (constructor, byteLength, growable, maxByteLength, grow, slice, @@species). ArrayBuffer and SharedArrayBuffer methods reject receivers of the other kind.
 - Atomics (`script/atomics.rs`): load, store, compareExchange, add, sub, and, or, xor, exchange, isLockFree, pause, wait, waitAsync and notify, following ValidateIntegerTypedArray / ValidateAtomicAccess / RevalidateAtomicAccess. There is a single agent, so every access is sequentially consistent.
-- [[CanBlock]] is false by default, so a synchronous `Atomics.wait` throws a TypeError. `js_check --can-block` sets it, and run.py maps `CanBlockIsTrue` to that flag.
+- [[CanBlock]] is false by default, so a synchronous `Atomics.wait` throws a TypeError. `js_check --can-block` sets it, and run.py passes it for every case except `CanBlockIsFalse` ones (since the agents gap).
 - waitAsync timers and notify resolutions are host jobs, drained by the embedder through `next_host_job()` / `run_host_jobs()`. js_check does this; **the Servo bridge must too** (roadmap D).
 - Harness-only `$262` (detachArrayBuffer, gc, global, agent.sleep/monotonicNow; createRealm, evalScript and agent.start are Unsupported) and `setTimeout`.
 - Fixed: the ArrayBuffer and SharedArrayBuffer constructors now get `prototype` from newTarget before the host allocation-limit RangeError.
-- Open: multi-agent tests (109 Atomics cases, unsupported) need a thread-safe byte store and Worker agents. Immutable ArrayBuffer is implemented (checkpoint 29).
+- Multi-agent tests: done in the Atomics agents gap (AGENTS.md, 2026-11-11). Each agent is a thread with its own engine; shared blocks are `Arc<SharedBlock>`. Smoke: built-ins/Atomics 389/389. Immutable ArrayBuffer is implemented (checkpoint 29).
 
 ### Checkpoint 16: full test262 baseline (2026-11-09)
 
@@ -408,6 +408,14 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Probe `vmprobe/resumable_dstr.js` covers close on return, no close after exhaustion, assignment order, computed key plus rest, NamedEvaluation, catch, for-of heads, and an optional chain plus class key. It passes on tree, vm and `--gc-stress`.
 - Smoke: the 120 cases of the surveyed buckets pass (they were 46 "await expression shape", 37 loop binding, 24 assignment pattern, 12 binding pattern, 1 catch binding). `language/expressions/optional-chaining` passes 84/84. A 400-case sample of the neighbouring dstr and for-await-of directories has 1 failure, which already failed in full51.
 - Full run t262-full52 (VM): 47344/47708 = 99.2%, +113 (gained 120, lost 7). All 7 lost cases are runner timeouts from foreign load (load average ~17); they pass alone and HEAD and new builds run them in the same CPU time (decodeURI, decodeURIComponent, RegExp character-class-escape-non-whitespace, 3 TypedArray copyWithin detached cases, tco-call-args). decodeURI S15.1.3.1_A2.5_T1 takes 9-11 s of CPU on both builds: a roadmap B item. Unsupported fell 337 -> 217; the largest remaining bucket is built-ins/Atomics (109, test262 agents).
+
+### test262 agents and shared data blocks (checkpoint 46, 2026-11-11)
+
+- `$262.agent` (test262 INTERPRETING.md) is implemented thread-per-agent: every started agent is a thread with its own `Engine`, heap and GC (ECMA-262 §9.7-§9.8). Agents share only SharedArrayBuffer data blocks: `Bytes::Shared(Arc<SharedBlock>)` (`script/shared_block.rs`), whose bytes and WaiterList sit under one mutex (the §25.4.1 critical section, which also serialises every access, a sequentially consistent execution the §29 memory model permits). Atomics.wait/notify/waitAsync work across agents; a dead agent's waiters are purged before it is marked dead. Growable SABs reserve `maxByteLength` up front so the block never moves (§25.2.5.3). Design and review: `AGENTS.md` (Literature Review (#82) request #405: "Adopt, with corrections", applied).
+- `conformance/run.py` passes `--can-block` to every case not flagged `CanBlockIsFalse`: atomicsHelper's `safeBroadcast` probes `Atomics.wait` on the main agent.
+- Callgrind before/after: copywithin_small +0.60%, `vm-bench/access_ab.js` +0.73%, `vm-bench/access_sab.js` +0.23%; shared vs local access 1.0008x.
+- Smoke: built-ins/Atomics 389/389; a 600-case buffer sample has 1 failure that already failed in full52. cargo test passes, including `tests/agents.rs`.
+- Full run t262-full53 (VM): 47458/47708 = 99.5%, +114 (gained 114, lost 0). Unsupported fell 217 -> 108; the largest remaining buckets are "unsupported character" (20 + 3 strict) and "strict unsupported property key" (12).
 
 ### Object model slice 3 part b: root-record hints (checkpoint 44, 2026-11-11)
 

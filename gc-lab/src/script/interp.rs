@@ -830,6 +830,9 @@ impl Engine<'_> {
         Ok(Value::Bool(true))
     }
 
+    pub(super) fn engine_mode(&self) -> EngineMode {
+        self.bytecode.mode
+    }
     pub fn set_engine_mode(&mut self, mode: EngineMode) {
         self.bytecode.mode = mode;
     }

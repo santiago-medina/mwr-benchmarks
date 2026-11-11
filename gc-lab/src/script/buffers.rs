@@ -1,5 +1,6 @@
 //! Byte stores contain no JS references. Views retain their buffer through the traced graph.
 //! Spec reference: https://tc39.es/ecma262/multipage/structured-data.html
+use super::shared_block::{Bytes, SharedBlock};
 use super::{
     buffer_elements::{Element, ELEMENTS},
     objects::{Descriptor, Key},
@@ -10,27 +11,39 @@ use std::{
     cell::{Cell, RefCell},
     collections::HashMap,
     rc::Rc,
+    sync::Arc,
 };
 type Result<T> = std::result::Result<T, ScriptError>;
 pub(super) const MAX_BYTES: usize = 16777216;
 const TOTAL_BYTES: usize = 67108864;
 pub(super) type Store = Rc<RefCell<Buffer>>;
 pub(super) struct Buffer {
-    pub bytes: Vec<u8>,
+    pub bytes: Bytes,
     pub maximum: Option<usize>,
     pub detached: bool,
     /// IsSharedArrayBuffer (§25.2.2.2): set for SharedArrayBuffer stores, which never
-    /// detach. Only one agent exists today (SHARED_MEMORY.md), so the bytes stay a Vec.
+    /// detach. Their bytes are a `Bytes::Shared` block other agents may hold (AGENTS.md).
     pub shared: bool,
     /// [[ArrayBufferIsImmutable]] (proposal-immutable-arraybuffer §25.1.7): the bytes
     /// never change after AllocateImmutableArrayBuffer and the buffer never detaches.
     pub immutable: bool,
     budget: Rc<Cell<usize>>,
+    /// Bytes charged to this engine's host budget. For a shared block another agent may
+    /// have grown it; that growth is charged to that agent.
+    pub accounted: usize,
+}
+impl Buffer {
+    /// Charge a new length to the engine budget (resize, grow, detach).
+    pub fn account(&mut self, length: usize) {
+        self.budget
+            .set(self.budget.get().saturating_sub(self.accounted) + length);
+        self.accounted = length;
+    }
 }
 impl Drop for Buffer {
     fn drop(&mut self) {
         self.budget
-            .set(self.budget.get().saturating_sub(self.bytes.len()));
+            .set(self.budget.get().saturating_sub(self.accounted));
     }
 }
 #[derive(Clone)]
@@ -41,11 +54,12 @@ pub(super) struct View {
 }
 impl View {
     pub fn length(&self, buffer: &Buffer) -> Option<usize> {
-        if buffer.detached || self.offset > buffer.bytes.len() {
+        let total = buffer.bytes.len();
+        if buffer.detached || self.offset > total {
             return None;
         }
-        let length = self.length.unwrap_or(buffer.bytes.len() - self.offset);
-        if length > buffer.bytes.len() - self.offset {
+        let length = self.length.unwrap_or(total - self.offset);
+        if length > total - self.offset {
             None
         } else {
             Some(length)
@@ -140,6 +154,24 @@ impl Engine<'_> {
         self.protect(&Value::Object(id))?;
         let bytes = self.allocate_bytes(length, 0)?;
         self.buffer_bytes.set(self.buffer_bytes.get() + length);
+        let bytes = if shared {
+            // A growable shared block reserves maxByteLength now, so `grow` never reallocates
+            // under another agent's feet (what V8, SpiderMonkey and wasmtime do). The host
+            // budget is still charged the byte length only; see AGENTS.md.
+            let mut bytes = bytes;
+            if let Some(max) = maximum {
+                if bytes.try_reserve_exact(max - length).is_err() {
+                    self.buffer_bytes.set(self.buffer_bytes.get() - length);
+                    return self.throw_error(
+                        "RangeError",
+                        "cannot reserve SharedArrayBuffer maxByteLength",
+                    );
+                }
+            }
+            Bytes::Shared(SharedBlock::new(bytes))
+        } else {
+            Bytes::Local(bytes)
+        };
         let buffer = Rc::new(RefCell::new(Buffer {
             bytes,
             maximum,
@@ -147,6 +179,32 @@ impl Engine<'_> {
             shared,
             immutable: false,
             budget: self.buffer_bytes.clone(),
+            accounted: length,
+        }));
+        let mut data = self.data(id)?.clone();
+        data.buffer = Some(buffer);
+        self.replace_data(id, data)?;
+        Ok(Value::Object(id))
+    }
+    /// A SharedArrayBuffer object in this agent over a block another agent created (the
+    /// test262 agent broadcast; later, structured clone to a worker). Its bytes were charged to
+    /// the creating agent, so this one charges nothing until it grows the block itself.
+    pub(super) fn shared_buffer_from_block(
+        &mut self,
+        block: Arc<SharedBlock>,
+        maximum: Option<usize>,
+    ) -> Result<Value> {
+        let prototype = self.intrinsics.as_ref().unwrap().collection["SharedArrayBuffer"];
+        let id = self.new_object(Some(prototype))?;
+        self.protect(&Value::Object(id))?;
+        let buffer = Rc::new(RefCell::new(Buffer {
+            bytes: Bytes::Shared(block),
+            maximum,
+            detached: false,
+            shared: true,
+            immutable: false,
+            budget: self.buffer_bytes.clone(),
+            accounted: 0,
         }));
         let mut data = self.data(id)?.clone();
         data.buffer = Some(buffer);
@@ -162,10 +220,8 @@ impl Engine<'_> {
             .is_some_and(|b| b.borrow().immutable))
     }
     pub(super) fn detach_buffer(buffer: &mut Buffer) {
-        buffer
-            .budget
-            .set(buffer.budget.get().saturating_sub(buffer.bytes.len()));
-        buffer.bytes = vec![];
+        buffer.account(0);
+        buffer.bytes = Bytes::Local(vec![]);
         buffer.detached = true;
     }
     pub(super) fn construct_buffer(
@@ -473,10 +529,13 @@ impl Engine<'_> {
             let start = view.offset + index as usize;
             if let Some(value) = value {
                 let bytes = kind.bytes(&value, little);
-                buffer.borrow_mut().bytes[start..start + kind.size()].copy_from_slice(&bytes);
+                buffer.borrow_mut().bytes.set(start, &bytes);
                 return Ok(Value::Undefined);
             }
-            return Ok(kind.read(&buffer.borrow().bytes[start..start + kind.size()], little));
+            return Ok(buffer
+                .borrow()
+                .bytes
+                .with(|s| kind.read(&s[start..start + kind.size()], little)));
         }
         let source = receiver.clone();
         if name.starts_with("SharedArrayBuffer.") {
@@ -526,11 +585,11 @@ impl Engine<'_> {
                 }
                 let mut bytes = self.allocate_bytes(length as usize, old)?;
                 let mut b = buffer.borrow_mut();
-                let count = bytes.len().min(b.bytes.len());
-                bytes[..count].copy_from_slice(&b.bytes[..count]);
-                self.buffer_bytes
-                    .set(self.buffer_bytes.get() - old + bytes.len());
-                b.bytes = bytes;
+                let count = bytes.len().min(old);
+                b.bytes
+                    .with(|s| bytes[..count].copy_from_slice(&s[..count]));
+                b.account(bytes.len());
+                b.bytes = Bytes::Local(bytes);
                 Ok(Value::Undefined)
             }
             // ArrayBufferCopyAndDetach (immutable-arraybuffer §25.1.3.3).
@@ -559,7 +618,8 @@ impl Engine<'_> {
                 let target = self.buffer_slot(output.clone())?;
                 let mut source = buffer.borrow_mut();
                 let count = source.bytes.len().min(length as usize);
-                target.borrow_mut().bytes[..count].copy_from_slice(&source.bytes[..count]);
+                let values = source.bytes.get(0, count);
+                target.borrow_mut().bytes.set(0, &values);
                 target.borrow_mut().immutable = method == "transferToImmutable";
                 Self::detach_buffer(&mut source);
                 Ok(output)
@@ -589,7 +649,8 @@ impl Engine<'_> {
                 let target = self.buffer_slot(output.clone())?;
                 let first = first as usize;
                 let mut t = target.borrow_mut();
-                t.bytes[..count].copy_from_slice(&buffer.borrow().bytes[first..first + count]);
+                let values = buffer.borrow().bytes.get(first, first + count);
+                t.bytes.set(0, &values);
                 t.immutable = true;
                 Ok(output)
             }
@@ -642,8 +703,8 @@ impl Engine<'_> {
                 let b = buffer.borrow();
                 let count = (count as usize).min(b.bytes.len().saturating_sub(first as usize));
                 if count != 0 {
-                    target.borrow_mut().bytes[..count]
-                        .copy_from_slice(&b.bytes[first as usize..first as usize + count]);
+                    let values = b.bytes.get(first as usize, first as usize + count);
+                    target.borrow_mut().bytes.set(0, &values);
                 }
                 Ok(output)
             }
@@ -684,12 +745,33 @@ impl Engine<'_> {
                 if (length as usize) < old {
                     return self.throw_error("RangeError", "SharedArrayBuffer cannot shrink");
                 }
-                let mut bytes = self.allocate_bytes(length as usize, old)?;
+                // Budget check only; the block grows in place under its lock so that a
+                // concurrent grow by another agent is never lost (§25.2.5.3 steps 9-12).
+                let accounted = buffer.borrow().accounted;
+                if length as usize > MAX_BYTES
+                    || self
+                        .buffer_bytes
+                        .get()
+                        .saturating_sub(accounted)
+                        .saturating_add(length as usize)
+                        > TOTAL_BYTES
+                {
+                    return self.throw_error("RangeError", "host buffer allocation limit");
+                }
                 let mut b = buffer.borrow_mut();
-                bytes[..old].copy_from_slice(&b.bytes);
-                self.buffer_bytes
-                    .set(self.buffer_bytes.get() - old + bytes.len());
-                b.bytes = bytes;
+                let shrink = b.bytes.with_mut(|v| {
+                    if (length as usize) < v.len() {
+                        true
+                    } else {
+                        v.resize(length as usize, 0);
+                        false
+                    }
+                });
+                if shrink {
+                    drop(b);
+                    return self.throw_error("RangeError", "SharedArrayBuffer cannot shrink");
+                }
+                b.account(length as usize);
                 Ok(Value::Undefined)
             }
             // §25.2.5.6 slice ( start, end ).
@@ -735,8 +817,8 @@ impl Engine<'_> {
                 let b = buffer.borrow();
                 let count = (count as usize).min(b.bytes.len().saturating_sub(first as usize));
                 if count != 0 {
-                    target.borrow_mut().bytes[..count]
-                        .copy_from_slice(&b.bytes[first as usize..first as usize + count]);
+                    let values = b.bytes.get(first as usize, first as usize + count);
+                    target.borrow_mut().bytes.set(0, &values);
                 }
                 Ok(output)
             }
