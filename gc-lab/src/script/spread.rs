@@ -21,7 +21,7 @@ impl Engine<'_> {
                 if index >= u32::MAX as u64 {
                     return e.throw_error("RangeError", "array accumulation length limit");
                 }
-                e.put_data(target, index.to_string(), value)?;
+                e.put_element(target, index, value)?;
                 index += 1;
                 Ok(())
             })?;
@@ -30,7 +30,7 @@ impl Engine<'_> {
                 return self.throw_error("RangeError", "array accumulation length limit");
             }
             if let Some(value) = value {
-                self.put_data(target, index.to_string(), value)?;
+                self.put_element(target, index, value)?;
             } else {
                 self.set_member(
                     Value::Object(target),

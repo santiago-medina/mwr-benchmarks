@@ -1,6 +1,7 @@
 //! A small executable JavaScript subset, not an ECMAScript-compatible engine.
 mod builtins;
 mod classes;
+mod elements;
 mod execute;
 mod host;
 mod iterator_helpers;

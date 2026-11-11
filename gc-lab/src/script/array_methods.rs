@@ -107,7 +107,7 @@ impl Engine<'_> {
                 } else {
                     value
                 };
-                e.put_data(out, index.to_string(), value)?;
+                e.put_element(out, index, value)?;
                 index += 1;
                 Ok(())
             })?;
@@ -117,7 +117,7 @@ impl Engine<'_> {
                 let value = if of {
                     args[index as usize].clone()
                 } else {
-                    self.get_member(Value::Object(source.unwrap()), index.to_string())?
+                    self.get_element(source.unwrap(), index)?
                 };
                 self.protect(&value)?;
                 let value = if !of && map != Value::Undefined {
@@ -129,7 +129,7 @@ impl Engine<'_> {
                 } else {
                     value
                 };
-                self.put_data(out, index.to_string(), value)?;
+                self.put_element(out, index, value)?;
                 index += 1;
             }
         }

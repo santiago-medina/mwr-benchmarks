@@ -378,3 +378,59 @@ this checkpoint, and `vmprobe/operands.js` covers it.
 | benchmark | before (slice 3) | after | delta |
 |---|---:|---:|---:|
 | decode_tiny | 271.4 M | 256.0 M | -5.7% |
+
+### Slice 4: dense elements (checkpoint 43)
+
+What landed differs from the design above in one point. `PropertyMap` keeps a second store,
+`elements: Vec<Option<(Key, Property)>>`, indexed by the array index. Each slot holds the full
+property, so it can have any attributes and can be an accessor. The `Key` is kept too, so
+iteration can still yield `&(Key, Property)`. Freeze, seal and non-standard attributes
+therefore need no conversion to sparse. The descriptor checks stay in their single place
+(`define`, ValidateAndApplyPropertyDescriptor), which was the reason for that conversion. The
+remaining rules:
+
+- An index key goes to `elements` if it already fits, or if the map is not sparse and the index
+  is below `2 * present + 16`, where `present` counts the stored elements. With that bound, holes
+  never outnumber the present elements by more than 16. A first version used the Vec length
+  there, and `x[2^k - 2]` for k = 1..32 then grew the Vec toward 2^31 slots
+  (built-ins/Array/S15.4_A1.1_T10.js timed out, caught by the slice smoke). Any other index goes to the ordinary entries and marks the map
+  sparse. A sparse map never grows its `elements` again ("once sparse stays sparse"). An index
+  below `elements.len()` is never in the entries, so a lookup checks one store only.
+- Iteration yields the elements in ascending order, then the entries. Callers already sort the
+  indices for [[OwnPropertyKeys]] (§10.1.11.1), and the sort now finds them presorted.
+  Removing a slot trims trailing holes. ArraySetLength (§10.4.2.4) deletes through `retain`, which covers both stores.
+- `script/elements.rs` holds the fast paths. Each one is an exact shortcut of a single spec
+  operation for an index on an object whose element access is ordinary: no typed array,
+  namespace, mapped arguments or proxy. String objects qualify, because their code-unit
+  properties are stored data properties. Every precondition is checked before anything
+  changes. On any other case the path reports "not handled", and the generic string-key path
+  runs instead.
+  - `get_element`: OrdinaryGet (§10.1.8.1), walking the chain through holes.
+  - `put_element`: CreateDataProperty (§7.3.5) when it cannot fail, plus the `length` bump of
+    §10.4.2.1.
+  - `set_element_fast`: OrdinarySet (§10.1.9.2), for an own writable data property, or an index
+    absent from the chain or inherited writable on an extensible receiver.
+  - `array_length_fast`: LengthOfArrayLike (§7.3.18) on an Array, which is one read of its own
+    `length`.
+- VM `GetElem`/`SetElem` take these paths when the key register holds a Number that is already
+  a canonical index, so no key string is built.
+- `iterator_step_value` implements IteratorStepValue (§7.4.8) for for-of (VM and tree),
+  destructuring, spread and `Array.from`. When [[NextMethod]] is `%ArrayIteratorPrototype%.next`
+  and the iterator has [[IteratedArrayLike]], the call would create a fresh
+  CreateIterResultObject (§7.4.14) and read back its own `done` and `value` data properties, so
+  the object cannot escape. The steps of §23.1.5.1 then run directly and the object is never
+  allocated. This holds only in a single-realm engine. With realms, the call would switch to the
+  function's realm for its TypeErrors.
+- No counted-map `unlink` was needed: no benchmark showed `Record::links` cost.
+
+| benchmark | before (checkpoint 42) | after | delta |
+|---|---:|---:|---:|
+| copywithin_small | 5,094.4 M | 2,530.8 M | -50.3% |
+| decode_tiny | 256.0 M | 257.4 M | +0.6% |
+
+Micro scripts (`scratch/micro/*.js`, 1000 elements each; instructions above an empty script),
+with dense storage only → with the fast paths: for-of over an array 19.9 M → 5.7 M, `Array.from` 24.1 M → 6.8 M, typed-array
+construction from an array 29.4 M → 10.2 M, indexed loop read 6.7 M → 5.9 M, indexed loop
+write 7.2 M → 6.5 M, `push` 23.0 M → 20.5 M. `push` still goes through `Set(O, "length")` and
+the name-dispatched builtin call. Builtin dispatch by name string is the next cost on these
+paths.

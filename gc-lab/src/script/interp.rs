@@ -446,6 +446,12 @@ impl Engine<'_> {
                 Insn::GetElem { dst, obj, key } => {
                     let receiver = self.reg(base, obj);
                     let key = self.reg(base, key);
+                    if let Some(index) = Self::element_index(&key) {
+                        if let Some(value) = self.get_elem_fast(&receiver, index)? {
+                            self.set_reg(base, dst, value);
+                            continue;
+                        }
+                    }
                     let key = self.to_key(key)?;
                     let value = self.get_member(receiver, key)?;
                     self.set_reg(base, dst, value);
@@ -453,8 +459,14 @@ impl Engine<'_> {
                 Insn::SetElem { obj, key, src } => {
                     let receiver = self.reg(base, obj);
                     let key = self.reg(base, key);
-                    let key = self.to_key(key)?;
                     let value = self.reg(base, src);
+                    if let (Some(index), Value::Object(id)) = (Self::element_index(&key), &receiver)
+                    {
+                        if self.set_element_fast(*id, index, &value)? {
+                            continue;
+                        }
+                    }
+                    let key = self.to_key(key)?;
                     self.assign_member(receiver, key, value, strict)?;
                 }
                 Insn::DeleteProp { dst, obj, name } => {
@@ -708,16 +720,9 @@ impl Engine<'_> {
                     to,
                 } => {
                     let (iterator, method) = (self.reg(base, iter), self.reg(base, next));
-                    let result = self.invoke_this(method, iterator, vec![])?;
-                    self.protect(&result)?;
-                    if !matches!(result, Value::Object(_)) {
-                        return self.throw_error("TypeError", "iterator result is not object");
-                    }
-                    if self.get_member(result.clone(), "done")?.truthy() {
-                        *pc = to as usize;
-                    } else {
-                        let value = self.get_member(result, "value")?;
-                        self.set_reg(base, dst, value);
+                    match self.iterator_step_value(&iterator, &method)? {
+                        None => *pc = to as usize,
+                        Some(value) => self.set_reg(base, dst, value),
                     }
                 }
                 Insn::IterStep { dst, iter, next } => {

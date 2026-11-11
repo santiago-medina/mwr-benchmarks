@@ -306,16 +306,9 @@ impl Engine<'_> {
         loop {
             self.tick()?;
             let outcome = self.frame(|e| {
-                let step = e.invoke_this(next.clone(), iterator.clone(), vec![])?;
-                e.protect(&step)?;
-                if !matches!(step, Value::Object(_)) {
-                    return e.throw_error("TypeError", "iterator result is not an object");
-                }
-                if e.get_member(step.clone(), "done")?.truthy() {
+                let Some(value) = e.iterator_step_value(&iterator, &next)? else {
                     return Ok(None);
-                }
-                let value = e.get_member(step, "value")?;
-                e.protect(&value)?;
+                };
                 match accept(e, value) {
                     Ok(true) => Ok(Some(true)),
                     Ok(false) => {

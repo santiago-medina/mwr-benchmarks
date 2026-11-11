@@ -93,17 +93,12 @@ impl Engine<'_> {
         if *done {
             return Ok(Value::Undefined);
         }
-        let outcome = (|| {
-            let step = self.invoke_this(next, iterator, vec![])?;
-            self.protect(&step)?;
-            if !matches!(step, Value::Object(_)) {
-                return self.throw_error("TypeError", "binding iterator result is not an object");
-            }
-            if self.get_member(step.clone(), "done")?.truthy() {
+        let outcome = (|| match self.iterator_step_value(&iterator, &next)? {
+            Some(value) => Ok(value),
+            None => {
                 *done = true;
-                return Ok(Value::Undefined);
+                Ok(Value::Undefined)
             }
-            self.get_member(step, "value")
         })();
         if outcome.is_err() {
             *done = true;

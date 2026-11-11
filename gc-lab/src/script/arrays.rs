@@ -202,6 +202,11 @@ impl Engine<'_> {
         Ok(accepted)
     }
     pub(super) fn length_of(&mut self, id: Id) -> Result<u64> {
+        // An Array's `length` is an own uint32 data property (§10.4.2): a read.
+        self.runtime.value(id)?;
+        if let Some(n) = self.array_length_fast(id) {
+            return Ok(n);
+        }
         let v = self.get_member(Value::Object(id), "length")?;
         self.protect(&v)?;
         let n = self.to_number(v)?;
@@ -227,6 +232,47 @@ impl Engine<'_> {
         });
         self.replace_data(id, d)?;
         Ok(Value::Object(id))
+    }
+    /// %ArrayIteratorPrototype%.next (§23.1.5.1) after the receiver checks of step 1-2 (`id`
+    /// has [[IteratedArrayLike]]): `Some(value)` for the next result, `None` when done.
+    /// The result object (CreateIterResultObject) is the caller's.
+    pub(super) fn array_iterator_step(&mut self, id: Id) -> Result<Option<Value>> {
+        let Some(state) = self.data(id)?.iterator.clone() else {
+            return Ok(None);
+        };
+        let Some(target) = state.target else {
+            return Ok(None);
+        };
+        // §23.1.5.1 step 2.b: only a real TypedArray has [[ViewedArrayBuffer]];
+        // a proxy target takes the LengthOfArrayLike path.
+        if !self.is_proxy(target) && self.data(target)?.typed.is_some() {
+            self.typed_record(Value::Object(target))?;
+        }
+        let len = self.length_of(target)?;
+        // Update [[ArrayLikeNextIndex]] / [[IteratedArrayLike]] in place; the target
+        // is the slot's only edge (OBJECT_MODEL.md slice 1).
+        if state.index >= len {
+            self.data_mut(id)?.iterator.as_mut().unwrap().target = None;
+            self.runtime.unlink(id, target)?;
+            return Ok(None);
+        }
+        self.data_mut(id)?.iterator.as_mut().unwrap().index = state.index + 1;
+        let value = if state.kind == 0 {
+            Value::number(state.index as f64)
+        } else {
+            let v = self.get_element(target, state.index)?;
+            self.protect(&v)?;
+            if state.kind == 1 {
+                v
+            } else {
+                let pair = self.new_array(2)?;
+                self.protect(&Value::Object(pair))?;
+                self.put_element(pair, 0, Value::number(state.index as f64))?;
+                self.put_element(pair, 1, v)?;
+                Value::Object(pair)
+            }
+        };
+        Ok(Some(value))
     }
     pub(super) fn iterator_result(&mut self, value: Value, done: bool) -> Result<Value> {
         self.protect(&value)?;
@@ -397,42 +443,13 @@ impl Engine<'_> {
                 let Value::Object(id) = receiver else {
                     return self.throw_error("TypeError", "invalid iterator receiver");
                 };
-                let Some(state) = self.data(id)?.iterator.clone() else {
+                if self.data(id)?.iterator.is_none() {
                     return self.throw_error("TypeError", "invalid iterator receiver");
-                };
-                let Some(target) = state.target else {
-                    return self.iterator_result(Value::Undefined, true);
-                };
-                // §23.1.5.1 step 2.b: only a real TypedArray has [[ViewedArrayBuffer]];
-                // a proxy target takes the LengthOfArrayLike path.
-                if !self.is_proxy(target) && self.data(target)?.typed.is_some() {
-                    self.typed_record(Value::Object(target))?;
                 }
-                let len = self.length_of(target)?;
-                // Update [[ArrayLikeNextIndex]] / [[IteratedArrayLike]] in place; the target
-                // is the slot's only edge (OBJECT_MODEL.md slice 1).
-                if state.index >= len {
-                    self.data_mut(id)?.iterator.as_mut().unwrap().target = None;
-                    self.runtime.unlink(id, target)?;
-                    return self.iterator_result(Value::Undefined, true);
-                }
-                self.data_mut(id)?.iterator.as_mut().unwrap().index = state.index + 1;
-                let value = if state.kind == 0 {
-                    Value::number(state.index as f64)
-                } else {
-                    let v = self.get_member(Value::Object(target), state.index.to_string())?;
-                    self.protect(&v)?;
-                    if state.kind == 1 {
-                        v
-                    } else {
-                        let pair = self.new_array(2)?;
-                        self.protect(&Value::Object(pair))?;
-                        self.put_data(pair, "0", Value::number(state.index as f64))?;
-                        self.put_data(pair, "1", v)?;
-                        Value::Object(pair)
-                    }
+                return match self.array_iterator_step(id)? {
+                    Some(value) => self.iterator_result(value, false),
+                    None => self.iterator_result(Value::Undefined, true),
                 };
-                return self.iterator_result(value, false);
             }
             "Array.prototype.toString" => {
                 let id = self.array_receiver(receiver)?;

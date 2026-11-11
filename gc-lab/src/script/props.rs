@@ -142,14 +142,41 @@ impl Index {
     }
 }
 
+/// Bound on the holes a store may open past the end of `elements` (OBJECT_MODEL.md
+/// slice 4): a new index at or past `2 * present + ELEMENT_SLACK` goes to the sparse map,
+/// so holes never outnumber the present elements by more than the slack (a doubling
+/// index sequence such as `x[2^k - 2]` must not grow the Vec exponentially).
+const ELEMENT_SLACK: usize = 16;
+
+type Entry = (Key, Property);
+
 #[derive(Clone, Default)]
 pub(super) struct PropertyMap {
-    entries: Vec<Option<(Key, Property)>>,
+    /// Non-element keys (and sparse array indices) in insertion order, with tombstones.
+    entries: Vec<Option<Entry>>,
     index: Option<Index>,
     live: usize,
+    /// Dense elements (OBJECT_MODEL.md slice 4): the property of array index `i` is
+    /// `elements[i]`, `None` being a hole. Invariant: an index below `elements.len()`
+    /// is never in `entries`, and `elements` only grows while no index is in
+    /// `entries` (`sparse` is false), so an index lookup has exactly one place to look.
+    /// The key is kept with the property so iteration hands out `&(Key, Property)`.
+    elements: Vec<Option<Entry>>,
+    element_count: usize,
+    /// Some array index lives in `entries` ("dictionary elements"); it stays set.
+    sparse: bool,
 }
 
 impl PropertyMap {
+    /// The element slot of `key` when it is an array index below `elements.len()`.
+    fn element(&self, key: &Key) -> Option<usize> {
+        if self.elements.is_empty() {
+            return None;
+        }
+        key.index()
+            .map(|i| i as usize)
+            .filter(|i| *i < self.elements.len())
+    }
     fn position(&self, key: &Key) -> Option<usize> {
         let matches = |at: usize| self.entries[at].as_ref().is_some_and(|(k, _)| k == key);
         match &self.index {
@@ -177,15 +204,41 @@ impl PropertyMap {
             _ => None,
         }
     }
-    /// The entry index of `key`, for a slot hint.
+    /// The entry index of `key`, for a slot hint (named entries only).
     pub(super) fn index_of(&self, key: &Key) -> Option<usize> {
+        if self.element(key).is_some() {
+            return None;
+        }
         self.position(key)
     }
+    /// The property of array index `index` without building its key (slice 4 fast path).
+    pub(super) fn get_index(&self, index: u32) -> Option<&Property> {
+        match self.elements.get(index as usize) {
+            Some(slot) => slot.as_ref().map(|(_, p)| p),
+            None if self.sparse => self.get(&Key::String(index.to_string())),
+            None => None,
+        }
+    }
+    pub(super) fn get_index_mut(&mut self, index: u32) -> Option<&mut Property> {
+        if (index as usize) < self.elements.len() {
+            return self.elements[index as usize].as_mut().map(|(_, p)| p);
+        }
+        if self.sparse {
+            return self.get_mut(&Key::String(index.to_string()));
+        }
+        None
+    }
     pub(super) fn get(&self, key: &Key) -> Option<&Property> {
+        if let Some(i) = self.element(key) {
+            return self.elements[i].as_ref().map(|(_, p)| p);
+        }
         let at = self.position(key)?;
         self.entries[at].as_ref().map(|(_, p)| p)
     }
     pub(super) fn get_mut(&mut self, key: &Key) -> Option<&mut Property> {
+        if let Some(i) = self.element(key) {
+            return self.elements[i].as_mut().map(|(_, p)| p);
+        }
         let at = self.position(key)?;
         self.entries[at].as_mut().map(|(_, p)| p)
     }
@@ -198,7 +251,20 @@ impl PropertyMap {
         self.push((key, property));
     }
     /// Appends a key the caller knows is absent.
-    pub(super) fn push(&mut self, (key, property): (Key, Property)) {
+    pub(super) fn push(&mut self, (key, property): Entry) {
+        if let Some(i) = key.index().map(|i| i as usize) {
+            let len = self.elements.len();
+            if i < len || !self.sparse && i < 2 * self.element_count + ELEMENT_SLACK {
+                if i >= len {
+                    self.elements.resize(i + 1, None);
+                }
+                debug_assert!(self.elements[i].is_none());
+                self.elements[i] = Some((key, property));
+                self.element_count += 1;
+                return;
+            }
+            self.sparse = true;
+        }
         let at = self.entries.len();
         if let Some(index) = &mut self.index {
             let hash = index.hash(&key);
@@ -210,7 +276,19 @@ impl PropertyMap {
             self.reindex();
         }
     }
+    /// Drops trailing holes, so `elements.len()` is one past the highest element.
+    fn trim(&mut self) {
+        while matches!(self.elements.last(), Some(None)) {
+            self.elements.pop();
+        }
+    }
     pub(super) fn remove(&mut self, key: &Key) -> Option<Property> {
+        if let Some(i) = self.element(key) {
+            let (_, property) = self.elements[i].take()?;
+            self.element_count -= 1;
+            self.trim();
+            return Some(property);
+        }
         let at = self.position(key)?;
         let (_, property) = self.entries[at].take()?;
         if let Some(index) = &mut self.index {
@@ -224,12 +302,14 @@ impl PropertyMap {
         }
         Some(property)
     }
-    pub(super) fn retain(&mut self, mut keep: impl FnMut(&(Key, Property)) -> bool) {
-        for slot in &mut self.entries {
+    pub(super) fn retain(&mut self, mut keep: impl FnMut(&Entry) -> bool) {
+        for slot in self.elements.iter_mut().chain(&mut self.entries) {
             if slot.as_ref().is_some_and(|e| !keep(e)) {
                 *slot = None;
             }
         }
+        self.element_count = self.elements.iter().flatten().count();
+        self.trim();
         self.entries.retain(Option::is_some);
         self.live = self.entries.len();
         self.reindex();
@@ -248,25 +328,39 @@ impl PropertyMap {
         });
     }
     pub(super) fn len(&self) -> usize {
-        self.live
+        self.live + self.element_count
     }
-    pub(super) fn iter(&self) -> impl Iterator<Item = &(Key, Property)> {
-        self.entries.iter().flatten()
+    /// Dense elements in ascending index order, then the other keys in insertion order.
+    pub(super) fn iter(&self) -> Iter<'_> {
+        self.into_iter()
     }
 }
 
+type Iter<'a> = std::iter::Chain<
+    std::iter::Flatten<std::slice::Iter<'a, Option<Entry>>>,
+    std::iter::Flatten<std::slice::Iter<'a, Option<Entry>>>,
+>;
 impl<'a> IntoIterator for &'a PropertyMap {
-    type Item = &'a (Key, Property);
-    type IntoIter = std::iter::Flatten<std::slice::Iter<'a, Option<(Key, Property)>>>;
+    type Item = &'a Entry;
+    type IntoIter = Iter<'a>;
     fn into_iter(self) -> Self::IntoIter {
-        self.entries.iter().flatten()
+        self.elements
+            .iter()
+            .flatten()
+            .chain(self.entries.iter().flatten())
     }
 }
 impl<'a> IntoIterator for &'a mut PropertyMap {
-    type Item = &'a mut (Key, Property);
-    type IntoIter = std::iter::Flatten<std::slice::IterMut<'a, Option<(Key, Property)>>>;
+    type Item = &'a mut Entry;
+    type IntoIter = std::iter::Chain<
+        std::iter::Flatten<std::slice::IterMut<'a, Option<Entry>>>,
+        std::iter::Flatten<std::slice::IterMut<'a, Option<Entry>>>,
+    >;
     fn into_iter(self) -> Self::IntoIter {
-        self.entries.iter_mut().flatten()
+        self.elements
+            .iter_mut()
+            .flatten()
+            .chain(self.entries.iter_mut().flatten())
     }
 }
 
@@ -298,27 +392,66 @@ mod tests {
     fn order_and_index() {
         let mut m = PropertyMap::default();
         for i in 0..20 {
-            m.insert(Key::from(i.to_string()), p(i as f64));
+            m.insert(Key::from(format!("k{i}")), p(i as f64));
         }
-        m.insert(Key::from("3"), p(30.0));
+        m.insert(Key::from("k3"), p(30.0));
         for i in (0..20).step_by(2) {
-            assert!(m.remove(&Key::from(i.to_string())).is_some());
+            assert!(m.remove(&Key::from(format!("k{i}"))).is_some());
         }
         assert_eq!(m.len(), 10);
         let keys: Vec<_> = m.iter().map(|(k, _)| k.clone()).collect();
         let want: Vec<_> = (1..20)
             .step_by(2)
-            .map(|i| Key::from(i.to_string()))
+            .map(|i| Key::from(format!("k{i}")))
             .collect();
         assert_eq!(keys, want);
-        assert_eq!(m.get(&Key::from("3")), Some(&p(30.0)));
-        assert!(m.get(&Key::from("4")).is_none());
-        m.retain(|(k, _)| *k != Key::from("5"));
+        assert_eq!(m.get(&Key::from("k3")), Some(&p(30.0)));
+        assert!(m.get(&Key::from("k4")).is_none());
+        m.retain(|(k, _)| *k != Key::from("k5"));
         assert_eq!(m.len(), 9);
-        m.insert(Key::from("4"), p(4.0));
+        m.insert(Key::from("k4"), p(4.0));
         assert_eq!(
             m.iter().last().map(|(k, _)| k.clone()),
-            Some(Key::from("4"))
+            Some(Key::from("k4"))
         );
+    }
+    /// OBJECT_MODEL.md slice 4: dense elements, holes, the sparse fallback and the
+    /// "indices first, ascending" iteration order.
+    #[test]
+    fn dense_and_sparse_elements() {
+        let mut m = PropertyMap::default();
+        m.insert(Key::from("length"), p(0.0));
+        for i in [2u32, 0, 1, 5] {
+            m.insert(Key::from(i.to_string()), p(i as f64));
+        }
+        assert_eq!(m.elements.len(), 6);
+        assert!(!m.sparse);
+        assert_eq!(m.get_index(5), Some(&p(5.0)));
+        assert!(m.get_index(3).is_none() && m.get(&Key::from("4")).is_none());
+        assert_eq!(m.len(), 5);
+        // Far past the end: dictionary elements, and the dense part stops growing.
+        m.insert(Key::from("1000000"), p(1e6));
+        assert!(m.sparse);
+        m.insert(Key::from("6"), p(6.0));
+        assert_eq!(m.elements.len(), 6);
+        assert_eq!(m.get_index(6), Some(&p(6.0)));
+        assert_eq!(m.get_index(1_000_000), Some(&p(1e6)));
+        // Non-canonical index strings are named keys.
+        m.insert(Key::from("01"), p(-1.0));
+        assert_eq!(m.get(&Key::from("1")), Some(&p(1.0)));
+        let keys: Vec<_> = m.iter().map(|(k, _)| k.clone()).collect();
+        let want: Vec<_> = ["0", "1", "2", "5", "length", "1000000", "6", "01"]
+            .into_iter()
+            .map(Key::from)
+            .collect();
+        assert_eq!(keys, want);
+        // Removing the last element trims the holes before it.
+        assert!(m.remove(&Key::from("5")).is_some());
+        assert_eq!(m.elements.len(), 3);
+        assert_eq!(m.index_of(&Key::from("0")), None);
+        m.retain(|(k, _)| k.index().is_none_or(|i| i < 1));
+        assert_eq!(m.len(), 3);
+        assert_eq!(m.elements.len(), 1);
+        assert!(m.get_index(6).is_none());
     }
 }

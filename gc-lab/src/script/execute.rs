@@ -635,16 +635,9 @@ impl Engine<'_> {
         loop {
             self.tick()?;
             let (done, completion) = self.frame(|e| {
-                let result = e.invoke_this(next.clone(), iterator.clone(), vec![])?;
-                e.protect(&result)?;
-                if !matches!(result, Value::Object(_)) {
-                    return e.throw_error("TypeError", "iterator result is not object");
-                }
-                if e.get_member(result.clone(), "done")?.truthy() {
+                let Some(value) = e.iterator_step_value(&iterator, &next)? else {
                     return Ok((true, None));
-                }
-                let value = e.get_member(result, "value")?;
-                e.protect(&value)?;
+                };
                 if kind == "await using" {
                     return Err(ScriptError::Unsupported(
                         "await using in a synchronous loop",
