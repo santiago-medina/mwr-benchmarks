@@ -228,6 +228,9 @@ pub struct Engine<'host> {
     /// Proper tail calls (§15.10.3 PrepareForTailCall): true while the running function body
     /// is strict ordinary code whose `return` may hand its call back to `invoke_this`.
     pub(super) tail_ok: bool,
+    /// Bumped when a name leaves a global record's VarNames (§9.1.1.4.7 DeleteBinding):
+    /// it invalidates every `NameHint` root (global_names.rs part b).
+    pub(super) var_names_epoch: u32,
     /// Nesting of statements whose body is not in tail position here (try blocks, catch
     /// with finally, for-in/of bodies, blocks with `using`). See TAIL_CALLS.md.
     pub(super) non_tail: u32,
@@ -293,6 +296,7 @@ impl<'host> Engine<'host> {
             private_symbols: HashSet::new(),
             pending_construct: None,
             tail_ok: false,
+            var_names_epoch: 0,
             non_tail: 0,
             tail_call: None,
             bytecode: Default::default(),
@@ -348,6 +352,7 @@ impl<'host> Engine<'host> {
             private_symbols: self.private_symbols,
             pending_construct: self.pending_construct,
             tail_ok: self.tail_ok,
+            var_names_epoch: self.var_names_epoch,
             non_tail: self.non_tail,
             tail_call: self.tail_call,
             bytecode: self.bytecode,
@@ -831,8 +836,20 @@ impl<'host> Engine<'host> {
                 return Err(ScriptError::Runtime("invalid environment"));
             };
             if object_bindings.contains(name) {
+                // §9.1.1.4.7 DeleteBinding steps 4-5: delete the global object's property;
+                // on success the name also leaves [[VarNames]].
                 let global = self.intrinsics.as_ref().unwrap().global;
-                return self.delete(global, name);
+                let deleted = self.delete(global, name)?;
+                if deleted {
+                    if let Some(Object::Environment {
+                        object_bindings, ..
+                    }) = self.objects.get_mut(&env)
+                    {
+                        object_bindings.remove(name);
+                    }
+                    self.var_names_epoch = self.var_names_epoch.wrapping_add(1);
+                }
+                return Ok(deleted);
             }
             if bindings.contains_key(name) || aliases.contains_key(name) {
                 // §9.1.1.1.7 DeleteBinding: only a binding created deletable is removed.
@@ -909,6 +926,25 @@ impl<'host> Engine<'host> {
             None => Level::End,
         })
     }
+    /// Records in `hint` that `env`, whose scan just found the name in its VarNames, is a
+    /// root record (no parent, no `with` object, no aliases): see global_names.rs part b.
+    fn remember_root(&self, env: Id, hint: Option<&super::global_names::NameHint>) {
+        let Some(h) = hint else { return };
+        if h.at_root(env, self.var_names_epoch) {
+            return;
+        }
+        if let Some(Object::Environment {
+            parent: None,
+            with_object: None,
+            aliases,
+            ..
+        }) = self.objects.get(&env)
+        {
+            if aliases.is_empty() {
+                h.set_root(env, self.var_names_epoch);
+            }
+        }
+    }
     pub(super) fn lookup_with_base(&mut self, env: Id, name: &str) -> Result<(Value, Option<Id>)> {
         self.lookup_hinted(env, name, None)
     }
@@ -917,8 +953,18 @@ impl<'host> Engine<'host> {
         &mut self,
         mut env: Id,
         name: &str,
-        hint: Option<&std::cell::Cell<u32>>,
+        hint: Option<&super::global_names::NameHint>,
     ) -> Result<(Value, Option<Id>)> {
+        // OBJECT_MODEL.md slice 3 part b: the walk from this root record is known to stop
+        // at the global object record on its first step.
+        if let Some(h) = hint {
+            if h.at_root(env, self.var_names_epoch) {
+                if let Some(v) = self.global_hint_get(name, hint) {
+                    return Ok((v, None));
+                }
+            }
+        }
+        let start = env;
         loop {
             let level = match self.scan_level(env, name, false)? {
                 Level::With(object) => {
@@ -944,10 +990,18 @@ impl<'host> Engine<'host> {
                 Level::With(_) => unreachable!(),
                 Level::Alias(target, name) => return self.lookup_with_base(target, &name),
                 Level::Global => {
+                    if env == start {
+                        self.remember_root(env, hint);
+                    }
                     if let Some(v) = self.global_hint_get(name, hint) {
                         return Ok((v, None));
                     }
-                    let global = self.intrinsics.as_ref().unwrap().global;
+                    // §9.1.1.4.1 HasBinding: a VarNames entry whose global property was
+                    // deleted is no binding (HasProperty, §9.1.1.2.1); this is the
+                    // outermost record, so the reference is unresolvable.
+                    let Some(global) = self.global_property(name)? else {
+                        break;
+                    };
                     return self
                         .get_member(Value::Object(global), name)
                         .map(|v| (v, None));
@@ -1070,8 +1124,13 @@ impl<'host> Engine<'host> {
         mut env: Id,
         name: &str,
         strict: bool,
-        hint: Option<&std::cell::Cell<u32>>,
+        hint: Option<&super::global_names::NameHint>,
     ) -> Result<Resolved> {
+        if hint.is_some_and(|h| h.at_root(env, self.var_names_epoch))
+            && self.global_hint_has(name, hint)
+        {
+            return Ok(Resolved::Found);
+        }
         loop {
             if let Some(object) = self.env_with_object(env) {
                 if self.with_binding(object, name)? {
@@ -1090,7 +1149,11 @@ impl<'host> Engine<'host> {
             };
             if bindings.contains_key(name)
                 || (!aliases.is_empty() && aliases.contains_key(name))
-                || (!object_bindings.is_empty() && object_bindings.contains(name))
+                // A root record's VarNames entry is a binding only while the global object
+                // has the property (§9.1.1.4.1 HasBinding): the `None` arm below checks that.
+                || (parent.is_some()
+                    && !object_bindings.is_empty()
+                    && object_bindings.contains(name))
             {
                 return Ok(Resolved::Found);
             }
@@ -1120,9 +1183,15 @@ impl<'host> Engine<'host> {
         mut env: Id,
         name: &str,
         value: Value,
-        hint: Option<&std::cell::Cell<u32>>,
+        hint: Option<&super::global_names::NameHint>,
         strict: bool,
     ) -> Result<()> {
+        if hint.is_some_and(|h| h.at_root(env, self.var_names_epoch))
+            && self.global_hint_set(name, hint, &value)?
+        {
+            return Ok(());
+        }
+        let start = env;
         loop {
             if let Some(object) = self.env_with_object(env) {
                 if self.with_binding(object, name)? {
@@ -1149,10 +1218,22 @@ impl<'host> Engine<'host> {
             };
             if matches!(self.objects.get(&env),Some(Object::Environment{object_bindings,..})if object_bindings.contains(name))
             {
+                if env == start {
+                    self.remember_root(env, hint);
+                }
                 if self.global_hint_set(name, hint, &value)? {
                     return Ok(());
                 }
                 let id = self.intrinsics.as_ref().unwrap().global;
+                if self.global_property(name)?.is_none() {
+                    // As in `lookup_hinted`: the deleted property leaves an unresolvable
+                    // reference (§6.2.5.6 PutValue steps 3.a-b).
+                    if strict {
+                        return self
+                            .throw_error("ReferenceError", &format!("{name} is not defined"));
+                    }
+                    return self.assign_member(Value::Object(id), name.into(), value, false);
+                }
                 return self.set_member(Value::Object(id), name, value);
             }
             if let Some(v) = bindings.get(name) {

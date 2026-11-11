@@ -434,3 +434,49 @@ construction from an array 29.4 M → 10.2 M, indexed loop read 6.7 M → 5.9 M,
 write 7.2 M → 6.5 M, `push` 23.0 M → 20.5 M. `push` still goes through `Set(O, "length")` and
 the name-dispatched builtin call. Builtin dispatch by name string is the next cost on these
 paths.
+
+### Slice 3 (part b): root-record hints (checkpoint 44)
+
+Part a still walked the environment chain on every global access. Each walk cost one
+`objects` map lookup per record, plus a hash of the name in `object_bindings`. On top of that,
+the hinted get did two lookups of the global object and the hinted set did three. Part b
+removes the walk for the common case and cuts the global-object lookups to one.
+
+- `NameHint` (global_names.rs) replaces the bare `Cell<u32>`. It keeps the entry index and a
+  `root: (environment id, var_names_epoch)` pair. The pair is filled when the walk's first
+  step, at the starting environment, finds the name in the record's VarNames
+  (`object_bindings`, §9.1.1.4) and that record is a root (no parent, no `with` object, no
+  aliases). A later use starting at the same record skips the walk: `lookup_hinted`,
+  `assign_binding_hinted` and `resolve_name_hinted` go straight to the object record step,
+  which is still validated by key. On a miss they run the full walk.
+- Why the walk's answer is stable for that record:
+  - VarNames only grows, except through DeleteBinding.
+  - A global record never gains a `with` object or an import alias. Aliases go only on
+    module records, which have a parent.
+  - Environment ids carry a serial, so they are never reused.
+  - While the name is in VarNames, a later script cannot declare it lexically (§16.1.7 step
+    5.a), so no declarative binding can shadow it.
+- DeleteBinding (§9.1.1.4.7) is the only event that removes a name from VarNames. It bumps
+  `Engine::var_names_epoch`, which drops every root. This is the narrow epoch the slice 3
+  design asked for: deleting a deletable eval `var` is rare, so the epoch has no churn.
+- **Bug fixed** (pre-existing, found while checking the invariant):
+  - DeleteBinding left the name in VarNames. After `eval("var x"); delete x`, a read of `x`
+    returned undefined instead of throwing a ReferenceError.
+  - Separately, a VarNames entry whose global property was deleted through the object
+    (`delete globalThis.x` on an eval var) was still treated as a binding.
+  - HasBinding on the global object record is HasProperty (§9.1.1.2.1). The read now treats
+    the reference as unresolvable, a strict write throws (§6.2.5.6), a sloppy write re-creates
+    the property, and a strict ResolveBinding reports it unresolvable.
+  - The probe is `vmprobe/delvar.js` (tree, vm, gc-stress).
+
+Callgrind, same setup as part a:
+
+| benchmark | before (checkpoint 43) | after | delta |
+|---|---:|---:|---:|
+| decode_tiny | 257.4 M | 217.5 M | -15.5% |
+
+That meets the -15% kill line. `scan_level` falls from 6.5% to 1.3% inclusive. What remains
+on this path is the single map lookup of the global object, the key compare and the value
+clone (about 6.6%). Moving the global object out of the `objects` map, or giving each site a
+direct slot, would remove that lookup. Both belong with slice 5 (shapes), not here. The VM now
+passes decodeURI and decodeURIComponent S15.1.3.x_A2.5_T1, the last two full-profile timeouts.
