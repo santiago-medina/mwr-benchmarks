@@ -15,7 +15,18 @@ jobs:
       - name: Host virtualization capabilities
         run: |
           uname -a
-          if test -e /dev/kvm; then ls -l /dev/kvm; else echo 'KVM unavailable: no /dev/kvm'; fi
+          if test -e /dev/kvm; then
+            ls -l /dev/kvm
+            id
+            stat -c 'mode=%a owner=%U group=%G' /dev/kvm
+            if test -r /dev/kvm && test -w /dev/kvm; then
+              echo 'KVM device access: permitted by filesystem permissions'
+            else
+              echo 'KVM device access: denied by filesystem permissions'
+            fi
+          else
+            echo 'KVM unavailable: no /dev/kvm'
+          fi
       - name: Verify and test safe Rust
         working-directory: experiments/safe-rust-jit
         run: |
