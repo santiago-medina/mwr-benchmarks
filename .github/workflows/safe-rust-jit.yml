@@ -65,9 +65,23 @@ jobs:
           elif [ "$status" -ne 0 ]; then
             exit "$status"
           fi
+      - name: Compare identical arithmetic workload in native, IPC and KVM
+        working-directory: experiments/safe-rust-jit
+        run: |
+          gcc -O2 -Wall -Wextra -std=c11 kvm_comparison.c -o kvm_comparison
+          set +e
+          ITERATIONS=1000 REPETITIONS=9 ./kvm_comparison | tee comparison_results.csv
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -eq 77 ]; then
+            echo "KVM comparison unavailable" > comparison_results.csv
+          elif [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: safe-rust-jit-results
           path: |
             experiments/safe-rust-jit/results.csv
             experiments/safe-rust-jit/kvm_results.csv
+            experiments/safe-rust-jit/comparison_results.csv
