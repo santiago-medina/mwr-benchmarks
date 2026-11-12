@@ -32,6 +32,12 @@ jobs:
         run: |
           cargo test
           cargo build --release
+      - name: Run JavaScript workload subset (Node V8 baseline)
+        working-directory: experiments/safe-rust-jit
+        run: |
+          node --version
+          JS_ROUNDS=7 JS_SAMPLES=100 node js_subset.js
+          test "$(($(wc -l < js_results.csv) - 1))" -eq 6
       - name: Grant KVM access to runner user (ephemeral VM)
         run: |
           if test -e /dev/kvm && ! { test -r /dev/kvm && test -w /dev/kvm; }; then
@@ -83,5 +89,6 @@ jobs:
           path: |
             experiments/safe-rust-jit/kvm_results.csv
             experiments/safe-rust-jit/comparison_results.csv
+            experiments/safe-rust-jit/js_results.csv
             experiments/safe-rust-jit/comparison_linear.svg
             experiments/safe-rust-jit/comparison_log.svg
