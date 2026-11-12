@@ -1,0 +1,31 @@
+name: Safe Rust JIT boundary experiment
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'experiments/safe-rust-jit/**'
+      - '.github/workflows/safe-rust-jit.yml'
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host virtualization capabilities
+        run: |
+          uname -a
+          if test -e /dev/kvm; then ls -l /dev/kvm; else echo 'KVM unavailable: no /dev/kvm'; fi
+      - name: Verify and test safe Rust
+        working-directory: experiments/safe-rust-jit
+        run: |
+          cargo test --locked
+          cargo build --release --locked
+      - name: Benchmark native versus persistent process
+        working-directory: experiments/safe-rust-jit
+        run: |
+          ITERATIONS=1000 REPETITIONS=9 target/release/safe-rust-jit-boundary | tee results.csv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: safe-rust-jit-results
+          path: experiments/safe-rust-jit/results.csv
