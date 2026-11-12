@@ -25,7 +25,23 @@ jobs:
         working-directory: experiments/safe-rust-jit
         run: |
           ITERATIONS=1000 REPETITIONS=9 target/release/safe-rust-jit-boundary | tee results.csv
+      - name: Real KVM guest execution (x86-64 Linux)
+        working-directory: experiments/safe-rust-jit
+        run: |
+          gcc -O2 -Wall -Wextra -std=c11 kvm_guest.c -o kvm_guest
+          set +e
+          KVM_ITERATIONS=1000 ./kvm_guest | tee kvm_results.csv
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -eq 77 ]; then
+            echo "KVM not accessible to this runner; recording skipped status"
+            echo "kvm_status,skipped,0" > kvm_results.csv
+          elif [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: safe-rust-jit-results
-          path: experiments/safe-rust-jit/results.csv
+          path: |
+            experiments/safe-rust-jit/results.csv
+            experiments/safe-rust-jit/kvm_results.csv
