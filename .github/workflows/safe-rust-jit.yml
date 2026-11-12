@@ -19,8 +19,8 @@ jobs:
       - name: Verify and test safe Rust
         working-directory: experiments/safe-rust-jit
         run: |
-          cargo test --locked
-          cargo build --release --locked
+          cargo test
+          cargo build --release
       - name: Benchmark native versus persistent process
         working-directory: experiments/safe-rust-jit
         run: |
