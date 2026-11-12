@@ -1,4 +1,4 @@
-// Comparable state-dependent 16-bit recurrence across direct, persistent child and KVM.
+// Comparable state-dependent 16-bit recurrence across direct execution and KVM.
 // C is used for the privileged KVM boundary; Rust code remains forbid(unsafe_code).
 #define _GNU_SOURCE
 #include <errno.h>
@@ -11,17 +11,13 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/types.h>
-#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 static uint64_t ns(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC_RAW,&t);return (uint64_t)t.tv_sec*1000000000ull+t.tv_nsec;}
 static void die(const char*s){perror(s);exit(1);}
-static void write_all(int fd,const void*p,size_t n){const char*b=p;while(n){ssize_t r=write(fd,b,n);if(r<0&&errno==EINTR)continue;if(r<=0)die("write");b+=r;n-=r;}}
-static int read_all(int fd,void*p,size_t n){char*b=p;while(n){ssize_t r=read(fd,b,n);if(r<0&&errno==EINTR)continue;if(r<0)die("read");if(r==0)return 0;b+=r;n-=r;}return 1;}
 __attribute__((noinline)) static uint16_t kernel(uint16_t seed,uint16_t batch){volatile uint16_t state=seed;for(uint16_t i=0;i<batch;i++){uint16_t x=state;state=(uint16_t)(((uint16_t)(x<<1)|(x>>15))^0xb400u);}return state;}
 static int compare(const void*a,const void*b){double x=*(const double*)a,y=*(const double*)b;return (x>y)-(x<y);}
 static double median(double *v,int n){qsort(v,(size_t)n,sizeof(double),compare);return v[n/2];}
-static void worker(int rd,int wr){uint16_t req[2];while(read_all(rd,req,sizeof(req))){uint16_t result=kernel(req[0],req[1]);write_all(wr,&result,sizeof(result));}exit(0);}
 int main(void){
  int kvm=open("/dev/kvm",O_RDWR|O_CLOEXEC);
  if(kvm<0){fprintf(stderr,"KVM unavailable: %s\n",strerror(errno));return 77;}
@@ -41,24 +37,16 @@ int main(void){
  const char*e=getenv("ITERATIONS");if(e)iterations=atoi(e);
  e=getenv("REPETITIONS");if(e)reps=atoi(e);
  if(iterations<1||iterations>100000||reps<1||reps>99)return 2;
- int p2c[2],c2p[2];if(pipe(p2c)<0||pipe(c2p)<0)die("pipe");
- pid_t pid=fork();if(pid<0)die("fork");
- if(pid==0){close(p2c[1]);close(c2p[0]);worker(p2c[0],c2p[1]);}
- close(p2c[0]);close(c2p[1]);
  printf("mode,batch,median_ns_per_request,median_ns_per_compute\n");
  volatile uint16_t sink=0;
  for(int batchidx=0;batchidx<3;batchidx++){
    uint16_t batch=(uint16_t)(batchidx==0?1:batchidx==1?16:256);
-   double native[99],ipc[99],kvm_samples[99];
-   uint16_t req[2]={7,batch};
+   double native[99],kvm_samples[99];
    mem[4]=(uint8_t)batch;mem[5]=(uint8_t)(batch>>8);
    for(int rep=0;rep<=reps;rep++){
      uint64_t t=ns();
      for(int i=0;i<iterations;i++){uint16_t seed=(uint16_t)(7u+(unsigned)i*251u+(unsigned)rep*17u);sink=kernel(seed,batch);}
      double a=(double)(ns()-t)/iterations;
-     t=ns();
-     for(int i=0;i<iterations;i++){uint16_t seed=(uint16_t)(7u+(unsigned)i*251u+(unsigned)rep*17u);req[0]=seed;uint16_t expected=kernel(seed,batch),got;write_all(p2c[1],req,sizeof(req));if(!read_all(c2p[0],&got,sizeof(got)))die("worker EOF");if(got!=expected){fprintf(stderr,"IPC mismatch\n");return 3;}sink=got;}
-     double b=(double)(ns()-t)/iterations;
      t=ns();
      for(int i=0;i<iterations;i++){
        uint16_t seed=(uint16_t)(7u+(unsigned)i*251u+(unsigned)rep*17u),expected=kernel(seed,batch);
@@ -72,15 +60,12 @@ int main(void){
        sink=got;
      }
      double c=(double)(ns()-t)/iterations;
-     if(rep){native[rep-1]=a;ipc[rep-1]=b;kvm_samples[rep-1]=c;}
+     if(rep){native[rep-1]=a;kvm_samples[rep-1]=c;}
    }
-   double a=median(native,reps),b=median(ipc,reps),c=median(kvm_samples,reps);
+   double a=median(native,reps),c=median(kvm_samples,reps);
    printf("native,%u,%.2f,%.2f\n",batch,a,a/batch);
-   printf("process_roundtrip,%u,%.2f,%.2f\n",batch,b,b/batch);
    printf("kvm_io_exit,%u,%.2f,%.2f\n",batch,c,c/batch);
    fflush(stdout);
  }
- close(p2c[1]);close(c2p[0]);int status;waitpid(pid,&status,0);
- if(!WIFEXITED(status)||WEXITSTATUS(status)!=0)return 6;
  (void)sink;munmap(run,(size_t)sz);close(vcpu);munmap(mem,4096);close(vm);close(kvm);return 0;
 }
