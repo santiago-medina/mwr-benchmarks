@@ -1,0 +1,99 @@
+name: Safe Rust JIT boundary experiment
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'experiments/safe-rust-jit/**'
+      - '.github/workflows/safe-rust-jit.yml'
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Host virtualization capabilities
+        run: |
+          uname -a
+          if test -e /dev/kvm; then
+            ls -l /dev/kvm
+            id
+            stat -c 'mode=%a owner=%U group=%G' /dev/kvm
+            if test -r /dev/kvm && test -w /dev/kvm; then
+              echo 'KVM device access: permitted by filesystem permissions'
+            else
+              echo 'KVM device access: denied by filesystem permissions'
+            fi
+          else
+            echo 'KVM unavailable: no /dev/kvm'
+          fi
+      - name: Verify and test safe Rust
+        working-directory: experiments/safe-rust-jit
+        run: |
+          cargo test
+          cargo build --release
+      - name: Run JavaScript workload subset (Node V8 baseline)
+        working-directory: experiments/safe-rust-jit
+        run: |
+          node --version
+          JS_ROUNDS=7 JS_SAMPLES=100 node js_subset.js
+          test "$(($(wc -l < js_results.csv) - 1))" -eq 6
+      - name: Grant KVM access to runner user (ephemeral VM)
+        run: |
+          if test -e /dev/kvm && ! { test -r /dev/kvm && test -w /dev/kvm; }; then
+            echo "Granting access only to the current runner group"
+            sudo chgrp "$(id -gn)" /dev/kvm
+            sudo chmod g+rw /dev/kvm
+          fi
+          if test -e /dev/kvm; then
+            ls -l /dev/kvm
+            if test -r /dev/kvm && test -w /dev/kvm; then
+              echo "KVM device accessible"
+            else
+              echo "KVM device still inaccessible"
+            fi
+          fi
+      - name: Real KVM guest execution (x86-64 Linux)
+        working-directory: experiments/safe-rust-jit
+        run: |
+          gcc -O2 -Wall -Wextra -std=c11 kvm_guest.c -o kvm_guest
+          set +e
+          KVM_ITERATIONS=1000 ./kvm_guest | tee kvm_results.csv
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -eq 77 ]; then
+            echo "KVM not accessible to this runner; recording skipped status"
+            echo "kvm_status,skipped,0" > kvm_results.csv
+          elif [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+      - name: Compare native versus KVM on the same recurrence
+        working-directory: experiments/safe-rust-jit
+        run: |
+          gcc -O2 -Wall -Wextra -std=c11 kvm_comparison.c -o kvm_comparison
+          set +e
+          ITERATIONS=1000 REPETITIONS=9 ./kvm_comparison | tee comparison_results.csv
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -eq 77 ]; then
+            echo "KVM comparison unavailable" > comparison_results.csv
+          elif [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+      - name: Analyze paired KVM samples
+        working-directory: experiments/safe-rust-jit
+        run: python3 analyze_kvm.py
+      - name: Plot native versus KVM
+        working-directory: experiments/safe-rust-jit
+        run: python3 plot_comparison.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: safe-rust-jit-results
+          path: |
+            experiments/safe-rust-jit/kvm_results.csv
+            experiments/safe-rust-jit/comparison_results.csv
+            experiments/safe-rust-jit/comparison_samples.csv
+            experiments/safe-rust-jit/kvm_statistics.json
+            experiments/safe-rust-jit/js_results.csv
+            experiments/safe-rust-jit/comparison_linear.svg
+            experiments/safe-rust-jit/comparison_log.svg
