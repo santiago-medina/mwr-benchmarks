@@ -38,34 +38,43 @@ int main(void){
  e=getenv("REPETITIONS");if(e)reps=atoi(e);
  if(iterations<1||iterations>100000||reps<1||reps>99)return 2;
  printf("mode,batch,median_ns_per_request,median_ns_per_compute\n");
+ FILE *raw=fopen("comparison_samples.csv","w");if(!raw)die("samples csv");
+ fprintf(raw,"batch,rep,mode,ns_per_request\n");
  volatile uint16_t sink=0;
  for(int batchidx=0;batchidx<3;batchidx++){
    uint16_t batch=(uint16_t)(batchidx==0?1:batchidx==1?16:256);
    double native[99],kvm_samples[99];
+   uint16_t *expected=malloc((size_t)iterations*sizeof(*expected));if(!expected)die("expected allocation");
    mem[4]=(uint8_t)batch;mem[5]=(uint8_t)(batch>>8);
    for(int rep=0;rep<=reps;rep++){
+     for(int i=0;i<iterations;i++){uint16_t seed=(uint16_t)(7u+(unsigned)i*251u+(unsigned)rep*17u);expected[i]=kernel(seed,batch);}
      uint64_t t=ns();
      for(int i=0;i<iterations;i++){uint16_t seed=(uint16_t)(7u+(unsigned)i*251u+(unsigned)rep*17u);sink=kernel(seed,batch);}
      double a=(double)(ns()-t)/iterations;
      t=ns();
      for(int i=0;i<iterations;i++){
-       uint16_t seed=(uint16_t)(7u+(unsigned)i*251u+(unsigned)rep*17u),expected=kernel(seed,batch);
+       uint16_t seed=(uint16_t)(7u+(unsigned)i*251u+(unsigned)rep*17u);
        mem[1]=(uint8_t)seed;mem[2]=(uint8_t)(seed>>8);
        struct kvm_regs regs={.rip=0,.rflags=2};
        if(ioctl(vcpu,KVM_SET_REGS,&regs)<0)die("set regs");
        if(ioctl(vcpu,KVM_RUN,0)<0)die("run");
        if(run->exit_reason!=KVM_EXIT_IO||run->io.direction!=KVM_EXIT_IO_OUT||run->io.port!=0xe9||run->io.size!=2||run->io.count!=1){fprintf(stderr,"KVM unexpected exit %u\n",run->exit_reason);return 4;}
        uint16_t got;memcpy(&got,(uint8_t*)run+run->io.data_offset,sizeof(got));
-       if(got!=expected){fprintf(stderr,"KVM mismatch: %u expected %u\n",got,expected);return 5;}
+       if(got!=expected[i]){fprintf(stderr,"KVM mismatch: %u expected %u\n",got,expected[i]);return 5;}
        sink=got;
      }
      double c=(double)(ns()-t)/iterations;
-     if(rep){native[rep-1]=a;kvm_samples[rep-1]=c;}
+     if(rep){native[rep-1]=a;kvm_samples[rep-1]=c;
+       fprintf(raw,"%u,%d,native,%.4f\n",batch,rep,a);
+       fprintf(raw,"%u,%d,kvm_io_exit,%.4f\n",batch,rep,c);
+     }
    }
    double a=median(native,reps),c=median(kvm_samples,reps);
    printf("native,%u,%.2f,%.2f\n",batch,a,a/batch);
    printf("kvm_io_exit,%u,%.2f,%.2f\n",batch,c,c/batch);
    fflush(stdout);
+   free(expected);
  }
+ fclose(raw);
  (void)sink;munmap(run,(size_t)sz);close(vcpu);munmap(mem,4096);close(vm);close(kvm);return 0;
 }
