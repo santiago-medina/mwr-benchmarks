@@ -1,0 +1,85 @@
+// Comparable 16-bit increment kernel across direct, persistent child and KVM.
+// C is used for the privileged KVM boundary; Rust code remains forbid(unsafe_code).
+#define _GNU_SOURCE
+#include <errno.h>
+#include <fcntl.h>
+#include <linux/kvm.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
+static uint64_t ns(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC_RAW,&t);return (uint64_t)t.tv_sec*1000000000ull+t.tv_nsec;}
+static void die(const char*s){perror(s);exit(1);}
+static void write_all(int fd,const void*p,size_t n){const char*b=p;while(n){ssize_t r=write(fd,b,n);if(r<0&&errno==EINTR)continue;if(r<=0)die("write");b+=r;n-=r;}}
+static int read_all(int fd,void*p,size_t n){char*b=p;while(n){ssize_t r=read(fd,b,n);if(r<0&&errno==EINTR)continue;if(r<0)die("read");if(r==0)return 0;b+=r;n-=r;}return 1;}
+static uint16_t kernel(uint16_t seed,uint16_t batch){for(uint16_t i=0;i<batch;i++)seed=(uint16_t)(seed+1);return seed;}
+static int compare(const void*a,const void*b){double x=*(const double*)a,y=*(const double*)b;return (x>y)-(x<y);}
+static double median(double *v,int n){qsort(v,(size_t)n,sizeof(double),compare);return v[n/2];}
+static void worker(int rd,int wr){uint16_t req[2];while(read_all(rd,req,sizeof(req))){uint16_t result=kernel(req[0],req[1]);write_all(wr,&result,sizeof(result));}exit(0);}
+int main(void){
+ int kvm=open("/dev/kvm",O_RDWR|O_CLOEXEC);
+ if(kvm<0){fprintf(stderr,"KVM unavailable: %s\n",strerror(errno));return 77;}
+ if(ioctl(kvm,KVM_GET_API_VERSION,0)!=12){fprintf(stderr,"unsupported KVM API\n");return 2;}
+ int vm=ioctl(kvm,KVM_CREATE_VM,0);if(vm<0)die("create vm");
+ uint8_t*mem=mmap(NULL,4096,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);if(mem==MAP_FAILED)die("memory");
+ // mov ax,seed; mov cx,batch; add ax,1; loop -5; mov dx,0xe9; out dx,al; hlt
+ const uint8_t code[]={0xb8,0x00,0x00,0xb9,0x01,0x00,0x83,0xc0,0x01,0xe2,0xfb,0xba,0xe9,0x00,0xee,0xf4};
+ memcpy(mem,code,sizeof(code));
+ struct kvm_userspace_memory_region region={.slot=0,.guest_phys_addr=0,.memory_size=4096,.userspace_addr=(uint64_t)(uintptr_t)mem};
+ if(ioctl(vm,KVM_SET_USER_MEMORY_REGION,&region)<0)die("memory region");
+ int vcpu=ioctl(vm,KVM_CREATE_VCPU,0);if(vcpu<0)die("vcpu");
+ int sz=ioctl(kvm,KVM_GET_VCPU_MMAP_SIZE,0);if(sz<(int)sizeof(struct kvm_run))die("mmap size");
+ struct kvm_run*run=mmap(NULL,(size_t)sz,PROT_READ|PROT_WRITE,MAP_SHARED,vcpu,0);if(run==MAP_FAILED)die("run mmap");
+ struct kvm_sregs sr;if(ioctl(vcpu,KVM_GET_SREGS,&sr)<0)die("get sregs");sr.cs.base=0;sr.cs.selector=0;if(ioctl(vcpu,KVM_SET_SREGS,&sr)<0)die("set sregs");
+ int iterations=1000,reps=9;
+ const char*e=getenv("ITERATIONS");if(e)iterations=atoi(e);
+ e=getenv("REPETITIONS");if(e)reps=atoi(e);
+ if(iterations<1||iterations>100000||reps<1||reps>99)return 2;
+ int p2c[2],c2p[2];if(pipe(p2c)<0||pipe(c2p)<0)die("pipe");
+ pid_t pid=fork();if(pid<0)die("fork");
+ if(pid==0){close(p2c[1]);close(c2p[0]);worker(p2c[0],c2p[1]);}
+ close(p2c[0]);close(c2p[1]);
+ printf("mode,batch,median_ns_per_request,median_ns_per_compute\n");
+ volatile uint16_t sink=0;
+ for(int batchidx=0;batchidx<3;batchidx++){
+   uint16_t batch=(uint16_t)(batchidx==0?1:batchidx==1?16:256);
+   double native[99],ipc[99],kvm_samples[99];
+   uint16_t seed=7,expected=kernel(seed,batch),req[2]={seed,batch};
+   mem[1]=(uint8_t)seed;mem[2]=(uint8_t)(seed>>8);
+   mem[4]=(uint8_t)batch;mem[5]=(uint8_t)(batch>>8);
+   for(int rep=0;rep<=reps;rep++){
+     uint64_t t=ns();
+     for(int i=0;i<iterations;i++){sink=kernel(seed,batch);}
+     double a=(double)(ns()-t)/iterations;
+     t=ns();
+     for(int i=0;i<iterations;i++){uint16_t got;write_all(p2c[1],req,sizeof(req));if(!read_all(c2p[0],&got,sizeof(got)))die("worker EOF");if(got!=expected){fprintf(stderr,"IPC mismatch\n");return 3;}sink=got;}
+     double b=(double)(ns()-t)/iterations;
+     t=ns();
+     for(int i=0;i<iterations;i++){
+       struct kvm_regs regs={.rip=0,.rflags=2};
+       if(ioctl(vcpu,KVM_SET_REGS,&regs)<0)die("set regs");
+       if(ioctl(vcpu,KVM_RUN,0)<0)die("run");
+       if(run->exit_reason!=KVM_EXIT_IO||run->io.direction!=KVM_EXIT_IO_OUT||run->io.port!=0xe9||run->io.size!=1||run->io.count!=1){fprintf(stderr,"KVM unexpected exit %u\n",run->exit_reason);return 4;}
+       uint8_t got=*((uint8_t*)run+run->io.data_offset);
+       if(got!=(uint8_t)expected){fprintf(stderr,"KVM mismatch: %u expected %u\n",got,(uint8_t)expected);return 5;}
+       sink=got;
+     }
+     double c=(double)(ns()-t)/iterations;
+     if(rep){native[rep-1]=a;ipc[rep-1]=b;kvm_samples[rep-1]=c;}
+   }
+   double a=median(native,reps),b=median(ipc,reps),c=median(kvm_samples,reps);
+   printf("native,%u,%.2f,%.2f\n",batch,a,a/batch);
+   printf("process_roundtrip,%u,%.2f,%.2f\n",batch,b,b/batch);
+   printf("kvm_io_exit,%u,%.2f,%.2f\n",batch,c,c/batch);
+   fflush(stdout);
+ }
+ close(p2c[1]);close(c2p[0]);int status;waitpid(pid,&status,0);
+ if(!WIFEXITED(status)||WEXITSTATUS(status)!=0)return 6;
+ (void)sink;munmap(run,(size_t)sz);close(vcpu);munmap(mem,4096);close(vm);close(kvm);return 0;
+}
