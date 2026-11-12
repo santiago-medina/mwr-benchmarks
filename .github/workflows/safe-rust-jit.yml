@@ -32,10 +32,6 @@ jobs:
         run: |
           cargo test
           cargo build --release
-      - name: Benchmark native versus persistent process
-        working-directory: experiments/safe-rust-jit
-        run: |
-          ITERATIONS=1000 REPETITIONS=9 target/release/safe-rust-jit-boundary | tee results.csv
       - name: Grant KVM access to runner user (ephemeral VM)
         run: |
           if test -e /dev/kvm && ! { test -r /dev/kvm && test -w /dev/kvm; }; then
@@ -65,7 +61,7 @@ jobs:
           elif [ "$status" -ne 0 ]; then
             exit "$status"
           fi
-      - name: Compare identical arithmetic workload in native, IPC and KVM
+      - name: Compare native versus KVM on the same recurrence
         working-directory: experiments/safe-rust-jit
         run: |
           gcc -O2 -Wall -Wextra -std=c11 kvm_comparison.c -o kvm_comparison
@@ -78,14 +74,13 @@ jobs:
           elif [ "$status" -ne 0 ]; then
             exit "$status"
           fi
-      - name: Plot all three execution modes (native, IPC, KVM)
+      - name: Plot native versus KVM
         working-directory: experiments/safe-rust-jit
         run: python3 plot_comparison.py
       - uses: actions/upload-artifact@v4
         with:
           name: safe-rust-jit-results
           path: |
-            experiments/safe-rust-jit/results.csv
             experiments/safe-rust-jit/kvm_results.csv
             experiments/safe-rust-jit/comparison_results.csv
             experiments/safe-rust-jit/comparison_linear.svg
