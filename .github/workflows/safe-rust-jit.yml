@@ -80,7 +80,10 @@ jobs:
           elif [ "$status" -ne 0 ]; then
             exit "$status"
           fi
-      - name: Analyze paired KVM samples\n        working-directory: experiments/safe-rust-jit\n        run: python3 analyze_kvm.py\n      - name: Plot native versus KVM
+      - name: Analyze paired KVM samples
+        working-directory: experiments/safe-rust-jit
+        run: python3 analyze_kvm.py
+      - name: Plot native versus KVM
         working-directory: experiments/safe-rust-jit
         run: python3 plot_comparison.py
       - uses: actions/upload-artifact@v4
@@ -88,7 +91,9 @@ jobs:
           name: safe-rust-jit-results
           path: |
             experiments/safe-rust-jit/kvm_results.csv
-            experiments/safe-rust-jit/comparison_results.csv\n            experiments/safe-rust-jit/comparison_samples.csv\n            experiments/safe-rust-jit/kvm_statistics.json
+            experiments/safe-rust-jit/comparison_results.csv
+            experiments/safe-rust-jit/comparison_samples.csv
+            experiments/safe-rust-jit/kvm_statistics.json
             experiments/safe-rust-jit/js_results.csv
             experiments/safe-rust-jit/comparison_linear.svg
             experiments/safe-rust-jit/comparison_log.svg
