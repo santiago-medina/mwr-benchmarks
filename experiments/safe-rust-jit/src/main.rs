@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+mod protocol;
 use std::{env, hint::black_box, io::{Read, Write}, process::{Command, Stdio}, time::Instant};
 
 fn compute(mut x: u64) -> u64 {
@@ -12,17 +13,14 @@ fn worker() -> std::io::Result<()> {
     let mut input = std::io::stdin().lock();
     let mut output = std::io::stdout().lock();
     loop {
-        let mut header = [0u8; 12];
-        match input.read_exact(&mut header) {
-            Ok(()) => {},
+        let request = match protocol::recv_request(&mut input) {
+            Ok(request) => request,
             Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(()),
             Err(e) => return Err(e),
-        }
-        let count = u32::from_le_bytes(header[0..4].try_into().unwrap());
-        let mut value = u64::from_le_bytes(header[4..12].try_into().unwrap());
-        for _ in 0..count { value = compute(value); }
-        output.write_all(&value.to_le_bytes())?;
-        output.flush()?;
+        };
+        let mut value = request.seed;
+        for _ in 0..request.batch { value = compute(value); }
+        protocol::send_response(&mut output, protocol::Response { value })?;
     }
 }
 fn median(mut samples: Vec<f64>) -> f64 {
@@ -43,10 +41,7 @@ fn main() -> std::io::Result<()> {
             .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
         let mut tx = child.stdin.take().unwrap();
         let mut rx = child.stdout.take().unwrap();
-        let mut request = [0u8;12];
-        request[..4].copy_from_slice(&batch.to_le_bytes());
-        request[4..].copy_from_slice(&7u64.to_le_bytes());
-        let mut response = [0u8;8];
+        let request = protocol::Request { batch, seed: 7 };
         for rep in 0..=repetitions {
             let start = Instant::now();
             let mut result = rep as u64;
@@ -57,9 +52,8 @@ fn main() -> std::io::Result<()> {
             let n = start.elapsed().as_nanos() as f64 / iterations as f64;
             let start = Instant::now();
             for _ in 0..iterations {
-                tx.write_all(&request)?;
-                rx.read_exact(&mut response)?;
-                black_box(u64::from_le_bytes(response));
+                protocol::send_request(&mut tx, request)?;
+                black_box(protocol::recv_response(&mut rx)?.value);
             }
             let i = start.elapsed().as_nanos() as f64 / iterations as f64;
             if rep > 0 { native.push(n); ipc.push(i); }
