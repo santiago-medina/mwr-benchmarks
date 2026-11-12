@@ -36,6 +36,21 @@ jobs:
         working-directory: experiments/safe-rust-jit
         run: |
           ITERATIONS=1000 REPETITIONS=9 target/release/safe-rust-jit-boundary | tee results.csv
+      - name: Grant KVM access to runner user (ephemeral VM)
+        run: |
+          if test -e /dev/kvm && ! { test -r /dev/kvm && test -w /dev/kvm; }; then
+            echo "Granting access only to the current runner group"
+            sudo chgrp "$(id -gn)" /dev/kvm
+            sudo chmod g+rw /dev/kvm
+          fi
+          if test -e /dev/kvm; then
+            ls -l /dev/kvm
+            if test -r /dev/kvm && test -w /dev/kvm; then
+              echo "KVM device accessible"
+            else
+              echo "KVM device still inaccessible"
+            fi
+          fi
       - name: Real KVM guest execution (x86-64 Linux)
         working-directory: experiments/safe-rust-jit
         run: |
