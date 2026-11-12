@@ -1,4 +1,4 @@
-// Comparable 16-bit increment kernel across direct, persistent child and KVM.
+// Comparable state-dependent 16-bit recurrence across direct, persistent child and KVM.
 // C is used for the privileged KVM boundary; Rust code remains forbid(unsafe_code).
 #define _GNU_SOURCE
 #include <errno.h>
@@ -18,7 +18,7 @@ static uint64_t ns(void){struct timespec t;clock_gettime(CLOCK_MONOTONIC_RAW,&t)
 static void die(const char*s){perror(s);exit(1);}
 static void write_all(int fd,const void*p,size_t n){const char*b=p;while(n){ssize_t r=write(fd,b,n);if(r<0&&errno==EINTR)continue;if(r<=0)die("write");b+=r;n-=r;}}
 static int read_all(int fd,void*p,size_t n){char*b=p;while(n){ssize_t r=read(fd,b,n);if(r<0&&errno==EINTR)continue;if(r<0)die("read");if(r==0)return 0;b+=r;n-=r;}return 1;}
-static uint16_t kernel(uint16_t seed,uint16_t batch){for(uint16_t i=0;i<batch;i++)seed=(uint16_t)(seed+1);return seed;}
+__attribute__((noinline)) static uint16_t kernel(uint16_t seed,uint16_t batch){volatile uint16_t state=seed;for(uint16_t i=0;i<batch;i++){uint16_t x=state;state=(uint16_t)(((uint16_t)(x<<1)|(x>>15))^0xb400u);}return state;}
 static int compare(const void*a,const void*b){double x=*(const double*)a,y=*(const double*)b;return (x>y)-(x<y);}
 static double median(double *v,int n){qsort(v,(size_t)n,sizeof(double),compare);return v[n/2];}
 static void worker(int rd,int wr){uint16_t req[2];while(read_all(rd,req,sizeof(req))){uint16_t result=kernel(req[0],req[1]);write_all(wr,&result,sizeof(result));}exit(0);}
@@ -28,8 +28,8 @@ int main(void){
  if(ioctl(kvm,KVM_GET_API_VERSION,0)!=12){fprintf(stderr,"unsupported KVM API\n");return 2;}
  int vm=ioctl(kvm,KVM_CREATE_VM,0);if(vm<0)die("create vm");
  uint8_t*mem=mmap(NULL,4096,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);if(mem==MAP_FAILED)die("memory");
- // mov ax,seed; mov cx,batch; add ax,1; loop -5; mov dx,0xe9; out dx,al; hlt
- const uint8_t code[]={0xb8,0x00,0x00,0xb9,0x01,0x00,0x83,0xc0,0x01,0xe2,0xfb,0xba,0xe9,0x00,0xee,0xf4};
+ // mov ax,seed; mov cx,batch; rol ax,1; xor ax,0xb400; loop -7; mov dx,0xe9; out dx,ax; hlt
+ const uint8_t code[]={0xb8,0x00,0x00,0xb9,0x01,0x00,0xd1,0xc0,0x35,0x00,0xb4,0xe2,0xf9,0xba,0xe9,0x00,0xef,0xf4};
  memcpy(mem,code,sizeof(code));
  struct kvm_userspace_memory_region region={.slot=0,.guest_phys_addr=0,.memory_size=4096,.userspace_addr=(uint64_t)(uintptr_t)mem};
  if(ioctl(vm,KVM_SET_USER_MEMORY_REGION,&region)<0)die("memory region");
@@ -50,24 +50,25 @@ int main(void){
  for(int batchidx=0;batchidx<3;batchidx++){
    uint16_t batch=(uint16_t)(batchidx==0?1:batchidx==1?16:256);
    double native[99],ipc[99],kvm_samples[99];
-   uint16_t seed=7,expected=kernel(seed,batch),req[2]={seed,batch};
-   mem[1]=(uint8_t)seed;mem[2]=(uint8_t)(seed>>8);
+   uint16_t req[2]={7,batch};
    mem[4]=(uint8_t)batch;mem[5]=(uint8_t)(batch>>8);
    for(int rep=0;rep<=reps;rep++){
      uint64_t t=ns();
-     for(int i=0;i<iterations;i++){sink=kernel(seed,batch);}
+     for(int i=0;i<iterations;i++){uint16_t seed=(uint16_t)(7u+(unsigned)i*251u+(unsigned)rep*17u);sink=kernel(seed,batch);}
      double a=(double)(ns()-t)/iterations;
      t=ns();
-     for(int i=0;i<iterations;i++){uint16_t got;write_all(p2c[1],req,sizeof(req));if(!read_all(c2p[0],&got,sizeof(got)))die("worker EOF");if(got!=expected){fprintf(stderr,"IPC mismatch\n");return 3;}sink=got;}
+     for(int i=0;i<iterations;i++){uint16_t seed=(uint16_t)(7u+(unsigned)i*251u+(unsigned)rep*17u);req[0]=seed;uint16_t expected=kernel(seed,batch),got;write_all(p2c[1],req,sizeof(req));if(!read_all(c2p[0],&got,sizeof(got)))die("worker EOF");if(got!=expected){fprintf(stderr,"IPC mismatch\n");return 3;}sink=got;}
      double b=(double)(ns()-t)/iterations;
      t=ns();
      for(int i=0;i<iterations;i++){
+       uint16_t seed=(uint16_t)(7u+(unsigned)i*251u+(unsigned)rep*17u),expected=kernel(seed,batch);
+       mem[1]=(uint8_t)seed;mem[2]=(uint8_t)(seed>>8);
        struct kvm_regs regs={.rip=0,.rflags=2};
        if(ioctl(vcpu,KVM_SET_REGS,&regs)<0)die("set regs");
        if(ioctl(vcpu,KVM_RUN,0)<0)die("run");
-       if(run->exit_reason!=KVM_EXIT_IO||run->io.direction!=KVM_EXIT_IO_OUT||run->io.port!=0xe9||run->io.size!=1||run->io.count!=1){fprintf(stderr,"KVM unexpected exit %u\n",run->exit_reason);return 4;}
-       uint8_t got=*((uint8_t*)run+run->io.data_offset);
-       if(got!=(uint8_t)expected){fprintf(stderr,"KVM mismatch: %u expected %u\n",got,(uint8_t)expected);return 5;}
+       if(run->exit_reason!=KVM_EXIT_IO||run->io.direction!=KVM_EXIT_IO_OUT||run->io.port!=0xe9||run->io.size!=2||run->io.count!=1){fprintf(stderr,"KVM unexpected exit %u\n",run->exit_reason);return 4;}
+       uint16_t got;memcpy(&got,(uint8_t*)run+run->io.data_offset,sizeof(got));
+       if(got!=expected){fprintf(stderr,"KVM mismatch: %u expected %u\n",got,expected);return 5;}
        sink=got;
      }
      double c=(double)(ns()-t)/iterations;
