@@ -65,3 +65,14 @@ explícito de referencia VM es preferible, con pruebas de raíz y recursión.
 
 **Estado:** problema reproducido y causa arquitectónica localizada. No está
 corregido; ningún conteo de conformidad nuevo se atribuye a esta investigación.
+
+## Implementación y verificación posterior (2026-11-14)
+
+La causa quedó corregida e integrada mediante [PR #12](https://github.com/santiago-medina/mwr-benchmarks/pull/12), commit de merge `d4f526b059d7c2df5b2e6bf501f1d3caa86e3878` en la rama de auditoría. `Resolved::Found(Id)` ahora conserva el entorno encontrado; `Reference::Binding` guarda el Id y strictness originales; la VM mantiene los Id de entornos internos como valores enraizados en sus registros y distingue ese tipo interno de un objeto de `with`.
+
+- **Antes:** 0/56 casos superados en los cuatro modos, [run 43568971786](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43568971786).
+- **Después:** 56/56 superados, [run 43569540935](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43569540935).
+- **Rust debug/release, perfiles Test262 y Servo bridge:** correctos, [run 43569603365](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43569603365). `servo-native` omitido.
+- **Test262 full de la rama aislada del PR #12:** 47 497 aprobados, 103 fallidos, 108 no soportados, cero regresiones, [run 43569458002](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43569458002).
+
+**Importante:** esos 47 497 resultados son de la rama aislada de PR #12 antes de incorporar PR #11. La ejecución full del árbol ya fusionado es [run 43569991719](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43569991719); no atribuirle el recuento sin leer su informe.
