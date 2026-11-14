@@ -1,0 +1,28 @@
+name: MWR Promise iterator close differential probes
+on:
+  push:
+    paths:
+      - '.github/workflows/promise-close-probes.yml'
+      - 'gc-lab/conformance/probe_promise_iterator_close.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  promise-close:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build release checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - name: Contrast native Promise combinators and JS engine in four modes
+        run: python3 gc-lab/conformance/probe_promise_iterator_close.py gc-lab/target/release/js_check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mwr-promise-close-differential
+          path: promise-iterator-close-diagnostics.json
