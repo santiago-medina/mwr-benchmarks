@@ -1,5 +1,7 @@
 # Object model and name access (roadmap B, stage 4)
 
+> **Nota de estado (2026-11-14):** este documento comienza con un diseño histórico, pero las etapas descritas más abajo ya se implementaron parcialmente o por completo. No interpretar las frases iniciales «nothing implemented»/«no code yet» como estado actual. Para arquitectura verificada, pruebas recientes y límites, consultar [CURRENT_STATUS.md](CURRENT_STATUS.md). Se conservan los resultados históricos con sus commits y condiciones originales.
+
 Status: design note, 2026-11-10. No code yet. Follows BYTECODE_VM.md ("Stage 4 (later, own note)")
 and PROPERTIES.md ("What is left").
 
