@@ -51,6 +51,10 @@ fn symbol_and_bigint_are_constructible_but_reject_construction() {
     check("assert.sameValue(typeof Symbol,'function');assert.sameValue(typeof BigInt,'function');let n=0;assert.throws(TypeError,function(){new BigInt({valueOf(){n++;return 1;}});});assert.sameValue(n,0);assert.throws(TypeError,function(){new Symbol('s');});assert.throws(TypeError,function(){Reflect.construct(BigInt,[]);});assert.throws(TypeError,function(){Reflect.construct(Symbol,[]);});");
 }
 #[test]
+fn numeric_left_conversion_precedes_right_conversion() {
+    check("let trace='';const left={valueOf(){trace+='L';return Symbol('n');}};const right={valueOf(){trace+='R';throw Error('right must not convert');}};for(const op of ['-','*','/','%','**','&','|','^','<<','>>','>>>']){trace='';assert.throws(TypeError,function(){Function('a','b','return a '+op+' b')(left,right);});assert.sameValue(trace,'L');}");
+}
+#[test]
 fn identity_and_numbers() {
     check("const a={x:2};const b=a;b.x=b.x+3;assert.sameValue(a.x,5);assert.notSameValue(a,{});assert.sameValue(NaN,NaN);assert.notSameValue(0,-0);");
 }
