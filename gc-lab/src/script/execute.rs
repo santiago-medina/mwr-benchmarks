@@ -1696,6 +1696,19 @@ impl Engine<'_> {
                 let hint = if op == "+" { "default" } else { "number" };
                 let a = self.to_primitive_hint(a, hint)?;
                 self.protect(&a)?;
+                // Arithmetic and bitwise operators use ToNumeric(left) before
+                // ToNumeric(right). Do not execute right.valueOf when the left
+                // operand's numeric conversion throws (e.g. Symbol).
+                // Addition and relational comparison instead ToPrimitive both
+                // operands before deciding whether numeric conversion is needed.
+                let left_number = if op != "+"
+                    && !matches!(op, "<" | ">" | "<=" | ">=")
+                    && !matches!(a, Value::BigInt(_))
+                {
+                    Some(self.to_number(a.clone())?)
+                } else {
+                    None
+                };
                 let b = self.to_primitive_hint(b, hint)?;
                 self.protect(&b)?;
                 if op == "+" && (matches!(a, Value::String(_)) || matches!(b, Value::String(_))) {
@@ -1730,7 +1743,10 @@ impl Engine<'_> {
                     };
                     return self.big_binary(op, a, b);
                 }
-                let a = self.to_number(a)?;
+                let a = match left_number {
+                    Some(a) => a,
+                    None => self.to_number(a)?,
+                };
                 let b = self.to_number(b)?;
                 Ok(match op {
                     "+" => Value::number(a + b),
