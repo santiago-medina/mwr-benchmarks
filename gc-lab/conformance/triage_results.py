@@ -36,7 +36,7 @@ def family(path):
 
 
 def escape(text):
-    return str(text).replace("|", "\\\|").replace("\n", " ").replace("\r", " ")
+    return str(text).replace("|", "&#124;").replace("\n", " ").replace("\r", " ")
 
 
 def main():
