@@ -642,16 +642,23 @@ impl Engine<'_> {
     pub(super) fn super_key(&mut self, x: &Expr, env: Id) -> Result<(Value, Option<Id>, Key)> {
         let this = self.lookup(env, "this")?;
         self.protect(&this)?;
-        let key = match x {
-            Expr::SuperMember(k) => Key::from(k.as_str()),
+        // §13.3.7.3 / §6.2.5.5: GetSuperBase happens after evaluating the
+        // computed expression, but before ToPropertyKey (which can run JS).
+        let raw_key = match x {
+            Expr::SuperMember(k) => None,
             Expr::SuperComputed(k) => {
-                let k = self.eval(k, env)?;
-                self.protect(&k)?;
-                self.to_key(k)?
+                let value = self.eval(k, env)?;
+                self.protect(&value)?;
+                Some(value)
             }
             _ => return Err(ScriptError::Runtime("invalid super reference")),
         };
         let (_, target) = self.super_base(env)?;
+        let key = match (x, raw_key) {
+            (Expr::SuperMember(k), _) => Key::from(k.as_str()),
+            (_, Some(value)) => self.to_key(value)?,
+            _ => return Err(ScriptError::Runtime("invalid super reference")),
+        };
         Ok((this, target, key))
     }
     pub(super) fn private_add(&mut self, id: Id, key: Key, property: Property) -> Result<()> {
