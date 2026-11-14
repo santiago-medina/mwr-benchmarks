@@ -1,0 +1,29 @@
+name: MWR Test262 triage smoke
+on:
+  push:
+    paths:
+      - '.github/workflows/test262-triage-smoke.yml'
+      - 'gc-lab/conformance/triage_results.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate and validate report from checkpoint
+        run: |
+          python3 -W error gc-lab/conformance/triage_results.py \
+            gc-lab/conformance/results-full/summary.json \
+            --previous gc-lab/conformance/results-full/summary.json \
+            --output gc-lab/conformance/triage-smoke.md
+          test -s gc-lab/conformance/triage-smoke.md
+          grep -q '47,458' gc-lab/conformance/triage-smoke.md
+          grep -q '142' gc-lab/conformance/triage-smoke.md
+          grep -q '108' gc-lab/conformance/triage-smoke.md
+          grep -q 'Casos fallidos nuevos frente a esa referencia: **0**' gc-lab/conformance/triage-smoke.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: test262-triage-smoke
+          path: gc-lab/conformance/triage-smoke.md
