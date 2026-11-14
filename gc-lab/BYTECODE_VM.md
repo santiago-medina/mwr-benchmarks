@@ -2,7 +2,7 @@
 
 > **Nota de estado (2026-11-14):** este documento comienza con un diseño histórico, pero las etapas descritas más abajo ya se implementaron parcialmente o por completo. No interpretar las frases iniciales «nothing implemented»/«no code yet» como estado actual. Para arquitectura verificada, pruebas recientes y límites, consultar [CURRENT_STATUS.md](CURRENT_STATUS.md). Se conservan los resultados históricos con sus commits y condiciones originales.
 
-Status: design note, 2026-11-10. Nothing in it is implemented yet.
+Status: documento histórico de diseño y registro de implementación (iniciado el 2026-11-10). La VM de registros de la etapa 3 **sí está implementada** en `src/script/bytecode.rs` y `src/script/interp.rs`; sus etapas se documentan más adelante. Las secciones iniciales y sus cifras describen checkpoints anteriores, no la versión actual. Véase [CURRENT_STATUS.md](CURRENT_STATUS.md) para la referencia comprobada y resultados de CI.
 Gates: literature check #336 (Literature Review (#82)) returned ADOPT. The `taskygpt` second
 opinion was waived by Santiago on 2026-11-10, so stage 3 is unblocked.
 

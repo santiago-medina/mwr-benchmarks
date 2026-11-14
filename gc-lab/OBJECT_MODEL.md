@@ -2,8 +2,7 @@
 
 > **Nota de estado (2026-11-14):** este documento comienza con un diseño histórico, pero las etapas descritas más abajo ya se implementaron parcialmente o por completo. No interpretar las frases iniciales «nothing implemented»/«no code yet» como estado actual. Para arquitectura verificada, pruebas recientes y límites, consultar [CURRENT_STATUS.md](CURRENT_STATUS.md). Se conservan los resultados históricos con sus commits y condiciones originales.
 
-Status: design note, 2026-11-10. No code yet. Follows BYTECODE_VM.md ("Stage 4 (later, own note)")
-and PROPERTIES.md ("What is left").
+Status: documento histórico de diseño y registro de implementación (iniciado el 2026-11-10). **Ya hay código** de las optimizaciones descritas en checkpoints posteriores (slots in-place, elisión de entornos, hints globales y elementos densos). Los perfiles iniciales y las tareas propuestas corresponden a aquel momento; véase [CURRENT_STATUS.md](CURRENT_STATUS.md) para el estado y la evidencia actual. Sigue el diseño de BYTECODE_VM.md ("Stage 4") y PROPERTIES.md ("What is left").
 
 ## Problem (measured)
 
