@@ -1,0 +1,32 @@
+name: MWR computed assignment evaluation audit
+on:
+  push:
+    paths:
+      - '.github/workflows/computed-assignment-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  targeted:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build MWR checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - name: Fetch pinned Test262
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Verify official assignment ordering case in Tree and VM (normal and stress GC)
+        run: |
+          python3 - <<'PY'
+          import subprocess,json
+          case='gc-lab/.test262-source/test/language/expressions/assignment/target-member-computed-reference.js'
+          for mode in ('tree','vm'):
+            for stress in (False,True):
+              cmd=['gc-lab/target/release/js_check',case,'--engine='+mode]+(['--gc-stress'] if stress else [])
+              p=subprocess.run(cmd,capture_output=True,text=True,timeout=40)
+              print(mode,stress,p.returncode,p.stdout[-700:],p.stderr[-700:],flush=True)
+              d=json.loads(p.stdout)
+              assert p.returncode==0 and d['status']=='passed' and d['cleanup'] is True
+          PY
