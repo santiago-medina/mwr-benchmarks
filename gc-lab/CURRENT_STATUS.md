@@ -222,3 +222,22 @@ La mejora acumulada respecto al checkpoint histórico `47 458` es **26 aprobados
 ### Casos de Promise.try que no deben «corregirse» para inflar conformidad
 
 Véase [SPEC_DIVERGENCES.md](conformance/SPEC_DIVERGENCES.md). El comportamiento de Node 24 y el algoritmo publicado ECMA-262 preservan el hecho de que `Promise.try` devuelve `promiseCapability.[[Promise]]`, no la identidad de la promesa entregada por el callback. Dos casos del snapshot exigen esa identidad; deben investigarse aguas arriba antes de tocar la semántica del motor. [Run independiente Node 24](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43568534837).
+
+## Línea base integrada verificada tras captura de referencias (2026-11-14)
+
+**Test262 full de la rama integrada**: [GitHub Actions run 43569991719](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43569991719), sobre el commit de configuración de pruebas `2678c6f5dc2b9c316c70ffe6dcc503de7e1ddf2e`, posterior al merge del [PR #12](https://github.com/santiago-medina/mwr-benchmarks/pull/12) (`d4f526b059d7c2df5b2e6bf501f1d3caa86e3878`).
+
+| Estado | Casos |
+|---|---:|
+| Passed | **47 498** |
+| Failed | **102** |
+| Unsupported | **108** |
+| Total | **47 708** |
+
+**Sin regresiones de los casos previamente aprobados.** Porcentaje redondeado: **99,56 %**. Esto suma **40 aprobados adicionales** respecto al checkpoint 46 histórico (47 458) y **14** frente a la línea integrada previa a PR #12 (47 484). Los 56 casos de referencias capturadas pasaron también Tree/VM con GC normal/estrés [run 43569540935](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43569540935); ver [REFERENCE_CAPTURE.md](conformance/REFERENCE_CAPTURE.md). La ejecución full está hecha con `js_check` de `gc-lab/temporal`, VM y GC por umbral; no es una ejecución completa con Tree y GC stress.
+
+### Siguiente revisión de semántica
+
+[PR #13](https://github.com/santiago-medina/mwr-benchmarks/pull/13): `Object.prototype.toString` debe tomar el tag heredado de `Symbol.toStringTag` y, cuando este no sea cadena, usar el tag builtin correcto `Object` para Symbol, BigInt y los Array Iterator. Los tres casos oficiales × cuatro modos, **12/12**, pasaron [run 43570289136](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43570289136). Debe completar los contratos y Test262 full sin regresiones antes de fusionarse.
+
+**Precaución:** los apartados anteriores se conservan como historial de checkpoints; esta sección constituye la línea integrada más reciente hasta que haya una ejecución completa de otro SHA. No confundir `success` de CI de regresiones con un resultado del 100 % del corpus.
