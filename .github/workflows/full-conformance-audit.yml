@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - '.github/workflows/full-conformance-audit.yml'
+      - 'gc-lab/conformance/triage_results.py'
       - 'gc-lab/src/script/references.rs'
       - 'gc-lab/src/script/vm.rs'
       - 'gc-lab/src/script/interp.rs'
@@ -68,6 +69,12 @@ jobs:
           # their gains to survive the merge before updating the documented baseline.
           assert current['counts']['passed']>=47498, 'Expected >=47,498 passes after binding fix'
           PY
+      - name: Generate failure families and status transition inventory
+        run: |
+          python3 gc-lab/conformance/triage_results.py \
+            gc-lab/conformance/results-audit-full/summary.json \
+            --previous gc-lab/conformance/results-full/summary.json \
+            --output gc-lab/conformance/results-audit-full/TRIAGE.md
       - name: Upload all full-suite results
         if: always()
         uses: actions/upload-artifact@v4
