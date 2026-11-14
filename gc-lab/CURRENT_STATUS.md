@@ -161,3 +161,27 @@ La rama de auditoría incorporó las correcciones de `indexOf` ([PR #2](https://
 - `super[clave]`: otra corrección separada captura `GetSuperBase` antes de convertir una clave computada cuya `toString` puede mutar el prototipo. El PR original #4 pasó Test262 full con 47 464 aprobados y ninguna regresión [run 43565803603](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43565803603), pero quedó en conflicto tras integrar #3; **se cerró sin merge**. Su reemplazo sobre la base combinada es [PR #5](https://github.com/santiago-medina/mwr-benchmarks/pull/5), sujeto a nueva comprobación [Test262 full](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43566343930).
 
 La cifra 47 458 del checkpoint 46 y la referencia reproducida 47 460 siguen siendo referencias históricas importantes. No declarar `full` ni todos los motores/configuraciones conformes al 100 %, y no equiparar un workflow con conclusión `success` (puede conservar fallos conocidos) con 47 708 pruebas aprobadas.
+
+## Línea base integrada de la rama de auditoría (14-11-2026)
+
+**CI reproducida tras fusionar #2 y #3:** [run 43566209108](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43566209108), con el ejecutable `gc-lab/temporal/target/release/js_check` y snapshot Test262 fijado `e4fbf57745c6aae3d1f12f181ecef78b1665d812`. Informe completo y casos individuales guardados en el artifact de esa ejecución.
+
+| Estado | Casos |
+|---|---:|
+| Passed | **47 465** |
+| Failed | **135** |
+| Unsupported | **108** |
+| Total | **47 708** |
+
+La suite completa ha terminado con cero regresiones de casos anteriormente aprobados, y la CI habitual de la rama integrada también pasó ([run 43566209112](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43566209112)). El porcentaje redondeado es **99,49 %**. Es un aumento neto de siete aprobados respecto al checkpoint 46 histórico (47 458) y cinco respecto a la primera reproducción correcta con Temporal (47 460). No confundir con la cifra aislada de PR #3 (47 464).
+
+### Agrupación de los 135 fallos reales que quedan
+
+Del JSON de casos de esta ejecución, las mayores familias por ruta son: Promise 17; String 12; compound-assignment 11; Date 9; eval-code/direct 9; AsyncFromSyncIteratorPrototype 8; assignment 8; Object 7; Set 5. Las rutas indican dónde fallan las pruebas, **no** necesariamente la causa compartida. Priorizar reproducciones dirigidas antes de cambiar intérprete, bytecode o APIs.
+
+### Correcciones en revisión, aún no incorporadas a esta línea base
+
+- [PR #5](https://github.com/santiago-medina/mwr-benchmarks/pull/5): orden de `GetSuperBase` frente a `ToPropertyKey` en `super[expr]`, reaplicado sobre la rama que contiene #2/#3. Ensayos dirigidos aprobados ([run 43566340935](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43566340935)); full ejecutándose en [run 43566343930](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43566343930).
+- [PR #6](https://github.com/santiago-medina/mwr-benchmarks/pull/6): `Set.prototype.union/intersection/symmetricDifference` normaliza `-0` a `+0` en valores almacenados, no solo claves de búsqueda. Los **12 ensayos dirigidos** (tres casos × Tree/VM × GC normal/estrés) aprobaron en [run 43566653063](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43566653063); full ejecutándose en [run 43566663888](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43566663888).
+
+**No sumar mejoras aisladas de distintas ramas** ni actualizar el resultado integrado hasta que sus PR estén fusionados y haya una ejecución completa del árbol combinado.
