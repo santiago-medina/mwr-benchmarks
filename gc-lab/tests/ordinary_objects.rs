@@ -26,6 +26,10 @@ fn computed_assignment_defers_property_key_conversion() {
     check("let order='';const target={x:1};const key={toString(){order+='k';return 'x';}};function rhs(){order+='r';return 2;}target[key]+=rhs();if(order!=='kr')throw Error('order:'+order);assert.sameValue(target.x,3);");
 }
 #[test]
+fn set_algebra_normalizes_negative_zero() {
+    check("const minus={size:1,has(){return true;},keys(){return [-0].values();}};const u=new Set([1]).union(minus);assert.sameValue(Object.is([...u][1],+0),true);const s=new Set([1]).symmetricDifference(minus);assert.sameValue(Object.is([...s][1],+0),true);const i=new Set([0,1,2]).intersection(minus);assert.sameValue(Object.is([...i][0],+0),true);");
+}
+#[test]
 fn identity_and_numbers() {
     check("const a={x:2};const b=a;b.x=b.x+3;assert.sameValue(a.x,5);assert.notSameValue(a,{});assert.sameValue(NaN,NaN);assert.notSameValue(0,-0);");
 }
