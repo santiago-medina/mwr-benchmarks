@@ -202,3 +202,23 @@ El [PR #9](https://github.com/santiago-medina/mwr-benchmarks/pull/9) corrige las
 El [PR #10](https://github.com/santiago-medina/mwr-benchmarks/pull/10) corrige la diferencia entre `String(Symbol())` y `new String(Symbol())`. Su caso oficial pasó las cuatro configuraciones en [run 43568139115](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43568139115); full y contratos del cambio siguen sujetos a verificación.
 
 **Disciplina de evidencia:** no sumar pasadas de ramas independientes ni declarar una cifra nueva integrada sin ejecutar el workflow de Test262 `full` sobre el SHA ya fusionado.
+
+## Línea base integrada actualizada: 47 484/47 708 (2026-11-14)
+
+Tras integrar [PR #9](https://github.com/santiago-medina/mwr-benchmarks/pull/9)
+(`1d8951f9e512851beab386b43088c740541a8881`) y
+[PR #11](https://github.com/santiago-medina/mwr-benchmarks/pull/11)
+(`5843c4f3a4d06956fd7bb6152b9cd4c7614be056`), el motor incorpora:
+
+1. Los once casos de `String.prototype.match/matchAll/search` que prohíben consultar el hook `@@match/@@matchAll/@@search` en argumentos primitivos. [Test262 full de árbol combinado previo: run 43568040767](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43568040767): **47 483 aprobados, 117 fallidos, 108 no soportados**, sin regresiones; 44/44 ensayos dirigidos aprobados.
+2. `new String(Symbol(...))` y `Reflect.construct(String, [symbol])` lanzan `TypeError` sin alterar la conversión de `String(symbol)` llamada como función. [Test262 full de árbol combinado: run 43568840541](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43568840541): **47 484 aprobados, 116 fallidos, 108 no soportados**, sin regresiones; contratos/Servo [run 43568854597](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43568854597) y cuatro tests dirigidos aprobaron.
+
+La mejora acumulada respecto al checkpoint histórico `47 458` es **26 aprobados**. El porcentaje de la ejecución de 47 484 casos aprobados sobre 47 708 es aproximadamente **99,53 %**. Los resultados reflejan el mismo snapshot Test262 `e4fbf57745c6aae3d1f12f181ecef78b1665d812` y la crate Temporal habilitada. No afirmar 100 % de conformidad ni validación de `servo-native`.
+
+### Próximo cambio: identidad de Environment Records
+
+[PR #12](https://github.com/santiago-medina/mwr-benchmarks/pull/12) corrige el problema documentado en [REFERENCE_CAPTURE.md](conformance/REFERENCE_CAPTURE.md). La verificación independiente anterior reveló 56/56 fallos en 14 pruebas con cuatro configuraciones ([run 43568971786](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43568971786)). Después del parche, **56/56 pasaron** en la misma matriz ([run 43569540935](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43569540935)). Aún requiere la suite completa, los contratos en debug/release y una nueva comprobación sobre el árbol integrado antes de fusionarse.
+
+### Casos de Promise.try que no deben «corregirse» para inflar conformidad
+
+Véase [SPEC_DIVERGENCES.md](conformance/SPEC_DIVERGENCES.md). El comportamiento de Node 24 y el algoritmo publicado ECMA-262 preservan el hecho de que `Promise.try` devuelve `promiseCapability.[[Promise]]`, no la identidad de la promesa entregada por el callback. Dos casos del snapshot exigen esa identidad; deben investigarse aguas arriba antes de tocar la semántica del motor. [Run independiente Node 24](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43568534837).
