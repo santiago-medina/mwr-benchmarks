@@ -1716,23 +1716,64 @@ impl Engine<'_> {
             Ok(Some(Completion::Return(value)))
         }
     }
-    /// CreateAsyncFromSyncIterator step: a sync result becomes a promise for {value, done}.
-    pub(super) fn async_from_sync(&mut self, result: Value) -> Result<Value> {
-        if !matches!(result, Value::Object(_)) {
-            return self.throw_error("TypeError", "iterator result is not an object");
-        }
-        let done = self.get_member(result.clone(), "done")?.truthy();
-        let value = self.get_member(result, "value")?;
-        self.protect(&value)?;
+    /// AsyncFromSyncIteratorContinuation (§27.1.6.4). A rejected value
+    /// closes the underlying sync iterator for next/throw, but not return.
+    /// Abrupt completion rejects the returned capability instead of escaping.
+    pub(super) fn async_from_sync(
+        &mut self,
+        result: Value,
+        iterator: Value,
+        close_on_rejection: bool,
+    ) -> Result<Value> {
         let ctor = Value::Object(self.intrinsics.as_ref().unwrap().functions["Promise"]);
-        let promise = self.promise_resolve(ctor.clone(), value)?;
-        self.protect(&promise)?;
-        let cap = self.capability(ctor)?;
-        let wrap = self.internal_function(super::promises::Internal::IterResult { done }, 1)?;
-        let Value::Object(p) = promise else {
-            unreachable!()
-        };
-        self.attach_reaction(p, Some(wrap), None, Some(cap.clone()))?;
+        let cap = self.capability(ctor.clone())?;
+        let step: Result<()> = (|| {
+            self.protect(&result)?;
+            if !matches!(result, Value::Object(_)) {
+                return self.throw_error("TypeError", "iterator result is not an object");
+            }
+            let done = self.get_member(result.clone(), "done")?.truthy();
+            let value = self.get_member(result, "value")?;
+            self.protect(&value)?;
+            let wrapper = match self.promise_resolve(ctor, value) {
+                Ok(wrapper) => wrapper,
+                Err(ScriptError::Thrown(error)) if !done && close_on_rejection => {
+                    self.protect(&error.value)?;
+                    return self
+                        .close_iterator(iterator.clone(), Err(ScriptError::Thrown(error)))
+                        .map(|_| ());
+                }
+                Err(error) => return Err(error),
+            };
+            self.protect(&wrapper)?;
+            let fulfilled = self.internal_function(
+                super::promises::Internal::IterResult { done },
+                1,
+            )?;
+            let rejected = if done || !close_on_rejection {
+                None
+            } else {
+                Some(self.internal_function(
+                    super::promises::Internal::CloseSyncIterator {
+                        iterator: iterator.clone(),
+                    },
+                    1,
+                )?)
+            };
+            let Value::Object(p) = wrapper else {
+                unreachable!()
+            };
+            self.attach_reaction(p, Some(fulfilled), rejected, Some(cap.clone()))
+        })();
+        match step {
+            Ok(()) => {}
+            Err(ScriptError::Thrown(error)) => {
+                self.protect(&error.value)?;
+                self.invoke(cap.reject.clone(), vec![error.value])?;
+            }
+            Err(error) => return Err(error),
+        }
+        self.protect(&cap.promise)?;
         Ok(cap.promise)
     }
     fn async_delegate_call(
@@ -1782,7 +1823,11 @@ impl Engine<'_> {
         let result = self.invoke_this(method, delegate.iterator.clone(), vec![input])?;
         self.protect(&result)?;
         let result = if delegate.sync {
-            self.async_from_sync(result)?
+            self.async_from_sync(
+                result,
+                delegate.iterator.clone(),
+                mode != super::generators::Resume::Return,
+            )?
         } else {
             result
         };
@@ -1961,10 +2006,10 @@ impl Engine<'_> {
                             frame.handlers.last_mut().unwrap().iterator = None;
                             let target = e.register(&frame, iterator)?;
                             let next = e.register(&frame, next)?;
-                            let result = e.invoke_this(next, target, vec![])?;
+                            let result = e.invoke_this(next, target.clone(), vec![])?;
                             e.protect(&result)?;
                             let result = if e.register(&frame, sync)?.truthy() {
-                                e.async_from_sync(result)?
+                                e.async_from_sync(result, target, true)?
                             } else {
                                 result
                             };
