@@ -1577,6 +1577,17 @@ impl Engine<'_> {
         self.tcall(|| Instant::from_utf8(s.lossy().as_bytes()))
     }
 
+    /// Date.prototype.toTemporalInstant (§21.4.4.44): convert the internal
+    /// clipped millisecond timestamp directly, without calling user methods.
+    pub(super) fn date_to_temporal_instant(&mut self, receiver: Value) -> Result<Value> {
+        let (_, millis) = self.date_value(receiver)?;
+        if !millis.is_finite() {
+            return self.throw_error("RangeError", "invalid Date time value");
+        }
+        let instant = self.tcall(|| Instant::from_epoch_milliseconds(millis as i64))?;
+        self.temporal_object("Instant", None, Slot::Instant(instant))
+    }
+
     fn this_instant(&mut self, receiver: &Value) -> Result<Instant> {
         match self.temporal_slot(receiver).as_deref() {
             Some(Slot::Instant(i)) => Ok(*i),
