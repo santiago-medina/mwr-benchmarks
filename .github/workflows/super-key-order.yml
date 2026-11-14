@@ -1,0 +1,33 @@
+name: MWR super property key ordering
+on:
+  push:
+    paths:
+      - '.github/workflows/super-key-order.yml'
+      - 'gc-lab/src/script/classes.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  super:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - name: Fetch pinned Test262
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Verify official super GetSuperBase / ToPropertyKey ordering test
+        run: |
+          python3 - <<'PY'
+          import json,subprocess
+          case='gc-lab/.test262-source/test/language/expressions/super/prop-expr-getsuperbase-before-topropertykey-getvalue.js'
+          for mode in ('tree','vm'):
+            for stress in (False,True):
+              cmd=['gc-lab/target/release/js_check',case,'--engine='+mode]+(['--gc-stress'] if stress else [])
+              result=subprocess.run(cmd,text=True,capture_output=True,timeout=45)
+              print(mode,stress,result.returncode,result.stdout[-1000:],result.stderr[-500:],flush=True)
+              data=json.loads(result.stdout)
+              assert result.returncode==0 and data['status']=='passed' and data['cleanup'] is True
+          PY
