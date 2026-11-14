@@ -5,6 +5,7 @@ on:
       - '.github/workflows/full-conformance-audit.yml'
       - 'gc-lab/src/script/references.rs'
       - 'gc-lab/src/script/bytecode.rs'
+      - 'gc-lab/src/script/execute.rs'
       - 'gc-lab/src/script/regexp_builtins.rs'
       - 'gc-lab/src/script/classes.rs'
       - 'gc-lab/src/script/set_methods.rs'
