@@ -89,8 +89,9 @@ impl Engine<'_> {
             }
             Reference::Property(base, key, _) => self.get_member(base.clone(), key),
             Reference::Computed(base, raw, cached, _) => {
-                let key = if let Some(key) = cached.borrow().as_ref() {
-                    key.clone()
+                let existing = cached.borrow().clone();
+                let key = if let Some(key) = existing {
+                    key
                 } else {
                     let key = self.member_key(base, raw.clone())?;
                     *cached.borrow_mut() = Some(key.clone());
