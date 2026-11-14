@@ -91,3 +91,29 @@ El runner devuelve error mientras queden fallos; esto es esperado. Antes de util
 ## Límites de lo que se ha verificado
 
 Esta auditoría **no** demuestra que los 142 fallos se reproduzcan ahora, que el motor sea seguro para código hostil, que cumpla el 100 % de la especificación, ni que las pruebas históricas reflejen otro commit. El trabajo siguiente debe producir logs de ejecución nueva, diferencias Tree/VM y pruebas de regresión por causa raíz.
+
+## Verificación nueva mediante GitHub Actions (2026-11-14)
+
+La rama de auditoría ejecutó correctamente el workflow existente `GC laboratory` en el commit `82aeac79c1d27a3f77ccdfe2067c46d0e2484144`: [run 43562134576](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43562134576). El árbol del motor es idéntico al de `74cad3d`: el commit solo añadió esta documentación.
+
+- `cargo fmt --check`: éxito.
+- `cargo test --offline`: **191 pruebas aprobadas, 0 fallos**.
+- `cargo test --release --offline`: **191 pruebas aprobadas, 0 fallos**.
+- `dual_demo`, `script_demo` y corpus diferencial del primer prototipo: éxito.
+- Integración con Servo mediante el bridge y DOM/click real: éxito.
+- Integración **nativa completa** de Servo (`servo-native`): **omitida** por la condición del workflow; no confundirlo con un pase.
+- Perfiles de Test262 ejecutados de nuevo:
+
+| Perfil | Total | Aprobadas | No soportadas | Fallidas | Regresiones del baseline |
+|---|---:|---:|---:|---:|---:|
+| objects | 2 837 | 2 012 | 825 | 0 | 0 |
+| arrays | 2 110 | 1 862 | 248 | 0 | 0 |
+| promises | 221 | 171 | 50 | 0 | 0 |
+| async | 249 | 128 | 121 | 0 | 0 |
+| temporal (segunda crate) | 4 613 | 4 613 | 0 | 0 | 0 |
+
+**Los perfiles se solapan y no deben sumarse como casos independientes.** Los trabajos de comparación con Node (harness, promesas, async y módulos) pasaron también; véase el registro del job `test262-objects`. Estas pruebas seleccionadas utilizan `--check-baseline`, que preserva los aprobados y rechaza nuevos fallos: no equivalen a la ejecución del perfil `full`.
+
+**Perfil completo:** se añadió un workflow separado en `.github/workflows/full-conformance-audit.yml` para ejecutarlo con `--profile full`, guardar los 47 708 resultados individuales y comparar las cifras frente a `results-full/summary.json`. No sustituir la línea histórica `47 458 / 47 708` por una cifra nueva hasta disponer de los resultados de ese workflow. La ejecución de auditoría se inició como [run 43562974007](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43562974007).
+
+**Alcance:** esto verifica los jobs mencionados, no «todos los tests» que existen o podrían ejecutarse en el repositorio. La máquina local de la sesión no dispone de `rustc` y no tiene acceso de red a GitHub; la evidencia reproducible procede de GitHub Actions.
