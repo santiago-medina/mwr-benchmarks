@@ -53,6 +53,43 @@ templates = {
         p.catch(()=>{});
         if(closed!==1)throw Error('close count: '+closed+' expected 1');
     """,
+    "native-promise-then-call-close": """
+        let closed=0;
+        const pending=new Promise(function(){});
+        Object.defineProperty(pending,'then',{value:function(){throw Error('then call');}});
+        const iterable={ [Symbol.iterator]() {return {
+            next() {return {value:pending,done:false};},
+            return() {closed++;return {};}
+        };}};
+        const p=Promise.METHOD(iterable);
+        p.catch(()=>{});
+        if(closed!==1)throw Error('close count: '+closed+' expected 1');
+    """,
+    "native-promise-then-getter-close": """
+        let closed=0;
+        const pending=new Promise(function(){});
+        Object.defineProperty(pending,'then',{get:function(){throw Error('then getter');}});
+        const iterable={ [Symbol.iterator]() {return {
+            next() {return {value:pending,done:false};},
+            return() {closed++;return {};}
+        };}};
+        const p=Promise.METHOD(iterable);
+        p.catch(()=>{});
+        if(closed!==1)throw Error('close count: '+closed+' expected 1');
+    """,
+    "resolve-throw-nonobject-return": """
+        let closed=0;
+        const iterable={ [Symbol.iterator]() { return {
+            next() {return {value:1,done:false};},
+            return() {closed++;}
+        };}};
+        const orig=Promise.resolve;
+        Promise.resolve=function(){throw Error('reject resolve');};
+        const p=Promise.METHOD(iterable);
+        Promise.resolve=orig;
+        p.catch(()=>{});
+        if(closed!==1)throw Error('close count: '+closed+' expected 1');
+    """,
     "step-value-no-close": """
         let closed=0;
         const iterable={ [Symbol.iterator]() {return {
@@ -110,6 +147,6 @@ print(json.dumps({"total":len(results),
                   "counts":{k:{"passed":v[0],"failed":v[1]} for k,v in counts.items()},
                   "mwr_failures":[x for x in results if x.get("runner") != "node-24"
                                   and x.get("status") != "passed"]}, indent=2))
-assert len(results) == 75
+assert len(results) == 120
 assert all(x["code"] == 0 for x in results if x["runner"] == "node-24"), \
     "Native reference probes failed; review diagnostic assumptions"
