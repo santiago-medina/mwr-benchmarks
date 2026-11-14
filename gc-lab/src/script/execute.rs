@@ -1395,6 +1395,11 @@ impl Engine<'_> {
                 constructor: true, ..
             }) => self.proxy_construct(id, args, new_target),
             Some(Object::Builtin { name, .. }) => {
+                // New String(symbol) applies ToString, unlike String(symbol)
+                // called as a function, which uses SymbolDescriptiveString.
+                if name == "String" && matches!(args.first(), Some(Value::Symbol(_))) {
+                    return self.throw_error("TypeError", "cannot convert Symbol to string");
+                }
                 if name == "Proxy" {
                     let arg = |i: usize| args.get(i).cloned().unwrap_or(Value::Undefined);
                     return self.proxy_create(arg(0), arg(1)).map(Value::Object);
