@@ -1,0 +1,35 @@
+name: MWR Promise.try normative identity check
+on:
+  push:
+    paths:
+      - '.github/workflows/promise-try-spec.yml'
+      - 'gc-lab/conformance/SPEC_DIVERGENCES.md'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-promise-try:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Confirm native Promise.try algorithm does not return callback Promise by identity
+        run: |
+          node <<'JS'
+          const assert=require('node:assert/strict');
+          console.log('Node version:',process.version);
+          assert.equal(typeof Promise.try,'function','native Promise.try needed');
+          const sentinel=Promise.resolve();
+          const result=Promise.try(()=>sentinel);
+          assert.notStrictEqual(result,sentinel,'Promise.try creates and returns capability.promise');
+          class SubPromise extends Promise {
+            constructor(executor){super(executor)}
+          }
+          const subSentinel=SubPromise.resolve();
+          const subResult=SubPromise.try(()=>subSentinel);
+          assert.notStrictEqual(subResult,subSentinel,'Subclass.try returns its new capability.promise');
+          assert.ok(subResult instanceof SubPromise);
+          console.log('Native Promise.try identity: new promise for both built-in and subclass');
+          JS

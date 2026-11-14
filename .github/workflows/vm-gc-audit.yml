@@ -1,0 +1,26 @@
+name: MWR VM and GC cross-mode audit
+on:
+  push:
+    paths:
+      - '.github/workflows/vm-gc-audit.yml'
+      - 'gc-lab/conformance/audit_vm_gc.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  vm-gc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component clippy
+      - name: Compile release checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - name: Tree/VM differential smoke with and without GC stress
+        run: python3 gc-lab/conformance/audit_vm_gc.py gc-lab/target/release/js_check
+      - name: Run Temporal crate unit tests (release)
+        run: cargo +stable test --manifest-path gc-lab/temporal/Cargo.toml --release --locked
+      - name: Validate Python runner syntax
+        run: python3 -m compileall -q gc-lab/conformance gc-lab/compare_script.py gc-lab/compare_script.py
+      - name: Rust Clippy diagnostics
+        run: cargo +stable clippy --manifest-path gc-lab/Cargo.toml --all-targets --offline

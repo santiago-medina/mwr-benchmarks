@@ -95,7 +95,8 @@ pub(super) type NameSet = HashSet<String, super::props::BuildKeyHasher>;
 /// What `resolve_name` found for an identifier.
 pub(super) enum Resolved {
     With(Id),
-    Found,
+    /// The Environment Record which resolved the name, captured before RHS evaluation.
+    Found(Id),
     Unresolvable,
 }
 /// What one environment record contributes to a name lookup (`Engine::scan_level`).
@@ -1132,7 +1133,7 @@ impl<'host> Engine<'host> {
         if hint.is_some_and(|h| h.at_root(env, self.var_names_epoch))
             && self.global_hint_has(name, hint)
         {
-            return Ok(Resolved::Found);
+            return Ok(Resolved::Found(env));
         }
         loop {
             if let Some(object) = self.env_with_object(env) {
@@ -1158,7 +1159,7 @@ impl<'host> Engine<'host> {
                     && !object_bindings.is_empty()
                     && object_bindings.contains(name))
             {
-                return Ok(Resolved::Found);
+                return Ok(Resolved::Found(env));
             }
             let parent = *parent;
             match parent {
@@ -1169,7 +1170,7 @@ impl<'host> Engine<'host> {
                 {
                     return Ok(Resolved::Unresolvable);
                 }
-                None => return Ok(Resolved::Found),
+                None => return Ok(Resolved::Found(env)),
             }
         }
     }

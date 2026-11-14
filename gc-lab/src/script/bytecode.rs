@@ -2716,13 +2716,15 @@ impl Compiler {
             Expr::Computed(base, key) => {
                 let obj = self.operand(base, &[key, value])?;
                 let raw = self.operand(key, &[value])?;
+                // Assignment evaluates the RHS before ToPropertyKey of a computed
+                // reference (§13.15.2 / §6.2.5 PutValue).
+                let src = self.operand(value, &[])?;
                 let key = self.alloc()?;
                 self.emit(Insn::PropKey {
                     dst: key,
                     obj,
                     key: raw,
                 });
-                let src = self.operand(value, &[])?;
                 self.emit(Insn::SetElem { obj, key, src });
                 if src != dst {
                     self.emit(Insn::Move { dst, src });
