@@ -1,0 +1,58 @@
+name: MWR full Test262 audit
+on:
+  push:
+    paths:
+      - '.github/workflows/full-conformance-audit.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build release JS checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - uses: actions/cache@v4
+        with:
+          path: gc-lab/.test262-source
+          key: test262-e4fbf57745c6aae3d1f12f181ecef78b1665d812
+      - name: Fetch pinned Test262
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Execute all Test262 full-profile cases and keep expected failures
+        id: test262
+        shell: bash
+        run: |
+          set +e
+          python3 gc-lab/conformance/run.py --profile full --source gc-lab/.test262-source \
+            --binary gc-lab/target/release/js_check \
+            --output gc-lab/conformance/results-audit-full --retry-timeouts 1
+          status=$?
+          set -e
+          echo "runner_exit_code=$status" >> "$GITHUB_OUTPUT"
+          test -f gc-lab/conformance/results-audit-full/summary.json
+      - name: Compare fresh counts to previous recorded checkpoint
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          previous=json.loads(Path('gc-lab/conformance/results-full/summary.json').read_text())
+          current=json.loads(Path('gc-lab/conformance/results-audit-full/summary.json').read_text())
+          keys=('total','counts','revision')
+          print(json.dumps({'previous':{k:previous[k] for k in keys},
+                            'current':{k:current[k] for k in keys},
+                            'new_failures':current['new_failures'],
+                            'regressions':current['regressions'],
+                            'retry':current['retry_timeouts']}, indent=2))
+          assert current['total']==previous['total']
+          assert current['revision']==previous['revision']
+          PY
+      - name: Upload all full-suite results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mwr-test262-full-audit
+          path: gc-lab/conformance/results-audit-full/
