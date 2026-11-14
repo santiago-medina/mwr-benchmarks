@@ -5,6 +5,7 @@ on:
       - '.github/workflows/full-conformance-audit.yml'
       - 'gc-lab/conformance/triage_results.py'
       - 'gc-lab/src/bin/js_check.rs'
+      - 'gc-lab/src/script/asynchronous.rs'
       - 'gc-lab/src/script/references.rs'
       - 'gc-lab/src/script/vm.rs'
       - 'gc-lab/src/script/interp.rs'
