@@ -476,6 +476,10 @@ impl Engine<'_> {
         let length = self.length_of(id)?;
         match name {
             "Array.prototype.indexOf" => {
+                // §23.1.3.15: return before coercing fromIndex when len is zero.
+                if length == 0 {
+                    return Ok(Value::number(-1.0));
+                }
                 let n = self.to_number(arg(1))?;
                 let n = if n.is_nan() { 0.0 } else { n.trunc() };
                 if n >= length as f64 {
