@@ -1343,6 +1343,10 @@ impl Engine<'_> {
                             | "String"
                             | "Number"
                             | "Boolean"
+                            // Symbol and BigInt implement [[Construct]], but their
+                            // constructors always throw TypeError when called with new.
+                            | "Symbol"
+                            | "BigInt"
                     )
                     || self
                         .intrinsics
