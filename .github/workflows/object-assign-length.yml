@@ -1,0 +1,44 @@
+name: MWR function length descriptors
+on:
+  push:
+    paths:
+      - '.github/workflows/object-assign-length.yml'
+      - 'gc-lab/src/script/builtins.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  assign-length:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - name: Fetch pinned Test262
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Verify Object.assign and Function.bind length tests in Tree VM and stress GC
+        run: |
+          python3 - <<'PY'
+          import json
+          json.dump(['built-ins/Object/assign/assign-length.js','built-ins/Function/prototype/bind/instance-length-default-value.js'],open('selected.json','w'))
+          PY
+          for engine in tree vm; do
+            for gc in default stress; do
+              stress=""
+              if [ "$gc" = stress ]; then stress="--gc-stress"; fi
+              set +e
+              python3 gc-lab/conformance/run.py --profile full --engine "$engine" $stress \
+                --source gc-lab/.test262-source \
+                --binary gc-lab/target/release/js_check --paths-file selected.json \
+                --output "gc-lab/conformance/object-assign-$engine-$gc"
+              set -e
+              python3 - "gc-lab/conformance/object-assign-$engine-$gc/summary.json" <<'PY'
+          import json,sys
+          s=json.load(open(sys.argv[1]))
+          print(sys.argv[1],s['counts'])
+          assert s['total']==2 and s['counts'].get('passed')==2,s['failures']
+          PY
+            done
+          done

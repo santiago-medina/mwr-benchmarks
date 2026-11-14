@@ -25,6 +25,14 @@ fn species_getters_have_standard_name_and_length() {
     check("for (const ctor of [Array,Map,Set,Promise,RegExp]) { const desc=Object.getOwnPropertyDescriptor(ctor,Symbol.species);assert.sameValue(typeof desc.get,'function');assert.sameValue(desc.get.name,'get [Symbol.species]');assert.sameValue(desc.get.length,0);assert.sameValue(desc.get.call(ctor),ctor); }");
 }
 #[test]
+fn bound_function_ignores_inherited_or_non_numeric_length() {
+    check("function f(){}; for(const value of [undefined,null,true,'1',Symbol('1'),new Number(1)]) {Object.defineProperty(f,'length',{value,configurable:true});assert.sameValue(f.bind(null,1).length,0);} function g(){};Object.setPrototypeOf(g,{length:42});delete g.length;assert.sameValue(Function.prototype.bind.call(g,null,1).length,0);");
+}
+#[test]
+fn object_assign_length_matches_specification() {
+    check("const d=Object.getOwnPropertyDescriptor(Object.assign,'length');assert.sameValue(d.value,2);assert.sameValue(d.writable,false);assert.sameValue(d.enumerable,false);assert.sameValue(d.configurable,true);");
+}
+#[test]
 fn computed_assignment_defers_property_key_conversion() {
     check("let order='';const target={};const key={toString(){order+='k';return 'x';}};function rhs(){order+='r';return 7;}target[key]=rhs();assert.sameValue(order,'rk');assert.sameValue(target.x,7);");
     check("let order='';const target={x:1};const key={toString(){order+='k';return 'x';}};function rhs(){order+='r';return 2;}target[key]+=rhs();if(order!=='kr')throw Error('order:'+order);assert.sameValue(target.x,3);");
