@@ -189,8 +189,19 @@ impl Engine<'_> {
         strict: bool,
     ) -> Reference<'a> {
         match encoded {
+            // Environment Records are internal objects distinct from JS objects.
+            // This encodes both kinds of rooted Reference in a VM Value::Object
+            // without changing the JavaScript value representation.
+            Value::Object(object)
+                if matches!(
+                    self.objects.get(object),
+                    Some(super::vm::Object::Environment { .. })
+                ) =>
+            {
+                Reference::Binding(*object, name, strict)
+            }
             Value::Object(object) => Reference::WithBinding(*object, name, strict),
-            Value::Bool(true) => Reference::Binding(local, name),
+            Value::Bool(true) => Reference::Binding(local, name, strict),
             _ => Reference::Unresolvable(name),
         }
     }
@@ -346,7 +357,7 @@ impl Engine<'_> {
                         Some(&chunk.hints[name as usize]),
                     )? {
                         super::vm::Resolved::With(object) => Value::Object(object),
-                        super::vm::Resolved::Found => Value::Bool(true),
+                        super::vm::Resolved::Found(found) => Value::Object(found),
                         super::vm::Resolved::Unresolvable => Value::Bool(false),
                     };
                     self.set_reg(base, dst, encoded);
@@ -360,7 +371,7 @@ impl Engine<'_> {
                     let n = name as usize;
                     let r = self.reference_of(&encoded, &chunk.names[n], *env, strict);
                     let value = match r {
-                        Reference::Binding(env, name) => {
+                        Reference::Binding(env, name, _) => {
                             self.lookup_hinted(env, name, Some(&chunk.hints[n]))?.0
                         }
                         r => self.reference_get(&r)?,
@@ -377,7 +388,7 @@ impl Engine<'_> {
                     let r = self.reference_of(&encoded, &chunk.names[n], *env, strict);
                     let value = self.reg(base, src);
                     match r {
-                        Reference::Binding(env, name) => {
+                        Reference::Binding(env, name, _) => {
                             self.protect(&value)?;
                             let hint = Some(&chunk.hints[n]);
                             self.assign_binding_hinted(env, name, value, hint, strict)?;

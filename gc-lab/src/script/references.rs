@@ -8,7 +8,8 @@ use crate::dual::Id;
 use std::cell::RefCell;
 type Result<T> = std::result::Result<T, ScriptError>;
 pub(super) enum Reference<'a> {
-    Binding(Id, &'a str),
+    /// Captured resolved Environment Record, identifier name and strictness.
+    Binding(Id, &'a str, bool),
     /// A name resolved to a `with` object environment (§9.1.1.2): the binding
     /// object, the name and strictness. Resolved once, so traps run once.
     WithBinding(Id, &'a str, bool),
@@ -40,7 +41,7 @@ impl Engine<'_> {
                 self.protect(&Value::Object(object))?;
                 Reference::WithBinding(object, name, strict)
             }
-            super::vm::Resolved::Found => Reference::Binding(env, name),
+            super::vm::Resolved::Found(found) => Reference::Binding(found, name, strict),
         })
     }
     pub(super) fn eval_reference<'a>(
@@ -77,7 +78,7 @@ impl Engine<'_> {
     }
     pub(super) fn reference_get(&mut self, reference: &Reference) -> Result<Value> {
         match reference {
-            Reference::Binding(env, name) => self.lookup(*env, name),
+            Reference::Binding(env, name, _) => self.lookup(*env, name),
             Reference::WithBinding(object, name, strict) => {
                 // §9.1.1.2.6 GetBindingValue steps 2-4.
                 if !self.has(*object, *name)? {
@@ -111,7 +112,9 @@ impl Engine<'_> {
     pub(super) fn reference_set(&mut self, reference: Reference, value: Value) -> Result<Value> {
         self.protect(&value)?;
         match reference {
-            Reference::Binding(env, name) => self.assign_binding(env, &name, value.clone())?,
+            Reference::Binding(env, name, strict) => {
+                self.assign_binding_hinted(env, name, value.clone(), None, strict)?
+            }
             Reference::WithBinding(object, name, strict) => {
                 // §9.1.1.2.5 SetMutableBinding steps 1-3.
                 if !self.has(object, name)? && strict {
