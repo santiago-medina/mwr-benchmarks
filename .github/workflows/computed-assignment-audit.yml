@@ -3,6 +3,8 @@ on:
   push:
     paths:
       - '.github/workflows/computed-assignment-audit.yml'
+      - 'gc-lab/src/script/bytecode.rs'
+      - 'gc-lab/src/script/references.rs'
   workflow_dispatch:
 permissions:
   contents: read
