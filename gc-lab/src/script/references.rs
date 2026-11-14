@@ -90,7 +90,7 @@ impl Engine<'_> {
             Reference::Computed(base, key, _) => {
                 let key = self.member_key(base, key.clone())?;
                 self.get_member(base.clone(), key)
-            },
+            }
             Reference::Super(this, target, key, _) => self.super_get(this.clone(), *target, key),
         }
     }
