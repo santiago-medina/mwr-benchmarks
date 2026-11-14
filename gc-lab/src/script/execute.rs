@@ -1343,6 +1343,9 @@ impl Engine<'_> {
                             | "String"
                             | "Number"
                             | "Boolean"
+                            // [[Construct]] is present even though construction throws.
+                            | "Symbol"
+                            | "BigInt"
                     )
                     || self
                         .intrinsics
@@ -1395,6 +1398,12 @@ impl Engine<'_> {
                 constructor: true, ..
             }) => self.proxy_construct(id, args, new_target),
             Some(Object::Builtin { name, .. }) => {
+                // [[Construct]] exists on Symbol and BigInt, but always throws
+                // before coercing any arguments.
+                if matches!(name.as_str(), "Symbol" | "BigInt") {
+                    return self
+                        .throw_error("TypeError", "Symbol and BigInt cannot be constructed");
+                }
                 // New String(symbol) applies ToString, unlike String(symbol)
                 // called as a function, which uses SymbolDescriptiveString.
                 if name == "String" && matches!(args.first(), Some(Value::Symbol(_))) {
