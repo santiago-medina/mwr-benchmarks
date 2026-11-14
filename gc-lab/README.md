@@ -1,6 +1,6 @@
 # Laboratorio de memoria: tres modelos y revisión humana
 
-> **Estado actual (14 de noviembre de 2026):** este README conserva la descripción y las mediciones históricas del laboratorio de memoria. El intérprete JavaScript ha evolucionado: existen un tree-walker y una VM de registros con compilador de bytecode. Para la arquitectura, la línea base Test262, las pruebas verificadas en GitHub Actions y las limitaciones pendientes, consultar [CURRENT_STATUS.md](CURRENT_STATUS.md). La conformidad de un perfil concreto de Test262 no equivale a compatibilidad ECMAScript completa.
+> **Estado actual (14 de noviembre de 2026):** este README conserva la descripción y las mediciones históricas del laboratorio de memoria. El intérprete JavaScript ha evolucionado: existen un tree-walker y una VM de registros con compilador de bytecode. Para la **línea base Test262 vigente y las pruebas realmente verificadas**, consultar [VERIFIED_STATUS.md](VERIFIED_STATUS.md); para arquitectura, antecedentes y checkpoints históricos, [CURRENT_STATUS.md](CURRENT_STATUS.md). La conformidad de un perfil concreto de Test262 no equivale a compatibilidad ECMAScript completa.
 
 Prototipo en Rust, sin dependencias externas, con `#![forbid(unsafe_code)]`.
 Incluye experimentos de GC y un intérprete de un subconjunto explícito de JS;
