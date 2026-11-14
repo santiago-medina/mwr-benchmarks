@@ -55,6 +55,10 @@ fn numeric_left_conversion_precedes_right_conversion() {
     check("let trace='';const left={valueOf(){trace+='L';return Symbol('n');}};const right={valueOf(){trace+='R';throw Error('right must not convert');}};for(const op of ['-','*','/','%','**','&','|','^','<<','>>','>>>']){trace='';assert.throws(TypeError,function(){Function('a','b','return a '+op+' b')(left,right);});assert.sameValue(trace,'L');}");
 }
 #[test]
+fn bigint_prototype_is_not_a_wrapper_and_tostring_has_zero_length() {
+    check("assert.sameValue(BigInt.prototype.toString.length,0);assert.sameValue(BigInt.prototype.valueOf.length,0);assert.sameValue(BigInt.asIntN.length,2);assert.sameValue(BigInt.asUintN.length,2);assert.throws(TypeError,function(){BigInt.prototype.toString();});assert.throws(TypeError,function(){BigInt.prototype.valueOf();});assert.sameValue(123n.toString(),'123');");
+}
+#[test]
 fn identity_and_numbers() {
     check("const a={x:2};const b=a;b.x=b.x+3;assert.sameValue(a.x,5);assert.notSameValue(a,{});assert.sameValue(NaN,NaN);assert.notSameValue(0,-0);");
 }
