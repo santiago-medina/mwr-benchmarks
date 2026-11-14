@@ -21,6 +21,10 @@ fn check(source: &str) {
     }
 }
 #[test]
+fn super_base_precedes_computed_key_coercion() {
+    check("const proto={p:'old'};const next={p:'new'};const obj={__proto__:proto,m(){return super[key];}};const key={toString(){Object.setPrototypeOf(obj,next);return 'p';}};assert.sameValue(obj.m(),'old');assert.sameValue(Object.getPrototypeOf(obj),next);");
+}
+#[test]
 fn identity_and_numbers() {
     check("const a={x:2};const b=a;b.x=b.x+3;assert.sameValue(a.x,5);assert.notSameValue(a,{});assert.sameValue(NaN,NaN);assert.notSameValue(0,-0);");
 }
