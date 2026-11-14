@@ -47,6 +47,10 @@ fn object_tostring_uses_inherited_tag_and_object_fallback_for_special_primitives
     check("delete Symbol.prototype[Symbol.toStringTag];assert.sameValue(Object.prototype.toString.call(Symbol('x')),'[object Object]');Object.defineProperty(BigInt.prototype,Symbol.toStringTag,{value:null});assert.sameValue(Object.prototype.toString.call(BigInt(0)),'[object Object]');assert.sameValue(Object.prototype.toString.call(Object(BigInt(0))),'[object Object]');");
 }
 #[test]
+fn symbol_and_bigint_are_constructible_but_reject_construction() {
+    check("assert.sameValue(typeof Symbol,'function');assert.sameValue(typeof BigInt,'function');let n=0;assert.throws(TypeError,function(){new BigInt({valueOf(){n++;return 1;}});});assert.sameValue(n,0);assert.throws(TypeError,function(){new Symbol('s');});assert.throws(TypeError,function(){Reflect.construct(BigInt,[]);});assert.throws(TypeError,function(){Reflect.construct(Symbol,[]);});");
+}
+#[test]
 fn identity_and_numbers() {
     check("const a={x:2};const b=a;b.x=b.x+3;assert.sameValue(a.x,5);assert.notSameValue(a,{});assert.sameValue(NaN,NaN);assert.notSameValue(0,-0);");
 }
