@@ -185,3 +185,20 @@ Del JSON de casos de esta ejecución, las mayores familias por ruta son: Promise
 - [PR #6](https://github.com/santiago-medina/mwr-benchmarks/pull/6): `Set.prototype.union/intersection/symmetricDifference` normaliza `-0` a `+0` en valores almacenados, no solo claves de búsqueda. Los **12 ensayos dirigidos** (tres casos × Tree/VM × GC normal/estrés) aprobaron en [run 43566653063](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43566653063); full ejecutándose en [run 43566663888](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43566663888).
 
 **No sumar mejoras aisladas de distintas ramas** ni actualizar el resultado integrado hasta que sus PR estén fusionados y haya una ejecución completa del árbol combinado.
+
+## Integración verificada de `super` y operaciones de `Set` (2026-11-14)
+
+El [PR #7](https://github.com/santiago-medina/mwr-benchmarks/pull/7) fusionó las dos correcciones sobre la rama de auditoría en el commit `7b987b0e8bc56f306dc458c2849f531187d44669`. Los PR originales #5 y #6 quedaron cerrados **sin merge** por haberse sustituido; el PR #4 también fue reemplazado y cerrado.
+
+- **Test262 completo del árbol combinado:** [run 43567259181](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43567259181), **47 472 aprobados, 128 fallidos, 108 no soportados**, total 47 708; sin regresiones respecto a la lista histórica de aprobados.
+- **CI ordinaria completa:** [run 43567236813](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43567236813), contratos debug/release, perfiles Test262, integración Servo/DOM y bridge correctos; la integración nativa completa de Servo permaneció omitida.
+- Los casos oficiales dirigidos de [super](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43567253222) (4/4 modos) y [Set](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43567256186) (12/12 modos) pasaron también en la rama combinada.
+- Mejora acumulada **+14** aprobados respecto al checkpoint histórico de 47 458; **+7** respecto a la rama integrada previa (47 465). El porcentaje redondeado es **99,51 %**. La suite no es totalmente conforme: quedan 236 casos sin aprobar.
+
+### Nuevos cambios aislados en revisión
+
+El [PR #9](https://github.com/santiago-medina/mwr-benchmarks/pull/9) corrige las consultas indebidas a `@@match`, `@@matchAll` y `@@search` sobre argumentos primitivos. En su rama original (PR #8, cerrado sin merge por divergencia) pasó los **44 ensayos dirigidos** y Test262 completo con **47 476 aprobados, 124 fallidos y 108 no soportados** [run 43567583254](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43567583254); la variante #9 se debe validar contra el motor ya integrado antes de fusionarla.
+
+El [PR #10](https://github.com/santiago-medina/mwr-benchmarks/pull/10) corrige la diferencia entre `String(Symbol())` y `new String(Symbol())`. Su caso oficial pasó las cuatro configuraciones en [run 43568139115](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43568139115); full y contratos del cambio siguen sujetos a verificación.
+
+**Disciplina de evidencia:** no sumar pasadas de ramas independientes ni declarar una cifra nueva integrada sin ejecutar el workflow de Test262 `full` sobre el SHA ya fusionado.
