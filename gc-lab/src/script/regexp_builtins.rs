@@ -1117,7 +1117,9 @@ impl Engine<'_> {
             "String.prototype.matchAll" => (MATCH_ALL, Value::String("g".into())),
             _ => (SEARCH, Value::Undefined),
         };
-        if !matches!(regexp, Value::Null | Value::Undefined) {
+        // String.prototype.match/matchAll/search invoke the @@ protocol only
+        // when the argument is an Object, not a boxed primitive's prototype.
+        if matches!(regexp, Value::Object(_)) {
             if symbol == MATCH_ALL && self.is_regexp(regexp.clone())? {
                 let f = self.get_member(regexp.clone(), "flags")?;
                 if matches!(f, Value::Null | Value::Undefined) {
