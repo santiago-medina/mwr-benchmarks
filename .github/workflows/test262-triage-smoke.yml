@@ -16,11 +16,13 @@ jobs:
         run: |
           python3 -W error gc-lab/conformance/triage_results.py \
             gc-lab/conformance/results-full/summary.json \
+            --previous gc-lab/conformance/results-full/summary.json \
             --output gc-lab/conformance/triage-smoke.md
           test -s gc-lab/conformance/triage-smoke.md
           grep -q '47,458' gc-lab/conformance/triage-smoke.md
           grep -q '142' gc-lab/conformance/triage-smoke.md
           grep -q '108' gc-lab/conformance/triage-smoke.md
+          grep -q 'Casos fallidos nuevos frente a esa referencia: **0**' gc-lab/conformance/triage-smoke.md
       - uses: actions/upload-artifact@v4
         with:
           name: test262-triage-smoke
