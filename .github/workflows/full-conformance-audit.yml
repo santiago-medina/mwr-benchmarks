@@ -4,6 +4,8 @@ on:
     paths:
       - '.github/workflows/full-conformance-audit.yml'
       - 'gc-lab/src/script/references.rs'
+      - 'gc-lab/src/script/vm.rs'
+      - 'gc-lab/src/script/interp.rs'
       - 'gc-lab/src/script/bytecode.rs'
       - 'gc-lab/src/script/execute.rs'
       - 'gc-lab/src/script/regexp_builtins.rs'
@@ -60,6 +62,10 @@ jobs:
           newly_failed={case['path'] for case in current['failures']}-old_failed
           assert not newly_failed, f'New failing Test262 cases: {sorted(newly_failed)[:20]}'
           assert current['counts']['passed']>=previous['counts']['passed'], 'Pass count dropped'
+          # Last isolated full result: 47,484 passes after String fixes.
+          # The 14 captured-environment tests passed in both engines; require
+          # their gains to survive the merge before updating the documented baseline.
+          assert current['counts']['passed']>=47498, 'Expected >=47,498 passes after binding fix'
           PY
       - name: Upload all full-suite results
         if: always()
