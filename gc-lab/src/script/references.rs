@@ -15,6 +15,9 @@ pub(super) enum Reference<'a> {
     Unresolvable(&'a str),
     /// Base, key, and whether the reference is in strict mode code.
     Property(Value, Key, bool),
+    /// Computed reference retains the key value until GetValue/PutValue.
+    /// For plain assignment ToPropertyKey runs after RHS evaluation (§6.2.5).
+    Computed(Value, Value, bool),
     /// `this`, the [[HomeObject]]'s prototype, the key and strictness.
     Super(Value, Option<Id>, Key, bool),
 }
@@ -57,8 +60,7 @@ impl Engine<'_> {
                 self.protect(&base)?;
                 let key = self.eval(key, env)?;
                 self.protect(&key)?;
-                let key = self.member_key(&base, key)?;
-                Ok(Reference::Property(base, key, self.env_strict(env)))
+                Ok(Reference::Computed(base, key, self.env_strict(env)))
             }
             Expr::SuperMember(_) | Expr::SuperComputed(_) => {
                 let (this, target, key) = self.super_key(target, env)?;
@@ -85,6 +87,10 @@ impl Engine<'_> {
                 self.throw_error("ReferenceError", &format!("{name} is not defined"))
             }
             Reference::Property(base, key, _) => self.get_member(base.clone(), key),
+            Reference::Computed(base, key, _) => {
+                let key = self.member_key(base, key.clone())?;
+                self.get_member(base.clone(), key)
+            },
             Reference::Super(this, target, key, _) => self.super_get(this.clone(), *target, key),
         }
     }
@@ -103,6 +109,10 @@ impl Engine<'_> {
                 return self.throw_error("ReferenceError", &format!("{name} is not defined"))
             }
             Reference::Property(base, key, strict) => {
+                self.assign_member(base, key, value.clone(), strict)?
+            }
+            Reference::Computed(base, key, strict) => {
+                let key = self.member_key(&base, key)?;
                 self.assign_member(base, key, value.clone(), strict)?
             }
             Reference::Super(this, target, key, strict) => {
