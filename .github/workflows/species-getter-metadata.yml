@@ -1,0 +1,54 @@
+name: MWR species accessor metadata
+on:
+  push:
+    paths:
+      - '.github/workflows/species-getter-metadata.yml'
+      - 'gc-lab/src/script/builtins.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  species:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - name: Fetch pinned Test262
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Run official species getter cases in Tree and VM with and without GC stress
+        run: |
+          python3 - <<'PY'
+          import json
+          paths=[
+            'built-ins/Map/Symbol.species/length.js',
+            'built-ins/Map/Symbol.species/symbol-species-name.js',
+            'built-ins/Set/Symbol.species/length.js',
+            'built-ins/Set/Symbol.species/symbol-species-name.js',
+            'built-ins/Symbol/species/builtin-getter-name.js',
+          ]
+          with open('species-selected.json','w') as f: json.dump(paths,f)
+          PY
+          for engine in tree vm; do
+            for gc in default stress; do
+              stress_flag=""
+              if [ "$gc" = stress ]; then stress_flag="--gc-stress"; fi
+              set +e
+              python3 gc-lab/conformance/run.py --profile full --engine "$engine" $stress_flag \
+                --source gc-lab/.test262-source \
+                --binary gc-lab/target/release/js_check \
+                --paths-file species-selected.json \
+                --output "gc-lab/conformance/species-$engine-$gc"
+              result=$?
+              set -e
+              python3 - "gc-lab/conformance/species-$engine-$gc/summary.json" <<'PY'
+          import json,sys
+          summary=json.load(open(sys.argv[1]))
+          print(sys.argv[1], summary['counts'])
+          assert summary['total']==5
+          assert summary['counts'].get('passed')==5, summary['failures']
+          PY
+            done
+          done
