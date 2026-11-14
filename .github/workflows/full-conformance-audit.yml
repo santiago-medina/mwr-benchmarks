@@ -12,6 +12,8 @@ on:
       - 'gc-lab/src/script/vm.rs'
       - 'gc-lab/src/script/interp.rs'
       - 'gc-lab/src/script/bytecode.rs'
+      - 'gc-lab/src/script/bigint_vm.rs'
+      - 'gc-lab/src/script/loops.rs'
       - 'gc-lab/src/script/builtins.rs'
       - 'gc-lab/src/script/execute.rs'
       - 'gc-lab/src/script/regexp_builtins.rs'
