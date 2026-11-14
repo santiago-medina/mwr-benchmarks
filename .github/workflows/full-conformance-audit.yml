@@ -9,6 +9,8 @@ on:
       - 'gc-lab/src/script/vm.rs'
       - 'gc-lab/src/script/interp.rs'
       - 'gc-lab/src/script/bytecode.rs'
+      - 'gc-lab/src/script/dates.rs'
+      - 'gc-lab/src/script/temporal.rs'
       - 'gc-lab/src/script/builtins.rs'
       - 'gc-lab/src/script/execute.rs'
       - 'gc-lab/src/script/regexp_builtins.rs'
