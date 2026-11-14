@@ -23,7 +23,7 @@ fn check(source: &str) {
 #[test]
 fn computed_assignment_defers_property_key_conversion() {
     check("let order='';const target={};const key={toString(){order+='k';return 'x';}};function rhs(){order+='r';return 7;}target[key]=rhs();assert.sameValue(order,'rk');assert.sameValue(target.x,7);");
-    check("let order='';const target={x:1};const key={toString(){order+='k';return 'x';}};function rhs(){order+='r';return 2;}target[key]+=rhs();assert.sameValue(order,'kr');assert.sameValue(target.x,3);");
+    check("let order='';const target={x:1};const key={toString(){order+='k';return 'x';}};function rhs(){order+='r';return 2;}target[key]+=rhs();if(order!=='kr')throw Error('order:'+order);assert.sameValue(target.x,3);");
 }
 #[test]
 fn identity_and_numbers() {
