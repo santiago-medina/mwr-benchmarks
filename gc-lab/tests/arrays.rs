@@ -20,6 +20,10 @@ fn check(source: &str) {
     }
 }
 #[test]
+fn indexof_zero_length_does_not_coerce_from_index() {
+    check("let calls=0;const from={valueOf:function(){calls++;throw new RangeError();}};assert.sameValue([].indexOf(1,from),-1);assert.sameValue(calls,0);const a=[3];assert.sameValue(a.indexOf(3,0),0);assert.sameValue(a.indexOf(3,1),-1);");
+}
+#[test]
 fn literal_holes_and_boundaries() {
     check("const a=[1,,3,];assert.sameValue(a.length,3);assert.sameValue(a.hasOwnProperty('1'),false);assert.sameValue(a[1],undefined);a[5]=6;assert.sameValue(a.length,6);a['4294967295']=7;assert.sameValue(a.length,6);assert.sameValue(Array.isArray(a),true);assert.sameValue(Array.isArray({}),false);assert.sameValue(Array.prototype.length,0);");
 }
