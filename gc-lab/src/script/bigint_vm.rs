@@ -244,9 +244,8 @@ impl Engine<'_> {
         let proto = self.new_object(Some(object))?;
         self.runtime.link(env, proto)?;
         objects.insert("BigInt.prototype".into(), proto);
-        let mut data = self.data(proto)?.clone();
-        data.boxed = Some(Value::BigInt(Rc::new(Big::zero())));
-        self.replace_data(proto, data)?;
+        // %BigInt.prototype% is an ordinary object, NOT a BigInt wrapper
+        // with an [[BigIntData]] internal slot.
         self.define(
             proto,
             Key::Symbol(1),
@@ -264,6 +263,16 @@ impl Engine<'_> {
         ] {
             let name = format!("BigInt.{method}");
             let f = self.intrinsic_function(env, &name, Some(function))?;
+            self.define(
+                f,
+                "length",
+                Descriptor {
+                    value: Some(Value::number(
+                        if method == "asIntN" || method == "asUintN" { 2.0 } else { 0.0 },
+                    )),
+                    ..Default::default()
+                },
+            )?;
             self.intrinsics.as_mut().unwrap().functions.insert(name, f);
             self.hidden(
                 if method.starts_with("prototype.") {
