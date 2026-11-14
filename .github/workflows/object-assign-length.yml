@@ -1,4 +1,4 @@
-name: MWR Object.assign length descriptor
+name: MWR function length descriptors
 on:
   push:
     paths:
@@ -18,11 +18,11 @@ jobs:
         run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
       - name: Fetch pinned Test262
         run: python3 gc-lab/conformance/fetch.py
-      - name: Verify official Object.assign length test under Tree VM and stress GC
+      - name: Verify Object.assign and Function.bind length tests in Tree VM and stress GC
         run: |
           python3 - <<'PY'
           import json
-          json.dump(['built-ins/Object/assign/assign-length.js'],open('selected.json','w'))
+          json.dump(['built-ins/Object/assign/assign-length.js','built-ins/Function/prototype/bind/instance-length-default-value.js'],open('selected.json','w'))
           PY
           for engine in tree vm; do
             for gc in default stress; do
@@ -38,7 +38,7 @@ jobs:
           import json,sys
           s=json.load(open(sys.argv[1]))
           print(sys.argv[1],s['counts'])
-          assert s['total']==1 and s['counts'].get('passed')==1,s['failures']
+          assert s['total']==2 and s['counts'].get('passed')==2,s['failures']
           PY
             done
           done
