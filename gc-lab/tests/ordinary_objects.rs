@@ -47,6 +47,10 @@ fn object_tostring_uses_inherited_tag_and_object_fallback_for_special_primitives
     check("delete Symbol.prototype[Symbol.toStringTag];assert.sameValue(Object.prototype.toString.call(Symbol('x')),'[object Object]');Object.defineProperty(BigInt.prototype,Symbol.toStringTag,{value:null});assert.sameValue(Object.prototype.toString.call(BigInt(0)),'[object Object]');assert.sameValue(Object.prototype.toString.call(Object(BigInt(0))),'[object Object]');");
 }
 #[test]
+fn numeric_left_conversion_precedes_right_conversion() {
+    check("let trace='';const left={valueOf(){trace+='L';return Symbol('n');}};const right={valueOf(){trace+='R';throw Error('right must not convert');}};for(const op of ['-','*','/','%','**','&','|','^','<<','>>','>>>']){trace='';assert.throws(TypeError,function(){Function('a','b','return a '+op+' b')(left,right);});assert.sameValue(trace,'L');}");
+}
+#[test]
 fn identity_and_numbers() {
     check("const a={x:2};const b=a;b.x=b.x+3;assert.sameValue(a.x,5);assert.notSameValue(a,{});assert.sameValue(NaN,NaN);assert.notSameValue(0,-0);");
 }
