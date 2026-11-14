@@ -61,7 +61,12 @@ impl Engine<'_> {
                 self.protect(&base)?;
                 let key = self.eval(key, env)?;
                 self.protect(&key)?;
-                Ok(Reference::Computed(base, key, RefCell::new(None), self.env_strict(env)))
+                Ok(Reference::Computed(
+                    base,
+                    key,
+                    RefCell::new(None),
+                    self.env_strict(env),
+                ))
             }
             Expr::SuperMember(_) | Expr::SuperComputed(_) => {
                 let (this, target, key) = self.super_key(target, env)?;
