@@ -6,6 +6,43 @@ fn engine() -> Engine<'static> {
     Engine::new(Model::Indirect, Model::Indirect).unwrap()
 }
 #[test]
+fn direct_eval_var_shadowing_preserves_original_assignment_reference() {
+    for model in [Model::Stable, Model::Indirect] {
+        let mut e = Engine::new(model, model).unwrap();
+        e.enable_test_harness();
+        let source = r#"
+            function compound() {
+                var x = 3;
+                var inner = (function() {
+                    x *= (eval("var x = 2;"), 4);
+                    return x;
+                })();
+                assert.sameValue(inner, 2);
+                assert.sameValue(x, 12);
+            }
+            function assignment() {
+                var x = 3;
+                var inner = (function() {
+                    x = (eval("var x = 2;"), 4);
+                    return x;
+                })();
+                assert.sameValue(inner, 2);
+                assert.sameValue(x, 4);
+            }
+            compound(); assignment();
+        "#;
+        e.execute(source)
+            .unwrap_or_else(|error| panic!("{error:?}\\n{source}"));
+        assert_eq!(e.assertion_count(), 4);
+        e.collect();
+        e.release_globals();
+        assert_eq!(
+            (e.live_objects(), e.metadata_objects(), e.live_roots(), e.charged_bytes()),
+            (0, 0, 0, 0)
+        );
+    }
+}
+#[test]
 fn closure_returns_a_captured_value_after_its_call_frame_has_gone() {
     let mut e = engine();
     e.execute("const make = (x) => { return () => { return x; }; }; const f = make('captured'); const result = f();").unwrap();
