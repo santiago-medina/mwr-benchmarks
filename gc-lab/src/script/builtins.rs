@@ -238,7 +238,10 @@ impl Engine<'_> {
             "get stack"
         } else if name == "Error.prototype.stack.set" {
             "set stack"
-        } else if matches!(name, "Array.species" | "Promise.species") {
+        } else if matches!(
+            name,
+            "Array.species" | "Promise.species" | "Map.species" | "Set.species" | "RegExp.species"
+        ) {
             "get [Symbol.species]"
         } else if matches!(
             name,
@@ -331,6 +334,9 @@ impl Engine<'_> {
             | "%AsyncIteratorPrototype%.asyncIterator"
             | "Promise.species"
             | "Array.species"
+            | "Map.species"
+            | "Set.species"
+            | "RegExp.species"
             | "Symbol"
             | "Function.prototype"
             | "Object.prototype.toString"
