@@ -26,6 +26,10 @@ fn computed_assignment_defers_property_key_conversion() {
     check("let order='';const target={x:1};const key={toString(){order+='k';return 'x';}};function rhs(){order+='r';return 2;}target[key]+=rhs();if(order!=='kr')throw Error('order:'+order);assert.sameValue(target.x,3);");
 }
 #[test]
+fn regexp_symbol_hooks_are_not_read_on_primitive_arguments() {
+    check("Object.defineProperty(Number.prototype,Symbol.match,{get(){throw Error('match hook');}});assert.sameValue('a1b'.match(1)[0],'1');Object.defineProperty(Boolean.prototype,Symbol.search,{get(){throw Error('search hook');}});assert.sameValue('atrueb'.search(true),1);Object.defineProperty(String.prototype,Symbol.matchAll,{get(){throw Error('matchAll hook');}});const matches=Array.from('a,b,c'.matchAll(','));assert.sameValue(matches.length,2);assert.sameValue(matches[0].index,1);");
+}
+#[test]
 fn identity_and_numbers() {
     check("const a={x:2};const b=a;b.x=b.x+3;assert.sameValue(a.x,5);assert.notSameValue(a,{});assert.sameValue(NaN,NaN);assert.notSameValue(0,-0);");
 }
