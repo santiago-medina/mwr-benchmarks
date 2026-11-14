@@ -1403,7 +1403,8 @@ impl Engine<'_> {
                 // including Reflect.construct with a custom newTarget. No argument
                 // coercion is allowed before this TypeError.
                 if matches!(name.as_str(), "Symbol" | "BigInt") {
-                    return self.throw_error("TypeError", "Symbol and BigInt cannot be constructed");
+                    return self
+                        .throw_error("TypeError", "Symbol and BigInt cannot be constructed");
                 }
                 // New String(symbol) applies ToString, unlike String(symbol)
                 // called as a function, which uses SymbolDescriptiveString.
