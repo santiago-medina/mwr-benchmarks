@@ -1,5 +1,33 @@
 # MWR JavaScript engine — estado verificable y prioridades
 
+## Estado ejecutivo verificado — 14 de noviembre de 2026
+
+> **Fuente de verdad operativa:** el árbol de desarrollo es `codex/gc-host-boundary`. La suite completa, con el binario de `gc-lab/temporal` y Test262 fijado a `e4fbf57745c6aae3d1f12f181ecef78b1665d812`, ha alcanzado **47 516 aprobados / 47 708 casos (99,60 %), 84 fallidos, 108 no soportados y 0 regresiones**. Evidencia: [Test262 full del PR #22 sobre la base integrada](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43574024527), [CI Rust/Servo](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43574052142) y [44/44 pruebas dirigidas](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43574048313). El cambio está integrado en la rama del motor mediante [PR #22](https://github.com/santiago-medina/mwr-benchmarks/pull/22), commit `381def28e9fe0743bbdffbfbef4b90830ade54db`; la ejecución post-merge sobre ese commit es [run 43574630914](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43574630914). No confundir la medición pre-merge con una medición nueva de otro SHA.
+
+| Estado | Casos |
+|---|---:|
+| Aprobados | **47 516** |
+| Fallidos | **84** |
+| No soportados | **108** |
+| Total | **47 708** |
+
+Esto representa **58 nuevos aprobados** respecto al checkpoint 46 histórico de 47 458, sin ocultar fallos ni reclasificarlos como unsupported. El porcentaje mide **este corpus y perfil**, no la especificación ECMAScript completa.
+
+### Conformidad y regresión
+
+- Integradas en `codex/gc-host-boundary`: orden de `indexOf`, referencias de asignación y `eval`, `super[expr]`, álgebra de `Set` con `-0`, hooks de `String`, `String(Symbol)`, `Object.prototype.toString`, `IsConstructor(Symbol/BigInt)` y `ToNumeric` de operadores aritméticos/bitwise.
+- [PR #21](https://github.com/santiago-medina/mwr-benchmarks/pull/21) incorporado: el workflow full crea automáticamente `TRIAGE.md` con cada fallo individual y su motivo; el generador validó la línea histórica y una ejecución full.
+- [PR #23](https://github.com/santiago-medina/mwr-benchmarks/pull/23) en revisión: matriz de los 142 fallos históricos en AST/VM × GC normal/estrés. En [run 43574330753](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43574330753), **47 superados y 95 fallidos en cada modo**, sin divergencia detectada en ese subconjunto; este reporte no sustituye al full actual.
+- Los 84 fallos actuales se concentran en Promise (17; dos de `Promise.try` potencialmente incompatibles con ECMA-262, ver `SPEC_DIVERGENCES.md`), Date (9), eval directo (9), AsyncFromSyncIterator (8), asignaciones (5), y casos dispersos. Los **108 no soportados** siguen siendo un denominador independiente.
+- **Límites:** no se ha ejecutado Test262 completo en AST o con GC stress, ni se ha validado la integración nativa completa de Servo; la integración DOM/bridge sí pasa. No presentar un job en verde que conserve fallos conocidos como conformidad del 100 %.
+
+### Próxima ruta de trabajo
+
+Investigar el contrato de `Promise.all/allSettled/race` (15 fallos de cierre de iterador/abrupt completion) y AsyncFromSyncIterator (8), antes de corregir casos aislados; mantener pruebas dirigidas con harness oficial, ejecutar Tree/VM × GC stress y gate de Test262 full por cada PR. Para progreso continuo, usar los artefactos generados automáticamente por la CI, no editar manualmente recuentos históricos.
+
+---
+
+
 > Auditoría documental: 2026-11-14. Referencia inmóvil: `74cad3d318ca74ae424d063a4e7f0f71b2f73a86` (rama `codex/gc-host-boundary`).
 > El primer inventario se basó solo en código y registros; **las secciones de verificación nueva más abajo incorporan pruebas ejecutadas después en GitHub Actions**. Los resultados históricos conservan su referencia y se distinguen de los resultados actuales.
 
