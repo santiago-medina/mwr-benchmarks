@@ -241,3 +241,16 @@ Véase [SPEC_DIVERGENCES.md](conformance/SPEC_DIVERGENCES.md). El comportamiento
 [PR #13](https://github.com/santiago-medina/mwr-benchmarks/pull/13): `Object.prototype.toString` debe tomar el tag heredado de `Symbol.toStringTag` y, cuando este no sea cadena, usar el tag builtin correcto `Object` para Symbol, BigInt y los Array Iterator. Los tres casos oficiales × cuatro modos, **12/12**, pasaron [run 43570289136](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43570289136). Debe completar los contratos y Test262 full sin regresiones antes de fusionarse.
 
 **Precaución:** los apartados anteriores se conservan como historial de checkpoints; esta sección constituye la línea integrada más reciente hasta que haya una ejecución completa de otro SHA. No confundir `success` de CI de regresiones con un resultado del 100 % del corpus.
+
+## Corrección de toString y validación de la rama del motor (2026-11-14)
+
+[PR #13](https://github.com/santiago-medina/mwr-benchmarks/pull/13), merge `1b731667a88da9d463f1b8ba6d8a34f3bb0a4415` en la rama de auditoría: `Object.prototype.toString` respeta el `@@toStringTag` heredado y, si deja de ser una cadena, utiliza `[object Object]` para primitivos Symbol, BigInt e iteradores de Array. El constructor de un iterador conserva su tag nominal únicamente cuando `@@toStringTag` contiene esa cadena.
+
+- **Test262 full antes de fusionar:** [run 43570292566](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43570292566): **47 501 aprobados, 99 fallidos, 108 no soportados; sin regresiones**.
+- **Tres casos oficiales × Tree/VM × GC threshold/stress:** **12/12** en [run 43570289136](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43570289136).
+- Contratos Rust debug/release, perfiles Test262 habituales y Servo bridge: [run 43570309163](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43570309163), correctos. `servo-native` omitido.
+- El motor de trabajo `codex/gc-host-boundary` recibió previamente la auditoría mediante commit `5b32fafd`; se abrió el [PR #18](https://github.com/santiago-medina/mwr-benchmarks/pull/18) para integrar el arreglo de tags sin depender de fusiones cruzadas de ramas que habían divergido. No declarar el árbol del motor actualizado hasta que #18 termine y se fusione.
+
+**Cifras y alcance:** el 47 501/47 708 es evidencia del árbol de la rama del PR #13; corresponde a **99,57 %** aproximadamente. No modificar `main`, no sumar resultados de distintas ramas y no confundir CI `success` con aprobación del 100 % del corpus.
+
+El [PR #17](https://github.com/santiago-medina/mwr-benchmarks/pull/17) investiga por separado la diferencia entre `IsConstructor(Symbol/BigInt)` verdadero y `[[Construct]]` que siempre lanza TypeError. Sus 16 casos dirigidos pasan [run 43570986386](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43570986386); el merge requiere Test262 full y la suite Rust en su SHA final.
