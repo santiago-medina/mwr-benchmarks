@@ -5,6 +5,7 @@ use super::{
     vm::{Engine, ScriptError, Value},
 };
 use crate::dual::Id;
+use std::cell::RefCell;
 type Result<T> = std::result::Result<T, ScriptError>;
 pub(super) enum Reference<'a> {
     Binding(Id, &'a str),
@@ -15,6 +16,9 @@ pub(super) enum Reference<'a> {
     Unresolvable(&'a str),
     /// Base, key, and whether the reference is in strict mode code.
     Property(Value, Key, bool),
+    /// Computed reference retains the key value until GetValue/PutValue.
+    /// For plain assignment ToPropertyKey runs after RHS evaluation (§6.2.5).
+    Computed(Box<(Value, Value, RefCell<Option<Key>>, bool)>),
     /// `this`, the [[HomeObject]]'s prototype, the key and strictness.
     Super(Value, Option<Id>, Key, bool),
 }
@@ -57,8 +61,12 @@ impl Engine<'_> {
                 self.protect(&base)?;
                 let key = self.eval(key, env)?;
                 self.protect(&key)?;
-                let key = self.member_key(&base, key)?;
-                Ok(Reference::Property(base, key, self.env_strict(env)))
+                Ok(Reference::Computed(Box::new((
+                    base,
+                    key,
+                    RefCell::new(None),
+                    self.env_strict(env),
+                ))))
             }
             Expr::SuperMember(_) | Expr::SuperComputed(_) => {
                 let (this, target, key) = self.super_key(target, env)?;
@@ -85,6 +93,18 @@ impl Engine<'_> {
                 self.throw_error("ReferenceError", &format!("{name} is not defined"))
             }
             Reference::Property(base, key, _) => self.get_member(base.clone(), key),
+            Reference::Computed(data) => {
+                let (base, raw, cached, _) = &**data;
+                let existing = cached.borrow().clone();
+                let key = if let Some(key) = existing {
+                    key
+                } else {
+                    let key = self.member_key(base, raw.clone())?;
+                    *cached.borrow_mut() = Some(key.clone());
+                    key
+                };
+                self.get_member(base.clone(), key)
+            }
             Reference::Super(this, target, key, _) => self.super_get(this.clone(), *target, key),
         }
     }
@@ -103,6 +123,16 @@ impl Engine<'_> {
                 return self.throw_error("ReferenceError", &format!("{name} is not defined"))
             }
             Reference::Property(base, key, strict) => {
+                self.assign_member(base, key, value.clone(), strict)?
+            }
+            Reference::Computed(data) => {
+                let (base, raw, cached, strict) = *data;
+                // GetValue in compound/update expressions has already converted
+                // and memoized the key. Plain assignment converts it here, after RHS.
+                let key = match cached.into_inner() {
+                    Some(key) => key,
+                    None => self.member_key(&base, raw)?,
+                };
                 self.assign_member(base, key, value.clone(), strict)?
             }
             Reference::Super(this, target, key, strict) => {
