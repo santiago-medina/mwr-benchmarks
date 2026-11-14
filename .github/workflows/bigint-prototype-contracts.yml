@@ -1,0 +1,49 @@
+name: MWR BigInt prototype descriptors
+on:
+  push:
+    paths:
+      - '.github/workflows/bigint-prototype-contracts.yml'
+      - 'gc-lab/src/script/bigint_vm.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  bigint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - name: Fetch pinned Test262
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Check two BigInt official regressions across Tree VM GC stress
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          paths=['built-ins/BigInt/prototype/toString/length.js',
+                 'built-ins/BigInt/prototype/toString/prototype-call.js']
+          json.dump(paths,open('bigint-cases.json','w'),indent=2)
+          PY
+          for engine in tree vm; do
+            for gc in normal stress; do
+              extra=()
+              if [ "$gc" = "stress" ]; then extra+=(--gc-stress); fi
+              python3 gc-lab/conformance/run.py --profile full \
+                --source gc-lab/.test262-source \
+                --binary gc-lab/target/release/js_check \
+                --paths-file bigint-cases.json \
+                --engine "$engine" "${extra[@]}" \
+                --workers 2 --retry-timeouts 1 \
+                --output "gc-lab/conformance/bigint-$engine-$gc"
+              python3 - "$engine" "$gc" <<'PY'
+          import json,sys
+          engine,gc=sys.argv[1:]
+          s=json.load(open(f'gc-lab/conformance/bigint-{engine}-{gc}/summary.json'))
+          print(engine,gc,s['counts'])
+          assert s['total']==2 and s['counts'].get('passed')==2,s
+          PY
+            done
+          done
