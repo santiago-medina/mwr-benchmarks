@@ -1,0 +1,65 @@
+name: MWR unresolved Test262 four-mode diagnostic
+on:
+  push:
+    paths:
+      - '.github/workflows/test262-unresolved-matrix.yml'
+      - 'gc-lab/conformance/run.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unresolved:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [tree, vm]
+        gc: [normal, stress]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build Temporal-enabled checker
+        run: cargo +stable build --manifest-path gc-lab/temporal/Cargo.toml --release --locked
+      - uses: actions/cache@v4
+        with:
+          path: gc-lab/.test262-source
+          key: test262-e4fbf57745c6aae3d1f12f181ecef78b1665d812
+      - name: Fetch pinned Test262
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Replay 142 historical failures using complete official harness semantics
+        shell: bash
+        env:
+          ENGINE: ${{ matrix.engine }}
+          GC: ${{ matrix.gc }}
+        run: |
+          extra=()
+          if [ "$GC" = "stress" ]; then extra+=(--gc-stress); fi
+          set +e
+          python3 gc-lab/conformance/run.py --profile full \
+            --source gc-lab/.test262-source \
+            --binary gc-lab/temporal/target/release/js_check \
+            --paths-file gc-lab/conformance/results-full/summary.json \
+            --engine "$ENGINE" "${extra[@]}" \
+            --output "gc-lab/conformance/diagnostic-$ENGINE-$GC" \
+            --workers 2 --retry-timeouts 1
+          rc=$?
+          set -e
+          echo "Runner exit code: $rc (remaining known failures are expected)"
+          python3 - "$ENGINE" "$GC" <<'PY'
+          import json,pathlib,sys
+          engine,gc=sys.argv[1:]
+          path=pathlib.Path(f'gc-lab/conformance/diagnostic-{engine}-{gc}/summary.json')
+          data=json.loads(path.read_text())
+          assert data['total']==142, 'Not all 142 historical failures were replayed'
+          assert data['audit_config']['engine']==engine
+          assert data['audit_config']['gc_stress']==(gc=='stress')
+          print(json.dumps({'engine':engine,'gc':gc,'total':data['total'],
+                            'counts':data['counts']},indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test262-unresolved-${{ matrix.engine }}-${{ matrix.gc }}
+          path: gc-lab/conformance/diagnostic-${{ matrix.engine }}-${{ matrix.gc }}/
