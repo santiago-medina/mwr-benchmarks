@@ -260,6 +260,7 @@ impl Engine<'_> {
             "Object.prototype.__defineGetter__" | "Object.prototype.__defineSetter__" => 2,
             "SuppressedError" => 3,
             "AggregateError"
+            | "Object.assign"
             | "Object.hasOwn"
             | "Object.groupBy"
             | "Map.groupBy"
