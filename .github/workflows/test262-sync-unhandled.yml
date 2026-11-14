@@ -1,0 +1,76 @@
+name: MWR synchronous Promise Test262 host policy
+on:
+  push:
+    paths:
+      - '.github/workflows/test262-sync-unhandled.yml'
+      - 'gc-lab/src/bin/js_check.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sync-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - name: Fetch pinned Test262
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Extract 15 known Promise combinator cases, excluding Promise.try
+        run: |
+          python3 - <<'PY'
+          import json
+          old=json.load(open('gc-lab/conformance/results-full/summary.json'))
+          cases=[x['path'] for x in old['failures']
+                 if x['path'].startswith('built-ins/Promise/')
+                 and not x['path'].startswith('built-ins/Promise/try/')]
+          assert len(cases)==15, cases
+          with open('promise-combinators.json','w') as out:json.dump(cases,out,indent=2)
+          PY
+      - name: All 15 official sync Promise tests in Tree and VM with and without GC stress
+        shell: bash
+        run: |
+          for engine in tree vm; do
+            for gc in normal stress; do
+              extra=()
+              if [ "$gc" = "stress" ]; then extra+=(--gc-stress); fi
+              python3 gc-lab/conformance/run.py --profile full \
+                --source gc-lab/.test262-source \
+                --binary gc-lab/target/release/js_check \
+                --paths-file promise-combinators.json \
+                --engine "$engine" "${extra[@]}" \
+                --workers 2 --retry-timeouts 1 \
+                --output "gc-lab/conformance/promise-sync-$engine-$gc"
+              python3 - "$engine" "$gc" <<'PY'
+          import json,sys
+          engine,gc=sys.argv[1:]
+          p=f'gc-lab/conformance/promise-sync-{engine}-{gc}/summary.json'
+          s=json.load(open(p)); print(engine,gc,s['counts'])
+          assert s['total']==15 and s['counts'].get('passed')==15, s
+          PY
+            done
+          done
+      - name: Unhandled Test262Error must still fail explicit async tests
+        run: |
+          python3 - <<'PY'
+          import json,subprocess,tempfile,pathlib
+          with tempfile.TemporaryDirectory() as d:
+            sync=pathlib.Path(d,'sync.js')
+            sync.write_text("Promise.reject(new Test262Error('intentional')); assert.sameValue(1,1);")
+            async_case=pathlib.Path(d,'async.js')
+            async_case.write_text("Promise.reject(new Test262Error('async failure')); $DONE();")
+            for mode in ('tree','vm'):
+              for path,flags,expected in ((sync,[],'passed'),(async_case,['--async'],'failed')):
+                cmd=['gc-lab/target/release/js_check',str(path),'--engine='+mode]+flags
+                p=subprocess.run(cmd,text=True,capture_output=True,timeout=30)
+                data=json.loads(p.stdout)
+                print(mode,path.name,p.returncode,data,flush=True)
+                assert data['status']==expected and data['cleanup'] is True
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mwr-promise-sync-policy
+          path: gc-lab/conformance/promise-sync-*/
