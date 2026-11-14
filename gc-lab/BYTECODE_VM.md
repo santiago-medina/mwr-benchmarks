@@ -1,5 +1,7 @@
 # Bytecode VM and interpreter throughput (roadmap B)
 
+> **Nota de estado (2026-11-14):** este documento comienza con un diseño histórico, pero las etapas descritas más abajo ya se implementaron parcialmente o por completo. No interpretar las frases iniciales «nothing implemented»/«no code yet» como estado actual. Para arquitectura verificada, pruebas recientes y límites, consultar [CURRENT_STATUS.md](CURRENT_STATUS.md). Se conservan los resultados históricos con sus commits y condiciones originales.
+
 Status: design note, 2026-11-10. Nothing in it is implemented yet.
 Gates: literature check #336 (Literature Review (#82)) returned ADOPT. The `taskygpt` second
 opinion was waived by Santiago on 2026-11-10, so stage 3 is unblocked.
