@@ -31,6 +31,14 @@ fn check(source: &str) {
     }
 }
 #[test]
+fn async_from_sync_closes_iterator_on_rejected_value() {
+    check("let closed=0;const iterable={ [Symbol.iterator](){return {next(){return {value:Promise.reject('bad'),done:false};},return(){closed++;return {};}};}};async function run(){try{for await(const x of iterable){assert(false);}}catch(e){assert.sameValue(e,'bad');}assert.sameValue(closed,1);}run();");
+}
+#[test]
+fn async_generator_yield_star_closes_sync_delegate_on_rejection() {
+    check("let closed=0;const iterable={ [Symbol.iterator](){return {next(){return {value:Promise.reject('bad'),done:false};},return(){closed++;return {};}};}};async function* gen(){yield* iterable;}gen().next().then(function(){assert(false);},function(e){assert.sameValue(e,'bad');assert.sameValue(closed,1);});");
+}
+#[test]
 fn starts_synchronously_and_always_suspends_at_await() {
     check("let order='';async function f(){order=order+'a';const x=await 3;order=order+'c';return x+1;}const p=f();assert.sameValue(order,'a');order=order+'b';p.then(function(v){assert.sameValue(v,4);assert.sameValue(order,'abc');});");
 }

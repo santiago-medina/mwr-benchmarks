@@ -1,0 +1,59 @@
+name: MWR AsyncFromSync rejection closing
+on:
+  push:
+    paths:
+      - '.github/workflows/async-from-sync-close.yml'
+      - 'gc-lab/src/script/asynchronous.rs'
+      - 'gc-lab/tests/async_await.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  async-close:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build release checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - name: Fetch pinned Test262
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Select eight historical AsyncFromSyncIteratorPrototype cases
+        run: |
+          python3 - <<'PY'
+          import json
+          source=json.load(open('gc-lab/conformance/results-full/summary.json'))
+          cases=[x['path'] for x in source['failures']
+                 if x['path'].startswith('built-ins/AsyncFromSyncIteratorPrototype/')]
+          assert len(cases)==8, cases
+          json.dump(cases,open('async-from-sync-cases.json','w'),indent=2)
+          PY
+      - name: Require eight official cases in Tree VM with normal and stress GC
+        shell: bash
+        run: |
+          for engine in tree vm; do
+            for gc in normal stress; do
+              extra=()
+              if [ "$gc" = "stress" ]; then extra+=(--gc-stress); fi
+              python3 gc-lab/conformance/run.py --profile full \
+                --source gc-lab/.test262-source \
+                --binary gc-lab/target/release/js_check \
+                --paths-file async-from-sync-cases.json \
+                --engine "$engine" "${extra[@]}" \
+                --workers 2 --retry-timeouts 1 \
+                --output "gc-lab/conformance/async-close-$engine-$gc"
+              python3 - "$engine" "$gc" <<'PY'
+          import json,sys
+          engine,gc=sys.argv[1:]
+          s=json.load(open(f'gc-lab/conformance/async-close-{engine}-{gc}/summary.json'))
+          print(engine,gc,s['counts'])
+          assert s['total']==8 and s['counts'].get('passed')==8, s
+          PY
+            done
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: async-from-sync-close-results
+          path: gc-lab/conformance/async-close-*/
