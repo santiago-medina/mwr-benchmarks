@@ -15,6 +15,7 @@ on:
       - 'gc-lab/src/script/bigint_vm.rs'
       - 'gc-lab/src/script/loops.rs'
       - 'gc-lab/src/script/builtins.rs'
+      - 'gc-lab/tests/ordinary_objects.rs'
       - 'gc-lab/src/script/execute.rs'
       - 'gc-lab/src/script/regexp_builtins.rs'
       - 'gc-lab/src/script/classes.rs'
