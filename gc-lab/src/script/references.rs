@@ -114,7 +114,7 @@ impl Engine<'_> {
         match reference {
             Reference::Binding(env, name, strict) => {
                 self.assign_binding_hinted(env, name, value.clone(), None, strict)?
-            },
+            }
             Reference::WithBinding(object, name, strict) => {
                 // §9.1.1.2.5 SetMutableBinding steps 1-3.
                 if !self.has(object, name)? && strict {
