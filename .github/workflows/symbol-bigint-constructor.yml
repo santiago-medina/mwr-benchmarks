@@ -30,7 +30,10 @@ jobs:
           for path in paths:
             for engine in ('tree','vm'):
               for stress in (False,True):
-                cmd=['gc-lab/target/release/js_check',root+path,'--engine='+engine]+(['--gc-stress'] if stress else [])
+                cmd=['gc-lab/target/release/js_check',root+path,'--engine='+engine]
+                if path in ('built-ins/Symbol/is-constructor.js','built-ins/BigInt/is-a-constructor.js'):
+                  cmd+=['--include=gc-lab/.test262-source/harness/isConstructor.js']
+                if stress: cmd.append('--gc-stress')
                 p=subprocess.run(cmd,text=True,capture_output=True,timeout=50)
                 print(path,engine,stress,p.returncode,p.stdout[-450:],p.stderr[-200:],flush=True)
                 d=json.loads(p.stdout)
