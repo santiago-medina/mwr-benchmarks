@@ -5,6 +5,7 @@ on:
       - '.github/workflows/full-conformance-audit.yml'
       - 'gc-lab/src/script/references.rs'
       - 'gc-lab/src/script/bytecode.rs'
+      - 'gc-lab/src/script/classes.rs'
   workflow_dispatch:
 permissions:
   contents: read
