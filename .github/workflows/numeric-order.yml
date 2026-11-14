@@ -1,0 +1,43 @@
+name: MWR numeric left-before-right conversion
+on:
+  push:
+    paths:
+      - '.github/workflows/numeric-order.yml'
+      - 'gc-lab/src/script/execute.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  numeric:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - name: Fetch pinned Test262
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Check eleven evaluation order cases in Tree and VM with and without GC stress
+        run: |
+          python3 - <<'PY'
+          import json,subprocess
+          base='gc-lab/.test262-source/test/language/expressions/'
+          operators=['bitwise-and','bitwise-or','bitwise-xor','division',
+                     'exponentiation','left-shift','modulus','multiplication',
+                     'right-shift','subtraction','unsigned-right-shift']
+          failures=[]
+          for op in operators:
+            for engine in ('tree','vm'):
+              for stress in (False,True):
+                cmd=['gc-lab/target/release/js_check',base+op+'/order-of-evaluation.js','--engine='+engine]
+                if stress: cmd.append('--gc-stress')
+                p=subprocess.run(cmd,capture_output=True,text=True,timeout=50)
+                try: d=json.loads(p.stdout)
+                except Exception: d={'status':'runner-error','reason':p.stdout[-300:]+p.stderr[-300:]}
+                print(op,engine,stress,p.returncode,d.get('status'),str(d.get('reason',''))[:200],flush=True)
+                if p.returncode!=0 or d.get('status')!='passed' or d.get('cleanup') is not True:
+                  failures.append([op,engine,stress,d])
+          print('total=44, failures=',len(failures))
+          assert not failures, failures[:4]
+          PY
