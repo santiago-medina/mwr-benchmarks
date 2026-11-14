@@ -1433,8 +1433,10 @@ impl Engine<'_> {
                     Value::String(_) => "String",
                     Value::Number(_) => "Number",
                     Value::Bool(_) => "Boolean",
-                    Value::Symbol(_) => "Symbol",
-                    Value::BigInt(_) => "BigInt",
+                    // Symbol and BigInt have no legacy built-in tag in
+                    // Object.prototype.toString; their ordinary tag comes from
+                    // the inherited @@toStringTag and may be overwritten.
+                    Value::Symbol(_) | Value::BigInt(_) => "Object",
                     // §20.1.3.6 step 4: IsArray sees through proxies; other proxies have no brand slots.
                     Value::Object(id) if self.is_proxy(*id) => {
                         if self.is_array(&receiver)? {
@@ -1455,7 +1457,9 @@ impl Engine<'_> {
                         } else if d.array {
                             "Array"
                         } else if d.iterator.is_some() {
-                            "Array Iterator"
+                            // "Array Iterator" is normally obtained from the
+                            // prototype's @@toStringTag, not from builtinTag.
+                            "Object"
                         } else if d.arguments {
                             "Arguments"
                         } else if d.error_class.is_some() {
