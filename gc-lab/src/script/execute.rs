@@ -1399,6 +1399,12 @@ impl Engine<'_> {
                 constructor: true, ..
             }) => self.proxy_construct(id, args, new_target),
             Some(Object::Builtin { name, .. }) => {
+                // Both functions have [[Construct]] but always reject construction,
+                // including Reflect.construct with a custom newTarget. No argument
+                // coercion is allowed before this TypeError.
+                if matches!(name.as_str(), "Symbol" | "BigInt") {
+                    return self.throw_error("TypeError", "Symbol and BigInt cannot be constructed");
+                }
                 // New String(symbol) applies ToString, unlike String(symbol)
                 // called as a function, which uses SymbolDescriptiveString.
                 if name == "String" && matches!(args.first(), Some(Value::Symbol(_))) {
