@@ -54,6 +54,13 @@ impl Engine<'_> {
             .is_some())
     }
     fn set_insert(&mut self, id: Id, key: Value) -> Result<()> {
+        // SetData stores +0 even when a set-like iterator yields -0.
+        // Table::write canonicalizes the lookup key but not the stored value.
+        let key = if matches!(&key, Value::Number(bits) if f64::from_bits(*bits) == 0.0) {
+            Value::number(0.0)
+        } else {
+            key
+        };
         let mut data = self.data(id)?.clone();
         data.collection.as_mut().unwrap().write(key.clone(), key);
         self.replace_data(id, data)
