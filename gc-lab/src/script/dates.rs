@@ -34,7 +34,7 @@ fn full_year(year: f64) -> f64 {
     }
 }
 impl Engine<'_> {
-    fn date_value(&mut self, value: Value) -> Result<(Id, f64)> {
+    pub(super) fn date_value(&mut self, value: Value) -> Result<(Id, f64)> {
         if let Value::Object(id) = value {
             if let Some(time) = self.data(id).ok().and_then(|d| d.date) {
                 return Ok((id, f64::from_bits(time)));
@@ -186,6 +186,8 @@ impl Engine<'_> {
         ] {
             methods.push((name.into(), 0));
         }
+        #[cfg(feature = "temporal")]
+        methods.push(("toTemporalInstant".into(), 0));
         methods.extend([
             ("setTime".into(), 1),
             ("setYear".into(), 1),
@@ -259,6 +261,10 @@ impl Engine<'_> {
                     "string" | "default" => self.ordinary_to_primitive(receiver, true),
                     _ => self.throw_error("TypeError", "invalid Date conversion hint"),
                 };
+            }
+            #[cfg(feature = "temporal")]
+            "Date.prototype.toTemporalInstant" => {
+                return self.date_to_temporal_instant(receiver);
             }
             "Date.prototype.toJSON" => {
                 let object = self.object_coercible(receiver)?;
