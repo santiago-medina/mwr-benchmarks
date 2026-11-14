@@ -1,0 +1,28 @@
+name: MWR eval reference capture diagnostic
+on:
+  push:
+    paths:
+      - '.github/workflows/eval-reference-triage.yml'
+      - 'gc-lab/conformance/audit_binding_eval.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build JS checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - name: Fetch pinned Test262
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Diagnose 14 direct-eval assignment cases across Tree VM and GC modes
+        run: python3 gc-lab/conformance/audit_binding_eval.py gc-lab/target/release/js_check gc-lab/.test262-source
+      - name: Upload per-case diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mwr-eval-reference-diagnostics
+          path: binding-eval-results.json
