@@ -29,10 +29,7 @@ del resultado exigida por el algoritmo y los efectos observables del
 constructor de la capacidad. Mantener los dos casos como fallos del corpus
 hasta corroborar si existen erratas/cambios normativos en TC39/Test262.
 
-**Comprobación independiente:** `.github/workflows/promise-try-spec.yml`
-verifica con Node.js 24 el contrato de identidad de `Promise.try` y su
-subclase, sin alterar la VM ni cambiar el corpus de resultados. Registrar
-Node.js y revisión del snapshot utilizados.
+**Comprobación independiente completada:** [GitHub Actions run 43568534837](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43568534837), con Node.js 24: tanto `Promise.try(() => p)` como `SubPromise.try(() => p)` devuelven una promesa **distinta** de `p`, y la de la subclase conserva su tipo. Se confirmó la diferencia del resultado esperado por esas dos pruebas de Test262, sin modificar la VM ni maquillar el corpus. Pendiente de aclarar con upstream por qué esas pruebas exigen identidad.
 
 ## Normas de clasificación
 
