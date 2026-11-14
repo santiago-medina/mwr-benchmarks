@@ -36,7 +36,7 @@ def family(path):
 
 
 def escape(text):
-    return str(text).replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+    return str(text).replace("|", "\\\|").replace("\n", " ").replace("\r", " ")
 
 
 def main():
@@ -63,8 +63,8 @@ def main():
     lines = [
         "# Test262 full — diagnóstico reproducible",
         "",
-        f"Snapshot Test262: \`{summary['revision']}\`. Perfil: \`{summary['profile']}\`.",
-        f"Motor SHA256: \`{summary.get('implementation_sha256', 'unknown')}\`.",
+        f"Snapshot Test262: `{summary['revision']}`. Perfil: `{summary['profile']}`.",
+        f"Motor SHA256: `{summary.get('implementation_sha256', 'unknown')}`.",
         "",
         "| Resultado | Casos |",
         "|---|---:|",
@@ -88,7 +88,7 @@ def main():
     for label, entries in groups:
         lines += [f"### {label} ({len(entries)})", ""]
         for e in entries:
-            lines.append(f"- \`{e['path']}\` — {escape(e.get('reason', ''))[:200]}")
+            lines.append(f"- `{e['path']}` — {escape(e.get('reason', ''))[:200]}")
         lines.append("")
 
     lines += ["## Casos no soportados", "", "| Motivo | Casos |",
@@ -110,12 +110,12 @@ def main():
             f"Casos que eran fallidos y ahora no: **{len(fixed)}**.",
             f"Casos fallidos nuevos frente a esa referencia: **{len(introduced)}**.",
             "",
-            "Este cálculo solo compara los elementos \`failed\` de ambas listas.",
-            "Una transición a \`unsupported\` requiere inspeccionar también \`cases.json\`.",
+            "Este cálculo solo compara los elementos `failed` de ambas listas.",
+            "Una transición a `unsupported` requiere inspeccionar también `cases.json`.",
             "",
         ]
-        lines += [f"- Nuevo fallo: \`{p}\`" for p in introduced]
-        lines += [f"- Ya no falla: \`{p}\`" for p in fixed]
+        lines += [f"- Nuevo fallo: `{p}`" for p in introduced]
+        lines += [f"- Ya no falla: `{p}`" for p in fixed]
         lines.append("")
 
     lines += [
