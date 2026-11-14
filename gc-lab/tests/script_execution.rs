@@ -37,7 +37,12 @@ fn direct_eval_var_shadowing_preserves_original_assignment_reference() {
         e.collect();
         e.release_globals();
         assert_eq!(
-            (e.live_objects(), e.metadata_objects(), e.live_roots(), e.charged_bytes()),
+            (
+                e.live_objects(),
+                e.metadata_objects(),
+                e.live_roots(),
+                e.charged_bytes()
+            ),
             (0, 0, 0, 0)
         );
     }
