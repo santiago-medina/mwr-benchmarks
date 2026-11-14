@@ -1746,10 +1746,8 @@ impl Engine<'_> {
                 Err(error) => return Err(error),
             };
             self.protect(&wrapper)?;
-            let fulfilled = self.internal_function(
-                super::promises::Internal::IterResult { done },
-                1,
-            )?;
+            let fulfilled =
+                self.internal_function(super::promises::Internal::IterResult { done }, 1)?;
             let rejected = if done || !close_on_rejection {
                 None
             } else {
