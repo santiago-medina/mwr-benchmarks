@@ -1,0 +1,59 @@
+name: MWR Date toTemporalInstant conformance
+on:
+  push:
+    paths:
+      - '.github/workflows/date-temporal-instant.yml'
+      - 'gc-lab/src/script/dates.rs'
+      - 'gc-lab/src/script/temporal.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  date-instant:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build Temporal-enabled checker
+        run: cargo +stable build --manifest-path gc-lab/temporal/Cargo.toml --release --locked
+      - name: Fetch pinned Test262
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Select eight official Date.prototype.toTemporalInstant cases
+        run: |
+          python3 - <<'PY'
+          import json
+          old=json.load(open('gc-lab/conformance/results-full/summary.json'))
+          cases=[x['path'] for x in old['failures']
+                 if x['path'].startswith('built-ins/Date/prototype/toTemporalInstant/')]
+          assert len(cases)==8,cases
+          json.dump(cases,open('date-to-temporal-cases.json','w'),indent=2)
+          PY
+      - name: Require all eight cases in Tree VM and GC normal stress
+        shell: bash
+        run: |
+          for engine in tree vm; do
+            for gc in normal stress; do
+              extra=()
+              if [ "$gc" = "stress" ]; then extra+=(--gc-stress); fi
+              python3 gc-lab/conformance/run.py --profile full \
+                --source gc-lab/.test262-source \
+                --binary gc-lab/temporal/target/release/js_check \
+                --paths-file date-to-temporal-cases.json \
+                --engine "$engine" "${extra[@]}" \
+                --workers 2 --retry-timeouts 1 \
+                --output "gc-lab/conformance/date-instant-$engine-$gc"
+              python3 - "$engine" "$gc" <<'PY'
+          import json,sys
+          engine,gc=sys.argv[1:]
+          s=json.load(open(f'gc-lab/conformance/date-instant-{engine}-{gc}/summary.json'))
+          print(engine,gc,s['counts'])
+          assert s['total']==8 and s['counts'].get('passed')==8,s
+          PY
+            done
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: date-temporal-instant-conformance
+          path: gc-lab/conformance/date-instant-*/
