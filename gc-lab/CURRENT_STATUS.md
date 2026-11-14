@@ -1,7 +1,7 @@
 # MWR JavaScript engine — estado verificable y prioridades
 
 > Auditoría documental: 2026-11-14. Referencia inmóvil: `74cad3d318ca74ae424d063a4e7f0f71b2f73a86` (rama `codex/gc-host-boundary`).
-> Este informe se obtuvo leyendo código, configuración e informes versionados. **No se compiló ni ejecutó la suite durante esta auditoría**. Los porcentajes son resultados históricos declarados, no una verificación nueva.
+> El primer inventario se basó solo en código y registros; **las secciones de verificación nueva más abajo incorporan pruebas ejecutadas después en GitHub Actions**. Los resultados históricos conservan su referencia y se distinguen de los resultados actuales.
 
 ## Dónde está realmente el motor
 
@@ -117,3 +117,36 @@ La rama de auditoría ejecutó correctamente el workflow existente `GC laborator
 **Perfil completo:** se añadió un workflow separado en `.github/workflows/full-conformance-audit.yml` para ejecutarlo con `--profile full`, guardar los 47 708 resultados individuales y comparar las cifras frente a `results-full/summary.json`. No sustituir la línea histórica `47 458 / 47 708` por una cifra nueva hasta disponer de los resultados de ese workflow. La ejecución de auditoría se inició como [run 43562974007](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43562974007).
 
 **Alcance:** esto verifica los jobs mencionados, no «todos los tests» que existen o podrían ejecutarse en el repositorio. La máquina local de la sesión no dispone de `rustc` y no tiene acceso de red a GitHub; la evidencia reproducible procede de GitHub Actions.
+
+## Auditoría completa reproducida — 2026-11-14
+
+Workflow: [MWR full Test262 audit, run 43563559791](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43563559791), commit `3ccd666849436222aaa0fe26ab162ba8f0c09c5c`. El ejecutable se construyó con `gc-lab/temporal/Cargo.toml` en release: **es necesario usar esta variante para el perfil `full`**, dado que la crate base no habilita `Temporal`.
+
+| Estado | Full53 histórico | Ejecución nueva |
+|---|---:|---:|
+| Passed | 47 458 | **47 460** |
+| Failed | 142 | **140** |
+| Unsupported | 108 | **108** |
+| Total | 47 708 | **47 708** |
+
+- Snapshot Test262: `e4fbf57745c6aae3d1f12f181ecef78b1665d812` (idéntico).
+- No hubo timeouts; `--retry-timeouts 1` no necesitó reintentos.
+- La diferencia neta de dos casos coincide con los antiguos fallos de `decodeURI` y `decodeURIComponent` por timeout, que no figuran entre los fallos actuales.
+- El workflow conserva `cases.json` y `summary.json` como artifact `mwr-test262-full-audit`; esto permite revisar las **140 rutas fallidas** individualmente.
+- **Importante:** la conclusión `success` de ese workflow significa que se ejecutó y se guardó el informe; el runner devuelve un código no cero por los 140 fallos conocidos y el job conserva resultados para análisis. No declarar 100 % de tests aprobados.
+
+### Error de configuración identificado y corregido
+
+La primera ejecución ([run 43562974007](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43562974007)) usó por error el binario sin Temporal, produciendo 42 847 passes, 4 753 fallos y 108 no soportados. **4 167** errores decían `Temporal is not defined`. Esos números no son una regresión del motor y no deben reemplazar el checkpoint. La nueva ejecución usa el binario correcto. Mantener las dos referencias de CI como evidencia de la configuración correcta.
+
+### Verificación de GC/VM y estática
+
+[Run 43563646596](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43563646596): **32/32** escenarios de smoke (`gc-lab/conformance/audit_vm_gc.py`), cruzando ocho programas con `EngineMode::{Tree,Vm}` y GC normal/estrés. [Run 43563769700](https://github.com/santiago-medina/mwr-benchmarks/actions/runs/43563769700): la misma matriz **32/32**, tests release de la crate Temporal **13/13**, comprobación de sintaxis Python correcta y `cargo clippy --all-targets` concluido correctamente. Clippy informa **80 advertencias** de biblioteca (82 en el target de pruebas, con duplicados), que requieren triage pero no son errores de compilación. Estos 32 escenarios son un muestreo nuevo, no la suite completa bajo GC stress.
+
+### Pendiente de ejecución independiente
+
+- `servo-native` se omitió en el workflow de CI ordinario: requiere `workflow_dispatch` o commit con `[servo]`, descarga/fuente Servo fijada y compilación extensa. El puente de Servo/DOM sí pasó.
+- No se ejecutaron `47 708` casos en cada combinación `Tree/Vm` y GC normal/estrés. El perfil completo documentado se ejecutó en VM con GC por umbral.
+- Benchmark de rendimiento: deben conservarse hardware, compilador, `callgrind`/tiempo y binario antes de comparar velocidades. Los benchmarks de checkpoints anteriores son históricos.
+
+**Próximo desarrollo:** abordar las 140 fallidas por causas comunes (orden de evaluación/referencias, Promise/AsyncFromSyncIterator, primitivos de String y Date) y las 108 no soportadas como soporte de sintaxis/host y UTF-16. Cada corrección debe incorporar un repro mínimo y pruebas en Tree, Vm y GC stress, seguido del perfil completo para comprobar no regresiones.
