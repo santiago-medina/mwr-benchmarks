@@ -34,10 +34,16 @@ impl Engine<'_> {
         if kind == FunctionKind::DerivedConstructor {
             declarations.push(Stmt::Let("this".into(), Expr::Undefined));
         }
-        // When a default initializer performs sloppy direct eval, VarEnv must
-        // be this parameter environment, not the caller's outer function/global
-        // record. The body gets its own function-scope record below.
-        let parameters = self.new_environment(Some(parent), &declarations, true)?;
+        // Arrow default initializers execute in a parameter-local VarEnv.
+        // Preserve the established non-arrow path: marking every parameter
+        // record as function_scope changes direct eval and arguments binding
+        // semantics of ordinary and async functions (Test262 regression).
+        let parameter_var_scope = matches!(kind, FunctionKind::Arrow);
+        let parameters = self.new_environment(
+            Some(parent),
+            &declarations,
+            parameter_var_scope,
+        )?;
         self.protect(&Value::Object(parameters))?;
         let sloppy = matches!(body.first(), Some(Stmt::Sloppy));
         let simple = params.iter().all(|p| {
