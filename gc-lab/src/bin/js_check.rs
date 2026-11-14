@@ -283,7 +283,16 @@ fn main() {
         Some(format!("$DONE: {error}"))
     } else if asynchronous && done != 1 {
         Some(format!("expected one $DONE, got {done}"))
-    } else if let Some(error) = e.unhandled_test_failure() {
+    // A synchronous Test262 case can deliberately leave a rejected Promise
+    // (e.g. Promise.all converting an abrupt completion to rejection).
+    // HostPromiseRejectionTracker is host-defined; those rejections are not
+    // assertion failures. Async cases must still report unhandled Test262Error,
+    // in addition to requiring exactly one explicit $DONE completion.
+    } else if let Some(error) = (if asynchronous {
+        e.unhandled_test_failure()
+    } else {
+        None
+    }) {
         Some(error)
     } else {
         let errors = e.take_microtask_errors();
