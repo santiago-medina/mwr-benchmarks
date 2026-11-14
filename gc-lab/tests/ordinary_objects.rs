@@ -34,6 +34,10 @@ fn set_algebra_normalizes_negative_zero() {
     check("const minus={size:1,has(){return true;},keys(){return [-0].values();}};const u=new Set([1]).union(minus);assert.sameValue(Object.is([...u][1],+0),true);const s=new Set([1]).symmetricDifference(minus);assert.sameValue(Object.is([...s][1],+0),true);const i=new Set([0,1,2]).intersection(minus);assert.sameValue(Object.is([...i][0],+0),true);");
 }
 #[test]
+fn regexp_symbol_hooks_are_not_read_on_primitive_arguments() {
+    check("Object.defineProperty(Number.prototype,Symbol.match,{get(){throw Error('match hook');}});assert.sameValue('a1b'.match(1)[0],'1');Object.defineProperty(Boolean.prototype,Symbol.search,{get(){throw Error('search hook');}});assert.sameValue('atrueb'.search(true),1);Object.defineProperty(String.prototype,Symbol.matchAll,{get(){throw Error('matchAll hook');}});const matches=Array.from('a,b,c'.matchAll(','));assert.sameValue(matches.length,2);assert.sameValue(matches[0].index,1);");
+}
+#[test]
 fn identity_and_numbers() {
     check("const a={x:2};const b=a;b.x=b.x+3;assert.sameValue(a.x,5);assert.notSameValue(a,{});assert.sameValue(NaN,NaN);assert.notSameValue(0,-0);");
 }

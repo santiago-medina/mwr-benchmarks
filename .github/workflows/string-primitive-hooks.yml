@@ -1,0 +1,47 @@
+name: MWR String primitive regexp hooks
+on:
+  push:
+    paths:
+      - '.github/workflows/string-primitive-hooks.yml'
+      - 'gc-lab/src/script/regexp_builtins.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  string-regexp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - name: Fetch pinned Test262
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Check 11 official String hook cases on Tree and VM with normal and stress GC
+        run: |
+          python3 - <<'PY'
+          import json,subprocess,pathlib
+          root=pathlib.Path('gc-lab/.test262-source/test/built-ins/String/prototype')
+          cases=(
+            ('match',('bigint','boolean','number','string')),
+            ('matchAll',('bigint','number','string')),
+            ('search',('bigint','boolean','number','string')),
+          )
+          passed=0
+          for method,types in cases:
+            for primitive in types:
+              name={'match':'matcher','matchAll':'matchall','search':'search'}[method]
+              path=root/method/f'cstm-{name}-on-{primitive}-primitive.js'
+              assert path.exists(),str(path)
+              for mode in ('tree','vm'):
+                for stress in (False,True):
+                  cmd=['gc-lab/target/release/js_check',str(path),'--engine='+mode]+(['--gc-stress'] if stress else [])
+                  p=subprocess.run(cmd,capture_output=True,text=True,timeout=45)
+                  print(method,primitive,mode,stress,p.returncode,p.stdout[-350:],p.stderr[-150:],flush=True)
+                  data=json.loads(p.stdout)
+                  assert p.returncode==0 and data['status']=='passed' and data['cleanup'] is True,(cmd,data)
+                  passed+=1
+          print('passed',passed,'of',44)
+          assert passed==44
+          PY
