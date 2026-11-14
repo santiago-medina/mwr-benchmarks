@@ -5,6 +5,7 @@ use super::{
     vm::{Engine, ScriptError, Value},
 };
 use crate::dual::Id;
+use std::cell::RefCell;
 type Result<T> = std::result::Result<T, ScriptError>;
 pub(super) enum Reference<'a> {
     Binding(Id, &'a str),
@@ -17,7 +18,7 @@ pub(super) enum Reference<'a> {
     Property(Value, Key, bool),
     /// Computed reference retains the key value until GetValue/PutValue.
     /// For plain assignment ToPropertyKey runs after RHS evaluation (§6.2.5).
-    Computed(Value, Value, bool),
+    Computed(Value, Value, RefCell<Option<Key>>, bool),
     /// `this`, the [[HomeObject]]'s prototype, the key and strictness.
     Super(Value, Option<Id>, Key, bool),
 }
@@ -60,7 +61,7 @@ impl Engine<'_> {
                 self.protect(&base)?;
                 let key = self.eval(key, env)?;
                 self.protect(&key)?;
-                Ok(Reference::Computed(base, key, self.env_strict(env)))
+                Ok(Reference::Computed(base, key, RefCell::new(None), self.env_strict(env)))
             }
             Expr::SuperMember(_) | Expr::SuperComputed(_) => {
                 let (this, target, key) = self.super_key(target, env)?;
@@ -87,8 +88,14 @@ impl Engine<'_> {
                 self.throw_error("ReferenceError", &format!("{name} is not defined"))
             }
             Reference::Property(base, key, _) => self.get_member(base.clone(), key),
-            Reference::Computed(base, key, _) => {
-                let key = self.member_key(base, key.clone())?;
+            Reference::Computed(base, raw, cached, _) => {
+                let key = if let Some(key) = cached.borrow().as_ref() {
+                    key.clone()
+                } else {
+                    let key = self.member_key(base, raw.clone())?;
+                    *cached.borrow_mut() = Some(key.clone());
+                    key
+                };
                 self.get_member(base.clone(), key)
             }
             Reference::Super(this, target, key, _) => self.super_get(this.clone(), *target, key),
@@ -111,8 +118,13 @@ impl Engine<'_> {
             Reference::Property(base, key, strict) => {
                 self.assign_member(base, key, value.clone(), strict)?
             }
-            Reference::Computed(base, key, strict) => {
-                let key = self.member_key(&base, key)?;
+            Reference::Computed(base, raw, cached, strict) => {
+                // GetValue in compound/update expressions has already converted
+                // and memoized the key. Plain assignment converts it here, after RHS.
+                let key = match cached.into_inner() {
+                    Some(key) => key,
+                    None => self.member_key(&base, raw)?,
+                };
                 self.assign_member(base, key, value.clone(), strict)?
             }
             Reference::Super(this, target, key, strict) => {
