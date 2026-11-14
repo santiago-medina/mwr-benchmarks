@@ -268,7 +268,11 @@ impl Engine<'_> {
                 "length",
                 Descriptor {
                     value: Some(Value::number(
-                        if method == "asIntN" || method == "asUintN" { 2.0 } else { 0.0 },
+                        if method == "asIntN" || method == "asUintN" {
+                            2.0
+                        } else {
+                            0.0
+                        },
                     )),
                     ..Default::default()
                 },
