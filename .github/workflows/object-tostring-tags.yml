@@ -1,0 +1,36 @@
+name: MWR Object toString builtin fallback tags
+on:
+  push:
+    paths:
+      - '.github/workflows/object-tostring-tags.yml'
+      - 'gc-lab/src/script/builtins.rs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  object-tags:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Build checker
+        run: cargo +stable build --manifest-path gc-lab/Cargo.toml --bin js_check --release --offline
+      - name: Fetch pinned Test262
+        run: python3 gc-lab/conformance/fetch.py
+      - name: Verify Object toString tag tests across Tree and VM with GC normal and stress
+        run: |
+          python3 - <<'PY'
+          import json,subprocess
+          root='gc-lab/.test262-source/test/built-ins/Object/prototype/toString/'
+          cases=('symbol-tag-array-builtin.js','symbol-tag-non-str-bigint.js','symbol-tag-non-str-builtin.js')
+          for case in cases:
+            for engine in ('tree','vm'):
+              for stress in (False,True):
+                cmd=['gc-lab/target/release/js_check',root+case,'--engine='+engine]+(['--gc-stress'] if stress else [])
+                p=subprocess.run(cmd,capture_output=True,text=True,timeout=45)
+                print(case,engine,stress,p.returncode,p.stdout[-500:],p.stderr[-300:],flush=True)
+                d=json.loads(p.stdout)
+                assert p.returncode==0 and d['status']=='passed' and d['cleanup'] is True,(case,engine,stress,d)
+          print('12/12 passed')
+          PY

@@ -42,6 +42,11 @@ fn string_symbol_function_call_vs_constructor() {
     check("const symbol=Symbol('66');assert.sameValue(String(symbol),'Symbol(66)');assert.throws(TypeError,function(){new String(symbol);});assert.throws(TypeError,function(){Reflect.construct(String,[symbol]);});");
 }
 #[test]
+fn object_tostring_uses_inherited_tag_and_object_fallback_for_special_primitives() {
+    check("const iterator=[][Symbol.iterator]();const p=Object.getPrototypeOf(iterator);assert.sameValue(Object.prototype.toString.call(iterator),'[object Array Iterator]');Object.defineProperty(p,Symbol.toStringTag,{configurable:true,value:null});assert.sameValue(Object.prototype.toString.call(iterator),'[object Object]');delete p[Symbol.toStringTag];assert.sameValue(Object.prototype.toString.call(iterator),'[object Iterator]');");
+    check("delete Symbol.prototype[Symbol.toStringTag];assert.sameValue(Object.prototype.toString.call(Symbol('x')),'[object Object]');Object.defineProperty(BigInt.prototype,Symbol.toStringTag,{value:null});assert.sameValue(Object.prototype.toString.call(BigInt(0)),'[object Object]');assert.sameValue(Object.prototype.toString.call(Object(BigInt(0))),'[object Object]');");
+}
+#[test]
 fn identity_and_numbers() {
     check("const a={x:2};const b=a;b.x=b.x+3;assert.sameValue(a.x,5);assert.notSameValue(a,{});assert.sameValue(NaN,NaN);assert.notSameValue(0,-0);");
 }
