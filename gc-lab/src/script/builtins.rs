@@ -263,6 +263,7 @@ impl Engine<'_> {
             "Object.prototype.__defineGetter__" | "Object.prototype.__defineSetter__" => 2,
             "SuppressedError" => 3,
             "AggregateError"
+            | "Object.assign"
             | "Object.hasOwn"
             | "Object.groupBy"
             | "Map.groupBy"
@@ -992,7 +993,17 @@ impl Engine<'_> {
             Some(self.intrinsics.as_ref().unwrap().function)
         };
         let name = self.get_member(target.clone(), "name")?;
-        let length = self.get_member(target.clone(), "length")?;
+        // §20.2.3.2: only own length is read; inherited values are ignored.
+        // [[GetOwnProperty]] also preserves Proxy trap behavior.
+        let has_own_length = match &target {
+            Value::Object(id) => self.own(*id, "length")?.is_some(),
+            _ => false,
+        };
+        let length = if has_own_length {
+            self.get_member(target.clone(), "length")?
+        } else {
+            Value::Undefined
+        };
         let n = if let Value::Number(n) = length {
             (f64::from_bits(n).trunc() - args.len() as f64).max(0.0)
         } else {
