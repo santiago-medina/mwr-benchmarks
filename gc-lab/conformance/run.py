@@ -25,6 +25,9 @@ def items(value):
 def main():
     p=argparse.ArgumentParser(__doc__)
     p.add_argument('--workers',type=int,default=4)
+    p.add_argument('--engine',choices=['tree','vm'],default=None,help='explicit JS evaluator; default keeps checker setting')
+    p.add_argument('--gc-stress',action='store_true',help='force a GC at every allocation boundary')
+    p.add_argument('--paths-file',type=Path,default=None,help='JSON paths list or full summary.json failures')
     p.add_argument('--profile',choices=['objects','arrays','promises','async','temporal','full'],default='objects')
     p.add_argument('--source',type=Path,required=True)
     p.add_argument('--binary',type=Path,default=HERE.parent/'target/release/js_check')
@@ -39,6 +42,15 @@ def main():
     args.output=args.output or HERE/('results'+suffix)
     cases=sorted({path for scope in scopes for path in (root.glob(scope) if '*' in scope else (root/scope).rglob('*.js')) if not path.name.endswith('_FIXTURE.js')})
     assert all((root/(scope.split('/*')[0])).is_dir() for scope in scopes), 'Missing scope'
+    if args.paths_file:
+        selection=json.loads(args.paths_file.read_text())
+        if isinstance(selection,dict):
+            selection=[item['path'] for item in selection['failures']]
+        assert isinstance(selection,list) and all(isinstance(p,str) for p in selection), 'Invalid path list'
+        selected=set(selection)
+        available={path.relative_to(root).as_posix() for path in cases}
+        assert selected and selected <= available, 'Missing requested cases: '+str(sorted(selected-available)[:5])
+        cases=[path for path in cases if path.relative_to(root).as_posix() in selected]
     def run(path):
         source=path.read_text();meta=re.search(r'/\*---(.*?)---\*/',source,re.S)
         assert meta, path
@@ -55,7 +67,7 @@ def main():
         expected=re.search(r'type:\s*(\w+)',negative) if negative else None
         parse_negative=bool(negative) and re.search(r'phase:\s*parse',negative) is not None
         resolution_negative=bool(negative) and re.search(r'phase:\s*resolution',negative) is not None
-        command=[str(binary),str(path)] + ([expected.group(1)] if expected else []) + (['--negative-parse'] if parse_negative else []) + (['--negative-resolution'] if resolution_negative else []) + (['--module'] if 'module' in flags else []) + (['--strict-only'] if parse_negative and 'onlyStrict' in flags else []) + (['--async'] if 'async' in flags else []) + (['--can-block'] if 'CanBlockIsFalse' not in flags else []) + (['--sloppy'] if 'noStrict' in flags or 'raw' in flags else []) + (['--include='+str(root.parent/'harness'/i) for i in includes] if args.profile in ('temporal','full') and 'raw' not in flags else [])
+        command=[str(binary),str(path)] + ([f'--engine={args.engine}'] if args.engine else []) + (['--gc-stress'] if args.gc_stress else []) + ([expected.group(1)] if expected else []) + (['--negative-parse'] if parse_negative else []) + (['--negative-resolution'] if resolution_negative else []) + (['--module'] if 'module' in flags else []) + (['--strict-only'] if parse_negative and 'onlyStrict' in flags else []) + (['--async'] if 'async' in flags else []) + (['--can-block'] if 'CanBlockIsFalse' not in flags else []) + (['--sloppy'] if 'noStrict' in flags or 'raw' in flags else []) + (['--include='+str(root.parent/'harness'/i) for i in includes] if args.profile in ('temporal','full') and 'raw' not in flags else [])
         try:
             r=subprocess.run(command,capture_output=True,text=True,timeout=10)
             data=json.loads(r.stdout)
@@ -81,6 +93,7 @@ def main():
     for path in sorted((HERE.parent/'src').rglob('*.rs')):
         implementation.update(path.relative_to(HERE.parent).as_posix().encode()+b'\0'+path.read_bytes())
     summary=dict(revision=REVISION,archive_sha256='01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb',implementation_sha256=implementation.hexdigest(),runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),new_failures=new_failures,variant='scripts: strict prefix, or sloppy for noStrict/raw; modules (full profile): includes as scripts, then the module record; original test body',profile=args.profile,retry_timeouts=retry,scopes=scopes,total=len(results),counts=counts,assertions=sum(r['assertions'] for r in results),regressions=regressions,unsupported_reasons=dict(collections.Counter(r['reason'] for r in results if r['status']=='unsupported')),failures=[r for r in results if r['status']=='failed'])
+    summary['audit_config']=dict(engine=args.engine or 'checker-default',gc_stress=args.gc_stress,paths_file=str(args.paths_file) if args.paths_file else None)
     args.output.mkdir(parents=True,exist_ok=True)
     (args.output/'cases.json').write_text(json.dumps(results,indent=2)+'\n')
     (args.output/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
