@@ -119,6 +119,11 @@ impl Engine<'_> {
     ) -> Result<Option<Value>> {
         if let Some(init) = init {
             self.statement(init, local, can_return)?;
+            // Evaluation of for-head initializer does not contribute to the
+            // ForStatement completion value. An expression init may have
+            // updated the eval completion; the loop body is the only source
+            // of a non-empty normal completion (§14.7.4.2).
+            self.set_completion(Value::Undefined)?;
         }
         let mut names = init.map(Stmt::iteration_names).unwrap_or_default();
         // CreatePerIterationEnvironment (§14.7.4.4) copies are observable only through
