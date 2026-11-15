@@ -908,7 +908,7 @@ pub mod root {
         }
         pub static WindowProxyClass: root::JSClass = unsafe { ::core::mem::zeroed() };
         pub unsafe extern "C" fn GetWindowProxyClass() -> *const root::JSClass {
-            crate::sys::unimplemented_entry("GetWindowProxyClass")
+            crate::sys::imp::GetWindowProxyClass()
         }
         pub unsafe extern "C" fn NewWindowProxy(
             aCx: *mut root::JSContext,
@@ -1284,7 +1284,7 @@ pub mod root {
             crate::sys::unimplemented_entry("JS_GetEmptyStringValue")
         }
         pub unsafe extern "C" fn JS_GetReservedSlot(obj: *mut root::JSObject, index: u32, dest: *mut root::JS::Value) {
-            crate::sys::unimplemented_entry("JS_GetReservedSlot")
+            crate::sys::imp::JS_GetReservedSlot(obj, index, dest)
         }
         pub unsafe extern "C" fn JS_GetRegExpFlags(
             cx: *mut root::JSContext,

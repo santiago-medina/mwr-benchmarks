@@ -11,7 +11,9 @@
 //! logic stays in the safe `gc_lab::script::embed` API.
 
 mod context;
+mod objects;
 mod proxy;
 
 pub use context::*;
+pub use objects::*;
 pub use proxy::*;

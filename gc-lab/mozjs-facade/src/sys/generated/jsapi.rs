@@ -5454,7 +5454,7 @@ pub mod root {
             }
             #[doc = " Tell the JS engine which Class is used for WindowProxy objects. Used by the\n functions below."]
             pub unsafe extern "C" fn SetWindowProxyClass(cx: *mut root::JSContext, clasp: *const root::JSClass) {
-                crate::sys::unimplemented_entry("SetWindowProxyClass")
+                crate::sys::imp::SetWindowProxyClass(cx, clasp)
             }
             #[doc = " Associates a WindowProxy with a Window (global object). `windowProxy` must\n have the Class set by SetWindowProxyClass."]
             pub unsafe extern "C" fn SetWindowProxy(
@@ -5512,7 +5512,7 @@ pub mod root {
                 crate::sys::unimplemented_entry("IsSystemRealm")
             }
             pub unsafe extern "C" fn IsSystemCompartment(comp: *mut root::JS::Compartment) -> bool {
-                crate::sys::unimplemented_entry("IsSystemCompartment")
+                crate::sys::imp::IsSystemCompartment(comp)
             }
             pub unsafe extern "C" fn IsSystemZone(zone: *mut root::JS::Zone) -> bool {
                 crate::sys::unimplemented_entry("IsSystemZone")
@@ -5532,7 +5532,7 @@ pub mod root {
                 crate::sys::unimplemented_entry("CompartmentHasLiveGlobal")
             }
             pub unsafe extern "C" fn IsSharableCompartment(comp: *mut root::JS::Compartment) -> bool {
-                crate::sys::unimplemented_entry("IsSharableCompartment")
+                crate::sys::imp::IsSharableCompartment(comp)
             }
             pub unsafe extern "C" fn ProtoKeyToClass(key: root::JSProtoKey) -> *const root::JSClass {
                 crate::sys::unimplemented_entry("ProtoKeyToClass")
@@ -7358,7 +7358,7 @@ pub mod root {
                 crate::sys::unimplemented_entry("GetCurrentRealmOrNull")
             }
             pub unsafe extern "C" fn GetObjectRealmOrNull(obj: *mut root::JSObject) -> *mut root::JS::Realm {
-                crate::sys::unimplemented_entry("GetObjectRealmOrNull")
+                crate::sys::imp::GetObjectRealmOrNull(obj)
             }
             pub unsafe extern "C" fn HasRealmInitializedGlobal(realm: *mut root::JS::Realm) -> bool {
                 crate::sys::unimplemented_entry("HasRealmInitializedGlobal")
@@ -7394,7 +7394,7 @@ pub mod root {
                 crate::sys::unimplemented_entry("SetRealmNameCallback")
             }
             pub unsafe extern "C" fn GetRealmGlobalOrNull(realm: *mut root::JS::Realm) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("GetRealmGlobalOrNull")
+                crate::sys::imp::GetRealmGlobalOrNull(realm)
             }
             pub unsafe extern "C" fn InitRealmStandardClasses(cx: *mut root::JSContext) -> bool {
                 crate::sys::unimplemented_entry("InitRealmStandardClasses")
@@ -7448,10 +7448,10 @@ pub mod root {
                 cx: *mut root::JSContext,
                 target: *mut root::JSObject,
             ) -> *mut root::JS::Realm {
-                crate::sys::unimplemented_entry("EnterRealm")
+                crate::sys::imp::EnterRealm(cx, target)
             }
             pub unsafe extern "C" fn LeaveRealm(cx: *mut root::JSContext, oldRealm: *mut root::JS::Realm) {
-                crate::sys::unimplemented_entry("LeaveRealm")
+                crate::sys::imp::LeaveRealm(cx, oldRealm)
             }
             #[doc = " Reset the seed for Math.random() within the current realm.\n\n Enables embedders to reset the seed at controlled points, e.g. after\n resuming execution from an instance snapshot of SpiderMonkey's VM."]
             pub unsafe extern "C" fn ResetRealmMathRandomSeed(cx: *mut root::JSContext) {
@@ -9349,7 +9349,7 @@ pub mod root {
             }
             #[doc = " Get the current realm's global. Returns nullptr if no realm has been\n entered."]
             pub unsafe extern "C" fn CurrentGlobalOrNull(cx: *mut root::JSContext) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("CurrentGlobalOrNull")
+                crate::sys::imp::CurrentGlobalOrNull(cx)
             }
             #[doc = " Get the current realm's global. Returns nullptr if no realm has been\n entered."]
             pub unsafe extern "C" fn CurrentGlobal(cx: *mut root::JSContext) -> *const *mut root::JSObject {
@@ -9357,7 +9357,7 @@ pub mod root {
             }
             #[doc = " Get the global object associated with an object's realm. The object must not\n be a cross-compartment wrapper (because CCWs are shared by all realms in the\n compartment)."]
             pub unsafe extern "C" fn GetNonCCWObjectGlobal(obj: *mut root::JSObject) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("GetNonCCWObjectGlobal")
+                crate::sys::imp::GetNonCCWObjectGlobal(obj)
             }
         #[repr(u32)]
         #[doc = " During global creation, we fire notifications to callbacks registered\n via the Debugger API. These callbacks are arbitrary script, and can touch\n the global in arbitrary ways. When that happens, the global should not be\n in a half-baked state. But this creates a problem for consumers that need\n to set slots on the global to put it in a consistent state.\n\n This API provides a way for consumers to set slots atomically (immediately\n after the global is created), before any debugger hooks are fired. It's\n unfortunately on the clunky side, but that's the way the cookie crumbles.\n\n If callers have no additional state on the global to set up, they may pass\n |FireOnNewGlobalHook| to JS_NewGlobalObject, which causes that function to\n fire the hook as its final act before returning. Otherwise, callers should\n pass |DontFireOnNewGlobalHook|, which means that they are responsible for\n invoking JS_FireOnNewGlobalObject upon successfully creating the global. If\n an error occurs and the operation aborts, callers should skip firing the\n hook. But otherwise, callers must take care to fire the hook exactly once\n before compiling any script in the global's scope (we have assertions in\n place to enforce this). This lets us be sure that debugger clients never miss\n breakpoints."]
@@ -12772,7 +12772,7 @@ pub mod root {
         >;
             #[doc = " Get the HostLoadImportedModule hook for the runtime."]
             pub unsafe extern "C" fn GetModuleLoadHook(rt: *mut root::JSRuntime) -> root::JS::ModuleLoadHook {
-                crate::sys::unimplemented_entry("GetModuleLoadHook")
+                crate::sys::imp::GetModuleLoadHook(rt)
             }
             #[doc = " Set the HostLoadImportedModule hook for the runtime to the given function."]
             pub unsafe extern "C" fn SetModuleLoadHook(rt: *mut root::JSRuntime, func: root::JS::ModuleLoadHook) {
@@ -12819,7 +12819,7 @@ pub mod root {
         >;
             #[doc = " Get the hook for populating the import.meta metadata object."]
             pub unsafe extern "C" fn GetModuleMetadataHook(rt: *mut root::JSRuntime) -> root::JS::ModuleMetadataHook {
-                crate::sys::unimplemented_entry("GetModuleMetadataHook")
+                crate::sys::imp::GetModuleMetadataHook(rt)
             }
             #[doc = " Set the hook for populating the import.meta metadata object to the given\n function."]
             pub unsafe extern "C" fn SetModuleMetadataHook(
@@ -14249,7 +14249,7 @@ pub mod root {
                 crate::sys::unimplemented_entry("IsGCPoisoning")
             }
             pub unsafe extern "C" fn GetRealmPrincipals(realm: *mut root::JS::Realm) -> *mut root::JSPrincipals {
-                crate::sys::unimplemented_entry("GetRealmPrincipals")
+                crate::sys::imp::GetRealmPrincipals(realm)
             }
             pub unsafe extern "C" fn SetRealmPrincipals(
                 realm: *mut root::JS::Realm,
@@ -15277,7 +15277,7 @@ pub mod root {
             crate::sys::imp::JS_RemoveExtraGCRootsTracer(cx, traceOp, data)
         }
         pub unsafe extern "C" fn JS_GC(cx: *mut root::JSContext, reason: root::JS::GCReason) {
-            crate::sys::unimplemented_entry("JS_GC")
+            crate::sys::imp::JS_GC(cx, reason)
         }
         pub unsafe extern "C" fn JS_MaybeGC(cx: *mut root::JSContext) {
             crate::sys::unimplemented_entry("JS_MaybeGC")
@@ -15926,7 +15926,7 @@ pub mod root {
             crate::sys::unimplemented_entry("JS_ReportAllocationOverflow")
         }
         pub unsafe extern "C" fn JS_IsGlobalObject(obj: *mut root::JSObject) -> bool {
-            crate::sys::unimplemented_entry("JS_IsGlobalObject")
+            crate::sys::imp::JS_IsGlobalObject(obj)
         }
         pub unsafe extern "C" fn JS_NewGlobalObject(
             cx: *mut root::JSContext,
@@ -15935,14 +15935,14 @@ pub mod root {
             hookOption: root::JS::OnNewGlobalHookOption,
             options: *const root::JS::RealmOptions,
         ) -> *mut root::JSObject {
-            crate::sys::unimplemented_entry("JS_NewGlobalObject")
+            crate::sys::imp::JS_NewGlobalObject(cx, clasp, principals, hookOption, options)
         }
         #[doc = " Spidermonkey does not have a good way of keeping track of what compartments\n should be marked on their own. We can mark the roots unconditionally, but\n marking GC things only relevant in live compartments is hard. To mitigate\n this, we create a static trace hook, installed on each global object, from\n which we can be sure the compartment is relevant, and mark it.\n\n It is still possible to specify custom trace hooks for global object classes.\n They can be provided via the RealmOptions passed to JS_NewGlobalObject."]
         pub unsafe extern "C" fn JS_GlobalObjectTraceHook(trc: *mut root::JSTracer, global: *mut root::JSObject) {
             crate::sys::unimplemented_entry("JS_GlobalObjectTraceHook")
         }
         pub unsafe extern "C" fn JS_FireOnNewGlobalObject(cx: *mut root::JSContext, global: root::JS::HandleObject) {
-            crate::sys::unimplemented_entry("JS_FireOnNewGlobalObject")
+            crate::sys::imp::JS_FireOnNewGlobalObject(cx, global)
         }
     pub type JSInterruptCallback =
         ::std::option::Option<unsafe extern "C" fn(arg1: *mut root::JSContext) -> bool>;
@@ -15953,7 +15953,7 @@ pub mod root {
             cx: *mut root::JSContext,
             callback: root::JSInterruptCallback,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_AddInterruptCallback")
+            crate::sys::imp::JS_AddInterruptCallback(cx, callback)
         }
         pub unsafe extern "C" fn JS_DisableInterruptCallback(cx: *mut root::JSContext) -> bool {
             crate::sys::unimplemented_entry("JS_DisableInterruptCallback")
@@ -16095,7 +16095,7 @@ pub mod root {
             crate::sys::unimplemented_entry("JS_GetSecurityCallbacks")
         }
         pub unsafe extern "C" fn JS_SetTrustedPrincipals(cx: *mut root::JSContext, prin: *mut root::JSPrincipals) {
-            crate::sys::unimplemented_entry("JS_SetTrustedPrincipals")
+            crate::sys::imp::JS_SetTrustedPrincipals(cx, prin)
         }
     pub type JSDestroyPrincipalsOp =
         ::std::option::Option<unsafe extern "C" fn(principals: *mut root::JSPrincipals)>;
@@ -16997,7 +16997,7 @@ pub mod root {
             data: *mut ::std::os::raw::c_void,
             compartmentCallback: root::JSIterateCompartmentCallback,
         ) {
-            crate::sys::unimplemented_entry("JS_IterateCompartments")
+            crate::sys::imp::JS_IterateCompartments(cx, data, compartmentCallback)
         }
         #[doc = " This function calls |compartmentCallback| on every compartment in the given\n zone until either all compartments have been iterated or\n CompartmentIterResult::Stop is returned. Beware that there is no guarantee\n that the compartment will survive after the callback returns. Also, barriers\n are disabled via the TraceSession."]
         pub unsafe extern "C" fn JS_IterateCompartmentsInZone(
@@ -17320,7 +17320,7 @@ pub mod root {
         pub unsafe extern "C" fn JS_GetCompartmentPrivate(
             compartment: *mut root::JS::Compartment,
         ) -> *mut ::std::os::raw::c_void {
-            crate::sys::unimplemented_entry("JS_GetCompartmentPrivate")
+            crate::sys::imp::JS_GetCompartmentPrivate(compartment)
         }
         pub unsafe extern "C" fn JS_SetZoneUserData(zone: *mut root::JS::Zone, data: *mut ::std::os::raw::c_void) {
             crate::sys::unimplemented_entry("JS_SetZoneUserData")
@@ -17568,7 +17568,7 @@ pub mod root {
             cx: *mut root::JSContext,
             clasp: *const root::JSClass,
         ) -> *mut root::JSObject {
-            crate::sys::unimplemented_entry("JS_NewObject")
+            crate::sys::imp::JS_NewObject(cx, clasp)
         }
         pub unsafe extern "C" fn JS_IsNative(obj: *mut root::JSObject) -> bool {
             crate::sys::unimplemented_entry("JS_IsNative")
@@ -17579,7 +17579,7 @@ pub mod root {
             clasp: *const root::JSClass,
             proto: root::JS::Handle<*mut root::JSObject>,
         ) -> *mut root::JSObject {
-            crate::sys::unimplemented_entry("JS_NewObjectWithGivenProto")
+            crate::sys::imp::JS_NewObjectWithGivenProto(cx, clasp, proto)
         }
         #[doc = " Creates a new plain object, like `new Object()`, with Object.prototype as\n [[Prototype]]."]
         pub unsafe extern "C" fn JS_NewPlainObject(cx: *mut root::JSContext) -> *mut root::JSObject {
@@ -17661,7 +17661,7 @@ pub mod root {
             crate::sys::unimplemented_entry("JS_SetAllNonReservedSlotsToUndefined")
         }
         pub unsafe extern "C" fn JS_SetReservedSlot(obj: *mut root::JSObject, index: u32, v: *const root::JS::Value) {
-            crate::sys::unimplemented_entry("JS_SetReservedSlot")
+            crate::sys::imp::JS_SetReservedSlot(obj, index, v)
         }
         pub unsafe extern "C" fn JS_InitReservedSlot(
             obj: *mut root::JSObject,

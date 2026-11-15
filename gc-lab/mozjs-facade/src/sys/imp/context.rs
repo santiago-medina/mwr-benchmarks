@@ -16,7 +16,7 @@
 //! stack quotas, the self-hosted code cache) is accepted and recorded so a
 //! later read sees what was set; it changes nothing.
 
-use std::cell::RefCell;
+use std::cell::{RefCell, UnsafeCell};
 use std::collections::HashMap;
 use std::os::raw::c_void;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -30,9 +30,14 @@ use crate::sys::jsapi::JS;
 #[repr(C)]
 pub struct Context {
     /// Must stay first: `JSContext*` is cast to `JS::RootingContext*`.
-    rooting: JS::RootingContext,
+    /// The Rust layer and EnterRealm/LeaveRealm write through it while
+    /// shared references to the context exist, hence the `UnsafeCell`
+    /// (`repr(transparent)`, so the layout is the RootingContext's).
+    rooting: UnsafeCell<JS::RootingContext>,
     options: JS::ContextOptions,
     pub(crate) state: RefCell<State>,
+    /// The engine and the facade's object, realm and compartment cells.
+    pub(crate) heap: super::objects::Heap,
 }
 
 /// Callbacks and settings registered on a context. Raw pointers are the
@@ -67,6 +72,7 @@ pub struct State {
     pub futex_can_wait: bool,
     pub offthread_compilation: bool,
     pub jit_options: HashMap<u32, u32>,
+    pub interrupt_callbacks: Vec<root::JSInterruptCallback>,
 }
 
 pub struct EventLoopDispatch {
@@ -88,7 +94,21 @@ pub unsafe fn context<'a>(cx: *mut root::JSContext) -> &'a Context {
     unsafe { &*(cx as *const Context) }
 }
 
-unsafe fn runtime_context<'a>(rt: *mut root::JSRuntime) -> &'a Context {
+impl Context {
+    /// The realm the context is in (`JS::RootingContext::realm_`).
+    pub fn realm(&self) -> *mut JS::Realm {
+        // SAFETY: a plain field read; the context is single-threaded.
+        unsafe { (*self.rooting.get()).realm_ }
+    }
+
+    pub fn set_realm(&self, realm: *mut JS::Realm) {
+        // SAFETY: as above; no reference into the RootingContext is held
+        // across this write.
+        unsafe { (*self.rooting.get()).realm_ = realm };
+    }
+}
+
+pub(crate) unsafe fn runtime_context<'a>(rt: *mut root::JSRuntime) -> &'a Context {
     // SAFETY: a runtime pointer is its context pointer (module docs).
     unsafe { context(rt as *mut root::JSContext) }
 }
@@ -163,10 +183,11 @@ pub unsafe fn JS_NewContext(_maxbytes: u32, _parent: *mut root::JSRuntime) -> *m
         // SAFETY: RootingContext is plain data (list heads, profiler and
         // nursery pointers, stack limits); all zero is SpiderMonkey's empty
         // state: no rooted values, no realm entered, no stack limit.
-        rooting: unsafe { std::mem::zeroed() },
+        rooting: UnsafeCell::new(unsafe { std::mem::zeroed() }),
         // SAFETY: ContextOptions is bitfields plus plain compile options.
         options: unsafe { std::mem::zeroed() },
         state: RefCell::new(State::default()),
+        heap: super::objects::Heap::default(),
     });
     LIVE_CONTEXTS.fetch_add(1, Ordering::SeqCst);
     Box::into_raw(context) as *mut root::JSContext
@@ -457,4 +478,44 @@ pub unsafe fn DeleteRealmOptions(options: *mut JS::RealmOptions) {
         // SAFETY: `options` came from Box::into_raw in JS_NewRealmOptions.
         drop(unsafe { Box::from_raw(options) });
     }
+}
+
+pub unsafe fn GetModuleLoadHook(rt: *mut root::JSRuntime) -> JS::ModuleLoadHook {
+    unsafe { runtime_context(rt) }
+        .state
+        .borrow()
+        .module_load_hook
+}
+
+pub unsafe fn GetModuleMetadataHook(rt: *mut root::JSRuntime) -> JS::ModuleMetadataHook {
+    unsafe { runtime_context(rt) }
+        .state
+        .borrow()
+        .module_metadata_hook
+}
+
+/// Recorded; the engine does not poll interrupt callbacks yet (they need the
+/// step hook that replaces the test step limit, MOZJS_FACADE.md "Next").
+pub unsafe fn JS_AddInterruptCallback(
+    cx: *mut root::JSContext,
+    callback: root::JSInterruptCallback,
+) -> bool {
+    unsafe { context(cx) }
+        .state
+        .borrow_mut()
+        .interrupt_callbacks
+        .push(callback);
+    true
+}
+
+// js/public/Proxy.h: the WindowProxy class is process-wide in SpiderMonkey.
+static WINDOW_PROXY_CLASS: Mutex<usize> = Mutex::new(0);
+
+pub unsafe fn SetWindowProxyClass(cx: *mut root::JSContext, clasp: *const root::JSClass) {
+    unsafe { context(cx) };
+    *WINDOW_PROXY_CLASS.lock().unwrap() = clasp as usize;
+}
+
+pub unsafe fn GetWindowProxyClass() -> *const root::JSClass {
+    *WINDOW_PROXY_CLASS.lock().unwrap() as *const root::JSClass
 }

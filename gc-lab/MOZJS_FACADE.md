@@ -139,6 +139,20 @@ address of a static. Principals follow jsglue's `RustJSPrincipals` (a
 `JSPrincipals` prefix, then callbacks and private data), and
 `JS_DropPrincipals` calls the runtime's destroy callback at zero.
 
+Globals cluster (`src/sys/imp/objects.rs` plus five hooks in `context.rs`,
+25 entry points: Servo's `create_global_object`, `select_compartment`,
+`JSAutoRealm` and module hook setup). `JS_NewGlobalObject`,
+`JS_FireOnNewGlobalObject`, `EnterRealm`/`LeaveRealm`, `CurrentGlobalOrNull`,
+`GetRealmGlobalOrNull`, `GetObjectRealmOrNull`, `GetNonCCWObjectGlobal`,
+`JS_IsGlobalObject`, `GetRealmPrincipals`, `JS_SetTrustedPrincipals`,
+`JS_IterateCompartments`, `IsSharableCompartment`, `IsSystemCompartment`,
+`JS_GetCompartmentPrivate`, `JS_NewObject`, `JS_NewObjectWithGivenProto`,
+`JS_GetReservedSlot`, `JS_SetReservedSlot`, `JS_GC`, `GetModuleLoadHook`,
+`GetModuleMetadataHook`, `JS_AddInterruptCallback`, `SetWindowProxyClass`,
+`GetWindowProxyClass`. `tests/globals.rs` covers them, including the inline
+class and realm reads and survival across `JS_GC`. 76 entry points are
+implemented in total.
+
 ## C1 result (servoshell links)
 
 At 6513efa (CI run 43724404942) `cargo build -p servoshell --no-default-features
@@ -148,7 +162,7 @@ first stub, `GetProxyHandlerFamily` (`script::init`, before any runtime),
 which 849b8a3 implements together with the rest of `script::init` and the
 runtime creation path.
 
-## Engine ownership, reentrancy and object tokens (next cluster)
+## Engine ownership, reentrancy and object pointers
 
 Global creation (`JS_NewGlobalObject`, script_bindings/interface.rs
 `create_global_object`) is the first entry point that needs engine objects.
@@ -170,12 +184,26 @@ Decisions, following SERVO_BINDINGS.md option A:
   micro-benchmark (Next, item 5) measures it. The alternative, a thread-local
   raw `*mut Engine` set during host calls, would add a fourth `unsafe` site
   that the design note does not allow.
-- **Object tokens.** `dual::Id` (heap, index, serial) does not fit the 47-bit
-  JSVal object payload, so the facade keeps a table: a token is
-  `(slot + 1) * 16` (aligned, non-null, below 2^47), mapping to an
-  `ObjectId`, with a reverse map `ObjectId -> token`. Entries of dead objects
-  are dropped after each collection (`is_alive`); a generation check comes
-  with weak references.
+- **Object pointers are cell addresses.** Servo reads objects inline:
+  `mozjs::rust::get_object_class`, `get_object_realm` and `get_context_realm`
+  dereference `JSObject*` as `shadow::Object { shape }` -> `shadow::Shape
+  { base }` -> `shadow::BaseShape { clasp, realm }`, and read
+  `RootingContext.realm_`. Integer tokens (the first design: `(slot + 1) * 16`
+  over a table) would crash on the first such read. So a `JSObject*` is the
+  address of a leaked `#[repr(C)] ObjectCell` whose first field is a
+  `shadow::Object`, pointing to an interned `ShapeCell` (one per class and
+  realm). The cell holds the engine `ObjectId`; `Heap.cells` maps
+  `ObjectId -> cell` so the same object always yields the same pointer.
+- **C1 keep-alive policy.** Cells are never freed and every object that has a
+  cell is reported as a root (`Host::trace_roots`) until tracing (E4) tells
+  the facade which objects Servo still holds. This leaks by design in C1 and
+  is listed with the guards to lift before C2.
+- **Reserved slots are facade-side.** Slots are stored as raw `JSVal` bits
+  per object, so `PrivateValue` doubles and int32 tags round-trip exactly;
+  `Host::trace` reports the object-valued ones to the engine.
+- **Compartments** are leaked `CompartmentCell`s (system if the global's
+  principals are the trusted principals). `ExistingCompartment` reuses one;
+  all compartments share the context's engine.
 - **Guards.** `create_global_realm` inherits the 64-realm cap of `new_realm`,
   a test-harness guard. It is listed with the call depth and step limits to
   lift before C2.
@@ -185,13 +213,13 @@ Decisions, following SERVO_BINDINGS.md option A:
 1. Drive the C0 count to 0. Expected sources of errors: items the 0.26.4 Rust
    layer gates behind features, and differences between the 153.3.0-1
    bindings and the ones 0.26.4 was built against.
-2. JSContext and the runtime: done (see "Implemented entry points"). The
-   engine and its realm table still have to hang off the context.
+2. JSContext, the runtime and globals: done (see "Implemented entry
+   points"). The engine hangs off the context (`Heap`).
 3. Implement entry points in the order of the C2 fixtures: context and realm
    creation, JS_NewObjectWithGivenProto and reserved slots (E1), JS_NewFunction
    and JSNative calls (E2), tracing (E4), property and call API (E5), script
    evaluation.
 4. Lift the Servo-path interpreter guards (call depth 32, step limit 10,000)
-   before C2.
+   and the C1 keep-alive policy (cells never freed) before C2.
 5. Facade overhead micro-benchmark (literature check), before and after
    numbers in the commit.
