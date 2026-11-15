@@ -5672,7 +5672,7 @@ pub mod root {
                 preserveWrapper: root::js::PreserveWrapperCallback,
                 hasReleasedWrapper: root::js::HasReleasedWrapperCallback,
             ) {
-                crate::sys::unimplemented_entry("SetPreserveWrapperCallbacks")
+                crate::sys::imp::SetPreserveWrapperCallbacks(cx, preserveWrapper, hasReleasedWrapper)
             }
             pub unsafe extern "C" fn CommitPendingWrapperPreservations(cx: *mut root::JSContext) {
                 crate::sys::unimplemented_entry("CommitPendingWrapperPreservations")
@@ -5722,7 +5722,7 @@ pub mod root {
                 cx: *mut root::JSContext,
                 callbacks: *const root::js::DOMCallbacks,
             ) {
-                crate::sys::unimplemented_entry("SetDOMCallbacks")
+                crate::sys::imp::SetDOMCallbacks(cx, callbacks)
             }
             pub unsafe extern "C" fn GetDOMCallbacks(cx: *mut root::JSContext) -> *const root::js::DOMCallbacks {
                 crate::sys::unimplemented_entry("GetDOMCallbacks")
@@ -9028,7 +9028,7 @@ pub mod root {
                 cx: *mut root::JSContext,
                 callback: root::JS::GCSliceCallback,
             ) -> root::JS::GCSliceCallback {
-                crate::sys::unimplemented_entry("SetGCSliceCallback")
+                crate::sys::imp::SetGCSliceCallback(cx, callback)
             }
         #[repr(i32)]
         #[doc = " Describes the progress of an observed nursery collection."]
@@ -10336,7 +10336,7 @@ pub mod root {
                 addRefHook: root::JS::ScriptPrivateReferenceHook,
                 releaseHook: root::JS::ScriptPrivateReferenceHook,
             ) {
-                crate::sys::unimplemented_entry("SetScriptPrivateReferenceHooks")
+                crate::sys::imp::SetScriptPrivateReferenceHooks(rt, addRefHook, releaseHook)
             }
         #[doc = " Capture all frames."]
         #[repr(C)]
@@ -10455,7 +10455,7 @@ pub mod root {
                 consume: root::JS::ConsumeStreamCallback,
                 report: root::JS::ReportStreamErrorCallback,
             ) {
-                crate::sys::unimplemented_entry("InitConsumeStreamCallback")
+                crate::sys::imp::InitConsumeStreamCallback(cx, consume, report)
             }
             #[doc = " Create a new JSString possibly backed by |buffer|. The contents of |buffer|\n will be interpreted as an array of Latin1 characters.\n\n Note that the returned string is not guaranteed to use |buffer|: as an\n optimization, this API can return an inline string or a previously allocated\n string.\n\n Increments the buffer's refcount iff the JS string holds a reference to it."]
             pub unsafe extern "C" fn NewStringFromLatin1Buffer(
@@ -11061,7 +11061,7 @@ pub mod root {
         >;
             #[doc = " Embedder hook to set the buildId-generating function."]
             pub unsafe extern "C" fn SetProcessBuildIdOp(buildIdOp: root::JS::BuildIdOp) {
-                crate::sys::unimplemented_entry("SetProcessBuildIdOp")
+                crate::sys::imp::SetProcessBuildIdOp(buildIdOp)
             }
             #[doc = " Evaluate the given source buffer in the scope of the current global of cx,\n and return the completion value in |rval|."]
             pub unsafe extern "C" fn Evaluate(
@@ -11705,7 +11705,7 @@ pub mod root {
             }
         }
             pub unsafe extern "C" fn ContextOptionsRef(cx: *mut root::JSContext) -> *mut root::JS::ContextOptions {
-                crate::sys::unimplemented_entry("ContextOptionsRef")
+                crate::sys::imp::ContextOptionsRef(cx)
             }
             #[doc = " ES6 draft 20141224, 7.1.1, second algorithm.\n\n Most users shouldn't call this -- use JS::ToBoolean, ToNumber, or ToString\n instead.  This will typically only be called from custom convert hooks that\n wish to fall back to the ES6 default conversion behavior shared by most\n objects in JS, codified as OrdinaryToPrimitive."]
             pub unsafe extern "C" fn OrdinaryToPrimitive(
@@ -11899,10 +11899,10 @@ pub mod root {
                 cache: root::JS::SelfHostedCache,
                 writer: root::JS::SelfHostedWriter,
             ) -> bool {
-                crate::sys::unimplemented_entry("InitSelfHostedCode")
+                crate::sys::imp::InitSelfHostedCode(cx, cache, writer)
             }
             pub unsafe extern "C" fn DisableJitBackend() {
-                crate::sys::unimplemented_entry("DisableJitBackend")
+                crate::sys::imp::DisableJitBackend()
             }
             pub unsafe extern "C" fn SetAVXEnabled(enabled: bool) {
                 crate::sys::unimplemented_entry("SetAVXEnabled")
@@ -12776,7 +12776,7 @@ pub mod root {
             }
             #[doc = " Set the HostLoadImportedModule hook for the runtime to the given function."]
             pub unsafe extern "C" fn SetModuleLoadHook(rt: *mut root::JSRuntime, func: root::JS::ModuleLoadHook) {
-                crate::sys::unimplemented_entry("SetModuleLoadHook")
+                crate::sys::imp::SetModuleLoadHook(rt, func)
             }
         pub type LoadModuleResolvedCallback = ::std::option::Option<
             unsafe extern "C" fn(
@@ -12826,7 +12826,7 @@ pub mod root {
                 rt: *mut root::JSRuntime,
                 func: root::JS::ModuleMetadataHook,
             ) {
-                crate::sys::unimplemented_entry("SetModuleMetadataHook")
+                crate::sys::imp::SetModuleMetadataHook(rt, func)
             }
             #[doc = " A function callback called by the host layer to indicate the call of\n HostLoadImportedModule has finished.\n\n See https://tc39.es/ecma262/#sec-FinishLoadingImportedModule"]
             pub unsafe extern "C" fn FinishLoadingImportedModule(
@@ -13137,7 +13137,7 @@ pub mod root {
         };
             #[doc = " Tell SpiderMonkey to use `queue` to schedule promise reactions.\n\n SpiderMonkey does not take ownership of the queue; it is the embedding's\n responsibility to clean it up after the runtime is destroyed."]
             pub unsafe extern "C" fn SetJobQueue(cx: *mut root::JSContext, queue: *mut root::JS::JobQueue) {
-                crate::sys::unimplemented_entry("SetJobQueue")
+                crate::sys::imp::SetJobQueue(cx, queue)
             }
             pub unsafe extern "C" fn GetJobQueue(cx: *mut root::JSContext) -> *mut root::JS::JobQueue {
                 crate::sys::unimplemented_entry("GetJobQueue")
@@ -13181,7 +13181,7 @@ pub mod root {
                 callback: root::JS::PromiseRejectionTrackerCallback,
                 data: *mut ::std::os::raw::c_void,
             ) {
-                crate::sys::unimplemented_entry("SetPromiseRejectionTrackerCallback")
+                crate::sys::imp::SetPromiseRejectionTrackerCallback(cx, callback, data)
             }
             #[doc = " Inform the runtime that the job queue is empty and the embedding is going to\n execute its last promise job. The runtime may now choose to skip creating\n promise jobs for asynchronous execution and instead continue execution\n synchronously. More specifically, this optimization is used to skip the\n standard job queuing behavior for `await` operations in async functions.\n\n This function may be called before executing the last job in the job queue.\n When it was called, JobQueueMayNotBeEmpty must be called in order to restore\n the default job queuing behavior before the embedding enqueues its next job\n into the job queue."]
             pub unsafe extern "C" fn JobQueueIsEmpty(cx: *mut root::JSContext) {
@@ -13817,7 +13817,7 @@ pub mod root {
                 cx: *mut root::JSContext,
                 reporter: root::JS::WarningReporter,
             ) -> root::JS::WarningReporter {
-                crate::sys::unimplemented_entry("SetWarningReporter")
+                crate::sys::imp::SetWarningReporter(cx, reporter)
             }
         #[doc = " A simple RAII class that clears the registered warning reporter on\n construction and restores it on destruction.\n\n A fresh warning reporter *may* be set while an instance of this class is\n live, but it must be unset in LIFO fashion by the time that instance is\n destroyed."]
         #[repr(C)]
@@ -14122,7 +14122,7 @@ pub mod root {
                 domProxyShadowsCheck: root::JS::DOMProxyShadowsCheck,
                 domRemoteProxyHandlerFamily: *const ::std::os::raw::c_void,
             ) {
-                crate::sys::unimplemented_entry("SetDOMProxyInformation")
+                crate::sys::imp::SetDOMProxyInformation(domProxyHandlerFamily, domProxyShadowsCheck, domRemoteProxyHandlerFamily)
             }
         #[doc = " [SMDOC] JS::Value type\n\n JS::Value is the interface for a single JavaScript Engine value.  A few\n general notes on JS::Value:\n\n - JS::Value has setX() and isX() members for X in\n\n     { Int32, Double, String, Symbol, BigInt, Boolean, Undefined, Null,\n       Object, Magic }\n\n   JS::Value also contains toX() for each of the non-singleton types.\n\n - Magic is a singleton type whose payload contains either a JSWhyMagic\n   \"reason\" for the magic value or a uint32_t value. By providing JSWhyMagic\n   values when creating and checking for magic values, it is possible to\n   assert, at runtime, that only magic values with the expected reason flow\n   through a particular value. For example, if cx->exception has a magic\n   value, the reason must be JS_GENERATOR_CLOSING.\n\n - To help prevent mistakenly boxing a nullable JSObject* as an object,\n   Value::setObject takes a JSObject&. (Conversely, Value::toObject returns a\n   JSObject&.)  A convenience member Value::setObjectOrNull is provided.\n\n - Note that JS::Value is 8 bytes on 32 and 64-bit architectures. Because most\n   of our users are now on 64-bit platforms, code should prefer passing\n   JS::Value by value instead of |const Value&|.\n\n Spectre mitigations\n ===================\n To mitigate Spectre attacks, we do the following:\n\n - On 64-bit platforms, when unboxing a Value, we XOR the bits with the\n   expected type tag (instead of masking the payload bits). This guarantees\n   that toString, toObject, toSymbol will return an invalid pointer (because\n   some high bits will be set) when called on a Value with a different type\n   tag.\n\n - On 32-bit platforms,when unboxing an object/string/symbol Value, we use a\n   conditional move (not speculated) to zero the payload register if the type\n   doesn't match."]
         pub type GenericMicroTask = root::JS::Value;
@@ -15064,10 +15064,10 @@ pub mod root {
             maxbytes: u32,
             parentRuntime: *mut root::JSRuntime,
         ) -> *mut root::JSContext {
-            crate::sys::unimplemented_entry("JS_NewContext")
+            crate::sys::imp::JS_NewContext(maxbytes, parentRuntime)
         }
         pub unsafe extern "C" fn JS_DestroyContext(cx: *mut root::JSContext) {
-            crate::sys::unimplemented_entry("JS_DestroyContext")
+            crate::sys::imp::JS_DestroyContext(cx)
         }
         pub unsafe extern "C" fn JS_GetContextPrivate(cx: *mut root::JSContext) -> *mut ::std::os::raw::c_void {
             crate::sys::unimplemented_entry("JS_GetContextPrivate")
@@ -15076,13 +15076,13 @@ pub mod root {
             crate::sys::unimplemented_entry("JS_SetContextPrivate")
         }
         pub unsafe extern "C" fn JS_GetParentRuntime(cx: *mut root::JSContext) -> *mut root::JSRuntime {
-            crate::sys::unimplemented_entry("JS_GetParentRuntime")
+            crate::sys::imp::JS_GetParentRuntime(cx)
         }
         pub unsafe extern "C" fn JS_GetRuntime(cx: *mut root::JSContext) -> *mut root::JSRuntime {
-            crate::sys::unimplemented_entry("JS_GetRuntime")
+            crate::sys::imp::JS_GetRuntime(cx)
         }
         pub unsafe extern "C" fn JS_SetFutexCanWait(cx: *mut root::JSContext) {
-            crate::sys::unimplemented_entry("JS_SetFutexCanWait")
+            crate::sys::imp::JS_SetFutexCanWait(cx)
         }
     #[repr(u32)]
     #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -15266,7 +15266,7 @@ pub mod root {
             traceOp: root::JSTraceDataOp,
             data: *mut ::std::os::raw::c_void,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_AddExtraGCRootsTracer")
+            crate::sys::imp::JS_AddExtraGCRootsTracer(cx, traceOp, data)
         }
         #[doc = " Undo a call to JS_AddExtraGCRootsTracer."]
         pub unsafe extern "C" fn JS_RemoveExtraGCRootsTracer(
@@ -15274,7 +15274,7 @@ pub mod root {
             traceOp: root::JSTraceDataOp,
             data: *mut ::std::os::raw::c_void,
         ) {
-            crate::sys::unimplemented_entry("JS_RemoveExtraGCRootsTracer")
+            crate::sys::imp::JS_RemoveExtraGCRootsTracer(cx, traceOp, data)
         }
         pub unsafe extern "C" fn JS_GC(cx: *mut root::JSContext, reason: root::JS::GCReason) {
             crate::sys::unimplemented_entry("JS_GC")
@@ -15287,7 +15287,7 @@ pub mod root {
             cb: root::JSGCCallback,
             data: *mut ::std::os::raw::c_void,
         ) {
-            crate::sys::unimplemented_entry("JS_SetGCCallback")
+            crate::sys::imp::JS_SetGCCallback(cx, cb, data)
         }
         pub unsafe extern "C" fn JS_AddFinalizeCallback(
             cx: *mut root::JSContext,
@@ -15338,13 +15338,13 @@ pub mod root {
             crate::sys::unimplemented_entry("JS_UpdateWeakPointerAfterGCUnbarriered")
         }
         pub unsafe extern "C" fn JS_SetGCParameter(cx: *mut root::JSContext, key: root::JSGCParamKey, value: u32) {
-            crate::sys::unimplemented_entry("JS_SetGCParameter")
+            crate::sys::imp::JS_SetGCParameter(cx, key, value)
         }
         pub unsafe extern "C" fn JS_ResetGCParameter(cx: *mut root::JSContext, key: root::JSGCParamKey) {
             crate::sys::unimplemented_entry("JS_ResetGCParameter")
         }
         pub unsafe extern "C" fn JS_GetGCParameter(cx: *mut root::JSContext, key: root::JSGCParamKey) -> u32 {
-            crate::sys::unimplemented_entry("JS_GetGCParameter")
+            crate::sys::imp::JS_GetGCParameter(cx, key)
         }
         pub unsafe extern "C" fn JS_SetGCParametersBasedOnAvailableMemory(cx: *mut root::JSContext, availMemMB: u32) {
             crate::sys::unimplemented_entry("JS_SetGCParametersBasedOnAvailableMemory")
@@ -16087,7 +16087,7 @@ pub mod root {
             cx: *mut root::JSContext,
             callbacks: *const root::JSSecurityCallbacks,
         ) {
-            crate::sys::unimplemented_entry("JS_SetSecurityCallbacks")
+            crate::sys::imp::JS_SetSecurityCallbacks(cx, callbacks)
         }
         pub unsafe extern "C" fn JS_GetSecurityCallbacks(
             cx: *mut root::JSContext,
@@ -16103,7 +16103,7 @@ pub mod root {
             cx: *mut root::JSContext,
             destroyPrincipals: root::JSDestroyPrincipalsOp,
         ) {
-            crate::sys::unimplemented_entry("JS_InitDestroyPrincipalsCallback")
+            crate::sys::imp::JS_InitDestroyPrincipalsCallback(cx, destroyPrincipals)
         }
     pub type JSReadPrincipalsOp = ::std::option::Option<
         unsafe extern "C" fn(
@@ -16116,7 +16116,7 @@ pub mod root {
             cx: *mut root::JSContext,
             read: root::JSReadPrincipalsOp,
         ) {
-            crate::sys::unimplemented_entry("JS_InitReadPrincipalsCallback")
+            crate::sys::imp::JS_InitReadPrincipalsCallback(cx, read)
         }
         #[doc = " Define a property on obj.\n\n This function uses JS::ObjectOpResult to indicate conditions that ES6\n specifies as non-error failures. This is inconvenient at best, so use this\n function only if you are implementing a proxy handler's defineProperty()\n method. For all other purposes, use one of the many DefineProperty functions\n below that throw an exception in all failure cases.\n\n Implements: ES6 [[DefineOwnProperty]] internal method."]
         pub unsafe extern "C" fn JS_DefinePropertyById(
@@ -17015,7 +17015,7 @@ pub mod root {
             trustedScriptStackSize: root::JS::NativeStackSize,
             untrustedScriptStackSize: root::JS::NativeStackSize,
         ) {
-            crate::sys::unimplemented_entry("JS_SetNativeStackQuota")
+            crate::sys::imp::JS_SetNativeStackQuota(cx, systemCodeStackSize, trustedScriptStackSize, untrustedScriptStackSize)
         }
         pub unsafe extern "C" fn JS_GetEmptyString(cx: *mut root::JSContext) -> *mut root::JSString {
             crate::sys::unimplemented_entry("JS_GetEmptyString")
@@ -17785,7 +17785,7 @@ pub mod root {
             crate::sys::unimplemented_entry("JS_SetOffthreadBaselineCompilationEnabled")
         }
         pub unsafe extern "C" fn JS_SetOffthreadIonCompilationEnabled(cx: *mut root::JSContext, enabled: bool) {
-            crate::sys::unimplemented_entry("JS_SetOffthreadIonCompilationEnabled")
+            crate::sys::imp::JS_SetOffthreadIonCompilationEnabled(cx, enabled)
         }
     #[repr(u32)]
     #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -17831,7 +17831,7 @@ pub mod root {
             opt: root::JSJitCompilerOption,
             value: u32,
         ) {
-            crate::sys::unimplemented_entry("JS_SetGlobalJitCompilerOption")
+            crate::sys::imp::JS_SetGlobalJitCompilerOption(cx, opt, value)
         }
         pub unsafe extern "C" fn JS_GetGlobalJitCompilerOption(
             cx: *mut root::JSContext,
@@ -17933,7 +17933,7 @@ pub mod root {
         }
         #[doc = " Destroy free-standing resources allocated by SpiderMonkey, not associated\n with any runtime, context, or other structure.\n\n This method should be called after all other JSAPI data has been properly\n cleaned up: every new runtime must have been destroyed, every new context\n must have been destroyed, and so on.  Calling this method before all other\n resources have been destroyed has undefined behavior.\n\n Failure to call this method, at present, has no adverse effects other than\n leaking memory.  This may not always be the case; it's recommended that all\n embedders call this method when all other JSAPI operations have completed.\n\n It is currently not possible to initialize SpiderMonkey multiple times (that\n is, calling JS_Init/JSAPI methods/JS_ShutDown in that order, then doing so\n again).  This restriction may eventually be lifted."]
         pub unsafe extern "C" fn JS_ShutDown() {
-            crate::sys::unimplemented_entry("JS_ShutDown")
+            crate::sys::imp::JS_ShutDown()
         }
         #[doc = " A variant of JS_ShutDown for process which used JS_FrontendOnlyInit instead\n of JS_Init."]
         pub unsafe extern "C" fn JS_FrontendOnlyShutDown() {
@@ -20311,13 +20311,13 @@ pub mod root {
         #[allow(unused_imports)]
         use self::super::super::root;
             pub unsafe extern "C" fn JS_Init() -> bool {
-                crate::sys::unimplemented_entry("JS_Init")
+                crate::sys::imp::JS_Init()
             }
             pub unsafe extern "C" fn JS_NewRealmOptions() -> *mut root::JS::RealmOptions {
-                crate::sys::unimplemented_entry("JS_NewRealmOptions")
+                crate::sys::imp::JS_NewRealmOptions()
             }
             pub unsafe extern "C" fn DeleteRealmOptions(options: *mut root::JS::RealmOptions) {
-                crate::sys::unimplemented_entry("DeleteRealmOptions")
+                crate::sys::imp::DeleteRealmOptions(options)
             }
             pub unsafe extern "C" fn JS_NewOwningCompileOptions(
                 cx: *mut root::JSContext,

@@ -681,7 +681,7 @@ pub mod root {
             cx: *mut root::JSContext,
             hook: root::InvokeScriptPreparerHook,
         ) {
-            crate::sys::unimplemented_entry("RegisterScriptEnvironmentPreparer")
+            crate::sys::imp::RegisterScriptEnvironmentPreparer(cx, hook)
         }
         pub unsafe extern "C" fn RunScriptEnvironmentPreparerClosure(
             cx: *mut root::JSContext,
@@ -1068,7 +1068,7 @@ pub mod root {
             crate::sys::unimplemented_entry("CollectServoSizes")
         }
         pub unsafe extern "C" fn InitializeMemoryReporter(wtm: root::WantToMeasure) {
-            crate::sys::unimplemented_entry("InitializeMemoryReporter")
+            crate::sys::imp::InitializeMemoryReporter(wtm)
         }
         pub unsafe extern "C" fn CallValueTracer(
             trc: *mut root::JSTracer,
@@ -1304,10 +1304,10 @@ pub mod root {
             crate::sys::unimplemented_entry("JS_ForgetStringLinearness")
         }
         pub unsafe extern "C" fn CreateJobQueue(aTraps: *const root::JobQueueTraps) -> *mut root::RustJobQueue {
-            crate::sys::unimplemented_entry("CreateJobQueue")
+            crate::sys::imp::CreateJobQueue(aTraps)
         }
         pub unsafe extern "C" fn DeleteJobQueue(queue: *mut root::RustJobQueue) {
-            crate::sys::unimplemented_entry("DeleteJobQueue")
+            crate::sys::imp::DeleteJobQueue(queue)
         }
         pub unsafe extern "C" fn CreateJSExternalStringCallbacks(
             aTraps: *const root::JSExternalStringCallbacksTraps,
@@ -1366,7 +1366,7 @@ pub mod root {
             finishedCallback: root::JS::AsyncTaskFinishedCallback,
             closure: *mut ::std::os::raw::c_void,
         ) {
-            crate::sys::unimplemented_entry("SetUpEventLoopDispatch")
+            crate::sys::imp::SetUpEventLoopDispatch(cx, callback, startedCallback, finishedCallback, closure)
         }
         pub unsafe extern "C" fn DispatchableRun(
             cx: *mut root::JSContext,

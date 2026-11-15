@@ -9,6 +9,10 @@ the entry point as unimplemented; each extern static becomes a zeroed
 static with bindgen's mutability (`extern const` stays immutable, so Servo can
 take `&ProxyClassOps` in a static initializer). Variadic tails are dropped (listed in the summary).
 
+Entry points named in tools/implemented.txt delegate instead to the
+hand-written `crate::sys::imp::<name>` with the same arguments; the bindgen
+signature stays the authority, so a mismatched implementation fails to compile.
+
 Usage: gen_sys.py <bindings dir> <output dir>
 """
 import re
@@ -27,6 +31,7 @@ FN = re.compile(r"^(\s*)pub fn ([A-Za-z0-9_]+)\s*\(", re.S)
 # `extern const` statics whose types hold raw pointers are not Sync, so they
 # must stay `static mut` (list produced by compiling; one name per line).
 NONSYNC = set((Path(__file__).resolve().parent / "nonsync_statics.txt").read_text().split())
+IMPLEMENTED = set((Path(__file__).resolve().parent / "implemented.txt").read_text().split())
 STATIC = re.compile(r"^(\s*)pub static (mut )?([A-Za-z0-9_]+)\s*:\s*(.*);\s*$", re.S)
 
 
@@ -71,7 +76,15 @@ def emit(item, stats):
             decl = re.sub(r"^\s*\.\.\.,?\s*\n", "", decl, flags=re.M)
             stats["variadic"].append(name)
         decl = decl.replace("pub fn ", "pub unsafe extern \"C\" fn ", 1)
-        decl = decl.rstrip()[:-1] + " {\n" + m.group(1) + "    crate::sys::unimplemented_entry(\"" + name + "\")\n" + m.group(1) + "}"
+        if name in IMPLEMENTED:
+            if name in stats["seen"]:
+                raise SystemExit("implemented name is ambiguous: " + name)
+            call = "crate::sys::imp::%s(%s)" % (name, ", ".join(param_names(decl)))
+            stats["implemented"] += 1
+        else:
+            call = "crate::sys::unimplemented_entry(\"" + name + "\")"
+        stats["seen"].add(name)
+        decl = decl.rstrip()[:-1] + " {\n" + m.group(1) + "    " + call + "\n" + m.group(1) + "}"
         stats["fn"] += 1
         return keep + [decl]
     m = STATIC.match(decl)
@@ -84,17 +97,43 @@ def emit(item, stats):
     raise SystemExit("unknown extern item: %r" % decl)
 
 
+def param_names(decl):
+    """Parameter names of a bindgen `fn` declaration (types may hold commas)."""
+    inner = decl[decl.index("(") + 1:]
+    depth, cur, params = 0, "", []
+    for i, ch in enumerate(inner):
+        if ch == ">" and inner[i - 1] == "-":
+            pass  # `->` in a function pointer type
+        elif ch in "(<[":
+            depth += 1
+        elif ch in ")>]":
+            if depth == 0:
+                break
+            depth -= 1
+        if ch == "," and depth == 0:
+            params.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    params.append(cur)
+    return [p.split(":")[0].strip() for p in params if p.strip()]
+
+
 def main():
     src, dst = Path(sys.argv[1]), Path(sys.argv[2])
     dst.mkdir(parents=True, exist_ok=True)
+    seen = set()
     for name in ("jsapi.rs", "gluebindings.rs"):
-        stats = {"fn": 0, "static": 0, "variadic": []}
+        stats = {"fn": 0, "static": 0, "variadic": [], "implemented": 0, "seen": seen}
         # mozjs_sys modules live under crate::sys in the facade.
         text = convert((src / name).read_text().replace("crate::", "crate::sys::")
             .replace("pub type FILE = ::libc::FILE;", "pub type FILE = ::core::ffi::c_void;"), stats)
         (dst / name).write_text(HEADER + text)
-        print("%s: %d functions, %d statics, variadic tails dropped: %s"
-              % (name, stats["fn"], stats["static"], " ".join(stats["variadic"]) or "none"))
+        print("%s: %d functions (%d implemented), %d statics, variadic tails dropped: %s"
+              % (name, stats["fn"], stats["implemented"], stats["static"], " ".join(stats["variadic"]) or "none"))
+    missing = IMPLEMENTED - seen
+    if missing:
+        raise SystemExit("implemented.txt names no entry point: " + " ".join(sorted(missing)))
 
 
 if __name__ == "__main__":

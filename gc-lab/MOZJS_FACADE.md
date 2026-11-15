@@ -112,14 +112,32 @@ yet", so the stubs the probe hits, in order, are the next entry points to
 implement. Both results go in the `servo-facade-c0` artifact
 (`c0-results/`, `c1-results/`).
 
+## Implemented entry points
+
+`tools/implemented.txt` lists the extern entry points that have a real body.
+For each listed name `tools/gen_sys.py` emits a forwarder to
+`crate::sys::imp::NAME(args)` instead of the `unimplemented_entry` stub; the
+generator fails if a listed name is missing from the bindings or appears
+twice. The bodies live in `src/sys/imp/*.rs`, one file per cluster.
+
+Context cluster (`src/sys/imp/context.rs`, 40 entry points: everything
+`JSEngine::init`, `Runtime::new` and Servo's `Runtime::new_with_parent` call
+before the first global). `JS_NewContext` boxes a `#[repr(C)] Context` whose
+first field is `JS::RootingContext` (zeroed: empty rooted lists), so
+`Rooted` linking and the `cx as *mut RootingContext` casts in `rust.rs` and
+`jsimpls.rs` work unchanged; `JSRuntime*` is the same address. Callbacks,
+hooks, GC parameters, stack quotas and the job queue traps are stored in a
+`RefCell<State>` on the context; they take effect once the engine drives
+them (GC, promise jobs, modules). `tests/context.rs` covers init, runtime
+creation, a GC parameter round trip and stack rooting.
+
 ## Next (C1)
 
 1. Drive the C0 count to 0. Expected sources of errors: items the 0.26.4 Rust
    layer gates behind features, and differences between the 153.3.0-1
    bindings and the ones 0.26.4 was built against.
-2. JSContext and the runtime: the facade allocates a context whose prefix is
-   the bindgen `RootingContext` layout, so the copied `Rooted` linking code
-   works unchanged. The engine and its realm table hang off the rest.
+2. JSContext and the runtime: done (see "Implemented entry points"). The
+   engine and its realm table still have to hang off the context.
 3. Implement entry points in the order of the C2 fixtures: context and realm
    creation, JS_NewObjectWithGivenProto and reserved slots (E1), JS_NewFunction
    and JSNative calls (E2), tracing (E4), property and call API (E5), script
