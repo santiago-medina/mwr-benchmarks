@@ -16029,10 +16029,10 @@ pub mod root {
             [::std::mem::offset_of!(JSPrincipals, refcount) - 8usize];
     };
         pub unsafe extern "C" fn JS_HoldPrincipals(principals: *mut root::JSPrincipals) {
-            crate::sys::unimplemented_entry("JS_HoldPrincipals")
+            crate::sys::imp::JS_HoldPrincipals(principals)
         }
         pub unsafe extern "C" fn JS_DropPrincipals(cx: *mut root::JSContext, principals: *mut root::JSPrincipals) {
-            crate::sys::unimplemented_entry("JS_DropPrincipals")
+            crate::sys::imp::JS_DropPrincipals(cx, principals)
         }
     pub type JSSubsumesOp = ::std::option::Option<
         unsafe extern "C" fn(

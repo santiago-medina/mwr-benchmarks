@@ -131,6 +131,14 @@ hooks, GC parameters, stack quotas and the job queue traps are stored in a
 them (GC, promise jobs, modules). `tests/context.rs` covers init, runtime
 creation, a GC parameter round trip and stack rooting.
 
+Proxy and principals cluster (`src/sys/imp/proxy.rs`, 11 entry points: what
+`script::init` calls before any runtime). A handler pointer points to a
+leaked `Handler` holding a copy of the `ProxyTraps`, the `extra` pointer
+(the interface's `DOMClass`) and its kind; `GetProxyHandlerFamily` is the
+address of a static. Principals follow jsglue's `RustJSPrincipals` (a
+`JSPrincipals` prefix, then callbacks and private data), and
+`JS_DropPrincipals` calls the runtime's destroy callback at zero.
+
 ## Next (C1)
 
 1. Drive the C0 count to 0. Expected sources of errors: items the 0.26.4 Rust

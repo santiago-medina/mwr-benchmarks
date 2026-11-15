@@ -796,15 +796,15 @@ pub mod root {
             callbacks: *const root::JSPrincipalsCallbacks,
             privateData: *mut ::std::os::raw::c_void,
         ) -> *mut root::JSPrincipals {
-            crate::sys::unimplemented_entry("CreateRustJSPrincipals")
+            crate::sys::imp::CreateRustJSPrincipals(callbacks, privateData)
         }
         pub unsafe extern "C" fn DestroyRustJSPrincipals(principals: *mut root::JSPrincipals) {
-            crate::sys::unimplemented_entry("DestroyRustJSPrincipals")
+            crate::sys::imp::DestroyRustJSPrincipals(principals)
         }
         pub unsafe extern "C" fn GetRustJSPrincipalsPrivate(
             principals: *mut root::JSPrincipals,
         ) -> *mut ::std::os::raw::c_void {
-            crate::sys::unimplemented_entry("GetRustJSPrincipalsPrivate")
+            crate::sys::imp::GetRustJSPrincipalsPrivate(principals)
         }
         pub unsafe extern "C" fn InvokeGetOwnPropertyDescriptor(
             handler: *const ::std::os::raw::c_void,
@@ -862,21 +862,21 @@ pub mod root {
             aTraps: *const root::ProxyTraps,
             aExtra: *const ::std::os::raw::c_void,
         ) -> *const ::std::os::raw::c_void {
-            crate::sys::unimplemented_entry("CreateProxyHandler")
+            crate::sys::imp::CreateProxyHandler(aTraps, aExtra)
         }
         pub unsafe extern "C" fn CreateWrapperProxyHandler(
             aTraps: *const root::ProxyTraps,
         ) -> *const ::std::os::raw::c_void {
-            crate::sys::unimplemented_entry("CreateWrapperProxyHandler")
+            crate::sys::imp::CreateWrapperProxyHandler(aTraps)
         }
         pub unsafe extern "C" fn DeleteWrapperProxyHandler(handler: *const ::std::os::raw::c_void) {
-            crate::sys::unimplemented_entry("DeleteWrapperProxyHandler")
+            crate::sys::imp::DeleteWrapperProxyHandler(handler)
         }
         pub unsafe extern "C" fn GetCrossCompartmentWrapper() -> *const ::std::os::raw::c_void {
-            crate::sys::unimplemented_entry("GetCrossCompartmentWrapper")
+            crate::sys::imp::GetCrossCompartmentWrapper()
         }
         pub unsafe extern "C" fn GetSecurityWrapper() -> *const ::std::os::raw::c_void {
-            crate::sys::unimplemented_entry("GetSecurityWrapper")
+            crate::sys::imp::GetSecurityWrapper()
         }
         pub unsafe extern "C" fn DeleteCompileOptions(aOpts: *mut root::JS::ReadOnlyCompileOptions) {
             crate::sys::unimplemented_entry("DeleteCompileOptions")
@@ -985,7 +985,7 @@ pub mod root {
             crate::sys::unimplemented_entry("IsProxyHandlerFamily")
         }
         pub unsafe extern "C" fn GetProxyHandlerFamily() -> *const ::std::os::raw::c_void {
-            crate::sys::unimplemented_entry("GetProxyHandlerFamily")
+            crate::sys::imp::GetProxyHandlerFamily()
         }
         pub unsafe extern "C" fn GetProxyHandlerExtra(obj: *mut root::JSObject) -> *const ::std::os::raw::c_void {
             crate::sys::unimplemented_entry("GetProxyHandlerExtra")

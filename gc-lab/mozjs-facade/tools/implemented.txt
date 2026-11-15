@@ -38,3 +38,14 @@ SetModuleMetadataHook
 SetScriptPrivateReferenceHooks
 JS_NewRealmOptions
 DeleteRealmOptions
+GetProxyHandlerFamily
+CreateProxyHandler
+CreateWrapperProxyHandler
+DeleteWrapperProxyHandler
+GetCrossCompartmentWrapper
+GetSecurityWrapper
+CreateRustJSPrincipals
+DestroyRustJSPrincipals
+GetRustJSPrincipalsPrivate
+JS_HoldPrincipals
+JS_DropPrincipals
