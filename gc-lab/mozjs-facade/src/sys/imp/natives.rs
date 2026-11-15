@@ -201,7 +201,25 @@ pub(super) fn call_native(
         vp.push(ObjectValue(heap.object(cx, engine, target, ptr::null())));
     }
 
-    // Park the running engine; a spare stands in behind `engine`.
+    // SAFETY: the embedder's JSNative, called with SpiderMonkey's contract.
+    run_parked(cx, engine, || unsafe {
+        op(cx_ptr, args.len() as c_uint, vp.as_mut_ptr())
+    })?;
+    // SAFETY: vp[0] holds the return value (CallArgs::rval).
+    Ok(unsafe { from_jsval(vp[0]) })
+}
+
+/// Run foreign code `f` (a JSNative, a proxy trap) with the running engine
+/// parked in `Heap::engine` and a spare standing in behind `engine`, so the
+/// JSAPI entry points `f` calls reach the engine through `with_engine`. A
+/// false return throws the pending exception, as SpiderMonkey's callers do;
+/// false with none pending is an uncatchable error (OOM-like).
+pub(super) fn run_parked(
+    cx: &Context,
+    engine: &mut Engine<'_>,
+    f: impl FnOnce() -> bool,
+) -> Result<(), ScriptError> {
+    let heap = &cx.heap;
     let spare = match heap.take_spare().detach() {
         Ok(spare) => spare,
         Err(_) => unreachable!("spare engines have no adapter"),
@@ -213,7 +231,7 @@ pub(super) fn call_native(
             let spare = std::mem::replace(engine, running);
             heap.spares.borrow_mut().extend(spare.detach().ok());
             return Err(ScriptError::Runtime(
-                "mozjs facade: JSNative call on an engine with a DOM adapter",
+                "mozjs facade: foreign call on an engine with a DOM adapter",
             ));
         }
     };
@@ -223,14 +241,13 @@ pub(super) fn call_native(
         *slot = Some(running);
     }
 
-    // SAFETY: the embedder's JSNative, called with SpiderMonkey's contract.
-    let ok = unsafe { op(cx_ptr, args.len() as c_uint, vp.as_mut_ptr()) };
+    let ok = f();
 
     let running = heap
         .engine
         .borrow_mut()
         .take()
-        .expect("mozjs facade: parked engine lost during a JSNative");
+        .expect("mozjs facade: parked engine lost during a foreign call");
     let running = match running.detach() {
         Ok(running) => running,
         Err(_) => unreachable!("the parked engine had no adapter"),
@@ -238,20 +255,17 @@ pub(super) fn call_native(
     let spare = std::mem::replace(engine, running);
     heap.spares.borrow_mut().extend(spare.detach().ok());
 
-    if !ok {
-        // A JSNative throws by leaving a pending exception and returning
-        // false; false with none pending is an uncatchable error (OOM-like).
-        let pending = cx.state.borrow_mut().pending_exception.take();
-        return Err(match pending {
-            // SAFETY: a JSVal the embedder stored with JS_SetPendingException.
-            Some(value) => engine.throw_value(unsafe { from_jsval(value) }),
-            None => {
-                ScriptError::Runtime("mozjs facade: JSNative failed without a pending exception")
-            }
-        });
+    if ok {
+        return Ok(());
     }
-    // SAFETY: vp[0] holds the return value (CallArgs::rval).
-    Ok(unsafe { from_jsval(vp[0]) })
+    let pending = cx.state.borrow_mut().pending_exception.take();
+    Err(match pending {
+        // SAFETY: a JSVal the embedder stored with JS_SetPendingException.
+        Some(value) => engine.throw_value(unsafe { from_jsval(value) }),
+        None => {
+            ScriptError::Runtime("mozjs facade: foreign call failed without a pending exception")
+        }
+    })
 }
 
 /// A function object dispatching to `op`.

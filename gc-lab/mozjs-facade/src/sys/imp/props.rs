@@ -65,7 +65,7 @@ fn array_index(units: impl Iterator<Item = u16> + Clone) -> Option<u32> {
 }
 
 /// The canonical jsid of a property key (see the module comment).
-fn id_of(cx: &Context, key: &PropertyKey) -> root::jsid {
+pub(super) fn id_of(cx: &Context, key: &PropertyKey) -> root::jsid {
     match key {
         PropertyKey::String(text) => match array_index(text.encode_utf16()) {
             Some(i) if i <= i32::MAX as u32 => IntId(i as i32),
@@ -194,6 +194,63 @@ fn to_descriptor(
 }
 
 /// The partial descriptor a `JS::PropertyDescriptor` holds (§6.2.6).
+/// A `JS::PropertyDescriptor` with exactly the fields of `d` present (the
+/// descriptor a [[DefineOwnProperty]] trap receives).
+pub(super) fn partial_to_js(
+    cx: &Context,
+    engine: &Engine<'_>,
+    d: &PartialDescriptor,
+) -> JS::PropertyDescriptor {
+    let mut out = blank_descriptor();
+    let object = |o: Option<ObjectId>| {
+        o.map_or(ptr::null_mut(), |o| {
+            cx.heap.object(cx, engine, o, ptr::null())
+        })
+    };
+    if let Some(value) = &d.value {
+        out.set_hasValue_(true);
+        out.value_ = to_jsval(cx, engine, value);
+    }
+    if let Some(writable) = d.writable {
+        out.set_hasWritable_(true);
+        out.set_writable_(writable);
+    }
+    if let Some(get) = d.get {
+        out.set_hasGetter_(true);
+        out.getter_ = object(get);
+    }
+    if let Some(set) = d.set {
+        out.set_hasSetter_(true);
+        out.setter_ = object(set);
+    }
+    if let Some(enumerable) = d.enumerable {
+        out.set_hasEnumerable_(true);
+        out.set_enumerable_(enumerable);
+    }
+    if let Some(configurable) = d.configurable {
+        out.set_hasConfigurable_(true);
+        out.set_configurable_(configurable);
+    }
+    out
+}
+
+/// The complete descriptor a [[GetOwnProperty]] trap filled in: an accessor
+/// if it has a getter or setter field, otherwise a data property (absent
+/// fields take their §6.2.6 defaults).
+pub(super) unsafe fn complete_descriptor(d: &JS::PropertyDescriptor) -> PropertyDescriptor {
+    let p = unsafe { from_descriptor(d) };
+    let accessor =
+        p.value.is_none() && p.writable.is_none() && (p.get.is_some() || p.set.is_some());
+    PropertyDescriptor {
+        value: (!accessor).then(|| p.value.unwrap_or_else(JsValue::undefined)),
+        writable: p.writable.unwrap_or(false),
+        getter: p.get.flatten(),
+        setter: p.set.flatten(),
+        enumerable: p.enumerable.unwrap_or(false),
+        configurable: p.configurable.unwrap_or(false),
+    }
+}
+
 unsafe fn from_descriptor(d: &JS::PropertyDescriptor) -> PartialDescriptor {
     let object = |o: *mut root::JSObject| (!o.is_null()).then(|| unsafe { object_cell(o) }.id);
     PartialDescriptor {
@@ -421,7 +478,7 @@ pub unsafe fn JS_StringEqualsAscii(
 // --- Id vectors ---
 
 /// A `JS::PersistentRootedIdVector`.
-pub struct IdVectorCell(RefCell<Vec<root::jsid>>);
+pub struct IdVectorCell(pub(super) RefCell<Vec<root::jsid>>);
 
 unsafe fn id_vector<'a>(v: *const c_void) -> &'a IdVectorCell {
     assert!(!v.is_null(), "mozjs facade: null IdVector");

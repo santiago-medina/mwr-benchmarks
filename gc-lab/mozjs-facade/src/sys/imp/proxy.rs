@@ -10,22 +10,38 @@
 //!
 //! A handler pointer points to a leaked [`Handler`]. It keeps a copy of the
 //! traps, the `extra` pointer (the interface's `DOMClass`, read back by
-//! `GetProxyHandlerExtra`) and its kind. Proxy objects themselves come with
-//! the object cluster; until then the handlers are only created and stored.
+//! `GetProxyHandlerExtra`) and its kind.
+//!
+//! `NewProxyObject` makes an engine host exotic object (HOST_EXOTIC.md, E3)
+//! whose handler word is the handler pointer. [`exotic`] answers its
+//! essential internal methods with the `ProxyTraps` of a DOM handler, as
+//! jsglue.cpp's `ForwardingProxyHandler` over `js::BaseProxyHandler` does:
+//! the mandatory traps always run, a missing optional trap (`has`, `get`,
+//! `set`) is the ordinary algorithm (`ExoticReply::Default`), and a static
+//! prototype never reaches the handler.
 //!
 //! Principals follow mozjs's jsglue.cpp `RustJSPrincipals`: a `JSPrincipals`
 //! prefix (vtable, refcount) followed by the embedder's callbacks and private
 //! pointer. `JS_DropPrincipals` calls the runtime's destroy callback when the
 //! count reaches zero, as `JSRuntime::destroyPrincipals` does.
 
+use std::cell::RefCell;
 use std::os::raw::c_void;
 use std::ptr;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::OnceLock;
 
+use gc_lab::script::{Engine, ExoticOp, ExoticReply, ObjectId, ScriptError};
+
+use super::natives::{from_jsval, key_of, run_parked, to_jsval};
+use super::objects::{engine_result, object_cell, JS_GetReservedSlot, JS_SetReservedSlot, Shared};
+use super::props::{complete_descriptor, id_of, partial_to_js, IdVectorCell};
 use crate::sys::glue;
 use crate::sys::imp::context;
 use crate::sys::jsapi as root;
+use crate::sys::jsapi::JS;
+use crate::sys::jsval::JSVal;
 
 /// What a handler pointer refers to.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,5 +176,285 @@ pub unsafe fn JS_DropPrincipals(cx: *mut root::JSContext, principals: *mut root:
     match destroy {
         Some(destroy) => unsafe { destroy(principals) },
         None => unsafe { DestroyRustJSPrincipals(principals) },
+    }
+}
+
+// --- Proxy objects ---
+
+/// What the facade keeps next to a proxy object.
+#[derive(Clone, Copy)]
+pub struct ProxyState {
+    pub handler: *const c_void,
+    /// `GetProxyPrivate`: the DOM expando object or a private pointer.
+    pub private: JSVal,
+    /// `TaggedProto::LazyProto`: [[GetPrototypeOf]] asks the handler.
+    pub lazy_proto: bool,
+}
+
+/// jsglue.cpp `NewProxyObject`: a proxy of `aClass` with a static prototype
+/// `proto` (or a lazy one), its private value and the class's reserved slots.
+pub unsafe fn NewProxyObject(
+    aCx: *mut root::JSContext,
+    aHandler: *const c_void,
+    aPriv: JS::HandleValue,
+    proto: *mut root::JSObject,
+    aClass: *const root::JSClass,
+    aLazyProto: bool,
+) -> *mut root::JSObject {
+    let cx = unsafe { context::context(aCx) };
+    let heap = &cx.heap;
+    let proto = (!aLazyProto && !proto.is_null()).then(|| unsafe { object_cell(proto) }.id);
+    let created = heap.with_engine(|engine| {
+        engine.create_host_exotic(proto, aHandler as u64, aClass as u64, 0, 0, true)
+    });
+    let Some(id) = engine_result(cx, created) else {
+        return ptr::null_mut();
+    };
+    heap.init_slots(id, aClass);
+    heap.shared.proxies.borrow_mut().insert(
+        id,
+        ProxyState {
+            handler: aHandler,
+            // SAFETY: a Handle points to a rooted, live value.
+            private: unsafe { *aPriv.ptr },
+            lazy_proto: aLazyProto,
+        },
+    );
+    heap.with_engine(|engine| heap.object(cx, engine, id, aClass))
+}
+
+fn proxy_state(obj: *mut root::JSObject) -> Option<ProxyState> {
+    // SAFETY: callers pass a JSObject* the facade handed out.
+    let cell = unsafe { object_cell(obj) };
+    cell.context()
+        .heap
+        .shared
+        .proxies
+        .borrow()
+        .get(&cell.id)
+        .copied()
+}
+
+fn expect_proxy(obj: *mut root::JSObject) -> ProxyState {
+    proxy_state(obj).expect("mozjs facade: proxy entry point on a non-proxy object")
+}
+
+pub unsafe fn GetProxyPrivate(obj: *mut root::JSObject, dest: *mut JS::Value) {
+    let private = expect_proxy(obj).private;
+    // SAFETY: the caller's out-parameter.
+    unsafe { *dest = private };
+}
+
+pub unsafe fn SetProxyPrivate(obj: *mut root::JSObject, expando: *const JS::Value) {
+    // SAFETY: the caller's value; `obj` is a facade cell.
+    let (value, cell) = unsafe { (*expando, object_cell(obj)) };
+    let shared = &cell.context().heap.shared;
+    shared
+        .proxies
+        .borrow_mut()
+        .get_mut(&cell.id)
+        .expect("mozjs facade: SetProxyPrivate on a non-proxy object")
+        .private = value;
+}
+
+pub unsafe fn GetProxyReservedSlot(obj: *mut root::JSObject, slot: u32, dest: *mut JS::Value) {
+    unsafe { JS_GetReservedSlot(obj, slot, dest) }
+}
+
+pub unsafe fn SetProxyReservedSlot(obj: *mut root::JSObject, slot: u32, val: *const JS::Value) {
+    unsafe { JS_SetReservedSlot(obj, slot, val) }
+}
+
+pub unsafe fn GetProxyHandler(obj: *mut root::JSObject) -> *const c_void {
+    expect_proxy(obj).handler
+}
+
+pub unsafe fn GetProxyHandlerExtra(obj: *mut root::JSObject) -> *const c_void {
+    unsafe { handler(expect_proxy(obj).handler) }.extra
+}
+
+/// `js::IsProxy(obj) && handler->family() == &HandlerFamily`.
+pub unsafe fn IsProxyHandlerFamily(obj: *mut root::JSObject) -> bool {
+    proxy_state(obj).is_some_and(|p| unsafe { handler(p.handler) }.family == family())
+}
+
+// --- Trap dispatch (FacadeHost::exotic) ---
+
+fn op_ok(result: &JS::ObjectOpResult) -> bool {
+    result.code_ == JS::ObjectOpResult_SpecialCodes::OkCode as usize
+}
+
+fn blank_result() -> JS::ObjectOpResult {
+    JS::ObjectOpResult {
+        code_: JS::ObjectOpResult_SpecialCodes::Uninitialized as usize,
+    }
+}
+
+/// Answer `op` on the proxy `object` with its handler's traps. Each trap
+/// runs with the engine parked (natives.rs `run_parked`), so it can reenter
+/// through JSAPI; a trap returning false throws the pending exception.
+pub(super) fn exotic(
+    shared: &Rc<Shared>,
+    engine: &mut Engine<'_>,
+    object: ObjectId,
+    handler_word: u64,
+    op: ExoticOp,
+) -> Result<ExoticReply, ScriptError> {
+    let cx_ptr = shared.context.get() as *mut root::JSContext;
+    // SAFETY: set by JS_NewContext; the context outlives its engine.
+    let cx = unsafe { context::context(cx_ptr) };
+    // SAFETY: handler words are handler pointers made by this module.
+    let Some(traps) = (unsafe { handler(handler_word as usize as *const c_void) }).traps else {
+        // Wrapper singletons carry no traps: the ordinary algorithms (D).
+        return Ok(ExoticReply::Default);
+    };
+    let lazy = shared
+        .proxies
+        .borrow()
+        .get(&object)
+        .is_some_and(|p| p.lazy_proto);
+    let proxy = cx.heap.object(cx, engine, object, ptr::null());
+    // SAFETY (all handles below): they point to locals that outlive the trap
+    // call; object values are facade cells, which the collector treats as roots.
+    let proxy_h = unsafe { JS::HandleObject::from_marked_location(&proxy) };
+    let mut result = blank_result();
+    match op {
+        ExoticOp::GetPrototypeOf => {
+            let (true, Some(trap)) = (lazy, traps.getPrototype) else {
+                return Ok(ExoticReply::Default);
+            };
+            let mut proto: *mut root::JSObject = ptr::null_mut();
+            let proto_h = unsafe { JS::MutableHandleObject::from_marked_location(&mut proto) };
+            run_parked(cx, engine, || unsafe { trap(cx_ptr, proxy_h, proto_h) })?;
+            Ok(ExoticReply::Prototype(
+                (!proto.is_null()).then(|| unsafe { object_cell(proto) }.id),
+            ))
+        }
+        ExoticOp::SetPrototypeOf(proto) => {
+            let (true, Some(trap)) = (lazy, traps.setPrototype) else {
+                return Ok(ExoticReply::Default);
+            };
+            let proto = proto.map_or(ptr::null_mut(), |p| {
+                cx.heap.object(cx, engine, p, ptr::null())
+            });
+            let proto_h = unsafe { JS::HandleObject::from_marked_location(&proto) };
+            run_parked(cx, engine, || unsafe {
+                trap(cx_ptr, proxy_h, proto_h, &mut result)
+            })?;
+            Ok(ExoticReply::Bool(op_ok(&result)))
+        }
+        ExoticOp::IsExtensible => {
+            let Some(trap) = traps.isExtensible else {
+                return Ok(ExoticReply::Default);
+            };
+            let mut extensible = false;
+            run_parked(cx, engine, || unsafe {
+                trap(cx_ptr, proxy_h, &mut extensible)
+            })?;
+            Ok(ExoticReply::Bool(extensible))
+        }
+        ExoticOp::PreventExtensions => {
+            let Some(trap) = traps.preventExtensions else {
+                return Ok(ExoticReply::Default);
+            };
+            run_parked(cx, engine, || unsafe { trap(cx_ptr, proxy_h, &mut result) })?;
+            Ok(ExoticReply::Bool(op_ok(&result)))
+        }
+        ExoticOp::GetOwnProperty(key) => {
+            let Some(trap) = traps.getOwnPropertyDescriptor else {
+                return Ok(ExoticReply::Default);
+            };
+            let id = id_of(cx, &key);
+            let id_h = unsafe { JS::HandleId::from_marked_location(&id) };
+            let mut desc = partial_to_js(cx, engine, &Default::default());
+            let desc_h = unsafe { JS::MutableHandle::from_marked_location(&mut desc) };
+            let mut is_none = true;
+            run_parked(cx, engine, || unsafe {
+                trap(cx_ptr, proxy_h, id_h, desc_h, &mut is_none)
+            })?;
+            Ok(ExoticReply::Property(
+                (!is_none).then(|| unsafe { complete_descriptor(&desc) }),
+            ))
+        }
+        ExoticOp::DefineOwnProperty(key, partial) => {
+            let Some(trap) = traps.defineProperty else {
+                return Ok(ExoticReply::Default);
+            };
+            let id = id_of(cx, &key);
+            let id_h = unsafe { JS::HandleId::from_marked_location(&id) };
+            let desc = partial_to_js(cx, engine, &partial);
+            let desc_h = unsafe { JS::Handle::from_marked_location(&desc) };
+            run_parked(cx, engine, || unsafe {
+                trap(cx_ptr, proxy_h, id_h, desc_h, &mut result)
+            })?;
+            Ok(ExoticReply::Bool(op_ok(&result)))
+        }
+        ExoticOp::HasProperty(key) => {
+            let Some(trap) = traps.has else {
+                return Ok(ExoticReply::Default);
+            };
+            let id = id_of(cx, &key);
+            let id_h = unsafe { JS::HandleId::from_marked_location(&id) };
+            let mut found = false;
+            run_parked(cx, engine, || unsafe {
+                trap(cx_ptr, proxy_h, id_h, &mut found)
+            })?;
+            Ok(ExoticReply::Bool(found))
+        }
+        ExoticOp::Get(key, receiver) => {
+            let Some(trap) = traps.get else {
+                return Ok(ExoticReply::Default);
+            };
+            let id = id_of(cx, &key);
+            let id_h = unsafe { JS::HandleId::from_marked_location(&id) };
+            let receiver = to_jsval(cx, engine, &receiver);
+            let receiver_h = unsafe { JS::HandleValue::from_marked_location(&receiver) };
+            let mut vp = JSVal::default();
+            let vp_h = unsafe { JS::MutableHandleValue::from_marked_location(&mut vp) };
+            run_parked(cx, engine, || unsafe {
+                trap(cx_ptr, proxy_h, receiver_h, id_h, vp_h)
+            })?;
+            // SAFETY: the trap's result value.
+            Ok(ExoticReply::Value(unsafe { from_jsval(vp) }))
+        }
+        ExoticOp::Set(key, value, receiver) => {
+            let Some(trap) = traps.set else {
+                return Ok(ExoticReply::Default);
+            };
+            let id = id_of(cx, &key);
+            let id_h = unsafe { JS::HandleId::from_marked_location(&id) };
+            let value = to_jsval(cx, engine, &value);
+            let value_h = unsafe { JS::HandleValue::from_marked_location(&value) };
+            let receiver = to_jsval(cx, engine, &receiver);
+            let receiver_h = unsafe { JS::HandleValue::from_marked_location(&receiver) };
+            run_parked(cx, engine, || unsafe {
+                trap(cx_ptr, proxy_h, id_h, value_h, receiver_h, &mut result)
+            })?;
+            Ok(ExoticReply::Bool(op_ok(&result)))
+        }
+        ExoticOp::Delete(key) => {
+            let Some(trap) = traps.delete_ else {
+                return Ok(ExoticReply::Default);
+            };
+            let id = id_of(cx, &key);
+            let id_h = unsafe { JS::HandleId::from_marked_location(&id) };
+            run_parked(cx, engine, || unsafe {
+                trap(cx_ptr, proxy_h, id_h, &mut result)
+            })?;
+            Ok(ExoticReply::Bool(op_ok(&result)))
+        }
+        ExoticOp::OwnPropertyKeys => {
+            let Some(trap) = traps.ownPropertyKeys else {
+                return Ok(ExoticReply::Default);
+            };
+            let ids = IdVectorCell(RefCell::new(Vec::new()));
+            let ids_h = JS::MutableHandleIdVector {
+                ptr: &ids as *const IdVectorCell as *mut _,
+            };
+            run_parked(cx, engine, || unsafe { trap(cx_ptr, proxy_h, ids_h) })?;
+            // SAFETY: the trap appended valid ids.
+            let keys = ids.0.take().into_iter().map(|id| unsafe { key_of(id) });
+            Ok(ExoticReply::Keys(keys.collect()))
+        }
     }
 }

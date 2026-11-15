@@ -896,7 +896,7 @@ pub mod root {
             aClass: *const root::JSClass,
             aLazyProto: bool,
         ) -> *mut root::JSObject {
-            crate::sys::unimplemented_entry("NewProxyObject")
+            crate::sys::imp::NewProxyObject(aCx, aHandler, aPriv, proto, aClass, aLazyProto)
         }
         pub unsafe extern "C" fn WrapperNew(
             aCx: *mut root::JSContext,
@@ -922,20 +922,20 @@ pub mod root {
             slot: u32,
             dest: *mut root::JS::Value,
         ) {
-            crate::sys::unimplemented_entry("GetProxyReservedSlot")
+            crate::sys::imp::GetProxyReservedSlot(obj, slot, dest)
         }
         pub unsafe extern "C" fn GetProxyPrivate(obj: *mut root::JSObject, dest: *mut root::JS::Value) {
-            crate::sys::unimplemented_entry("GetProxyPrivate")
+            crate::sys::imp::GetProxyPrivate(obj, dest)
         }
         pub unsafe extern "C" fn SetProxyReservedSlot(
             obj: *mut root::JSObject,
             slot: u32,
             val: *const root::JS::Value,
         ) {
-            crate::sys::unimplemented_entry("SetProxyReservedSlot")
+            crate::sys::imp::SetProxyReservedSlot(obj, slot, val)
         }
         pub unsafe extern "C" fn SetProxyPrivate(obj: *mut root::JSObject, expando: *const root::JS::Value) {
-            crate::sys::unimplemented_entry("SetProxyPrivate")
+            crate::sys::imp::SetProxyPrivate(obj, expando)
         }
         pub unsafe extern "C" fn RUST_JSID_IS_INT(id: root::JS::HandleId) -> bool {
             crate::sys::unimplemented_entry("RUST_JSID_IS_INT")
@@ -982,16 +982,16 @@ pub mod root {
             crate::sys::unimplemented_entry("RUST_js_GetErrorMessage")
         }
         pub unsafe extern "C" fn IsProxyHandlerFamily(obj: *mut root::JSObject) -> bool {
-            crate::sys::unimplemented_entry("IsProxyHandlerFamily")
+            crate::sys::imp::IsProxyHandlerFamily(obj)
         }
         pub unsafe extern "C" fn GetProxyHandlerFamily() -> *const ::std::os::raw::c_void {
             crate::sys::imp::GetProxyHandlerFamily()
         }
         pub unsafe extern "C" fn GetProxyHandlerExtra(obj: *mut root::JSObject) -> *const ::std::os::raw::c_void {
-            crate::sys::unimplemented_entry("GetProxyHandlerExtra")
+            crate::sys::imp::GetProxyHandlerExtra(obj)
         }
         pub unsafe extern "C" fn GetProxyHandler(obj: *mut root::JSObject) -> *const ::std::os::raw::c_void {
-            crate::sys::unimplemented_entry("GetProxyHandler")
+            crate::sys::imp::GetProxyHandler(obj)
         }
         pub unsafe extern "C" fn ReportErrorASCII(aCx: *mut root::JSContext, aError: *const ::std::os::raw::c_char) {
             crate::sys::unimplemented_entry("ReportErrorASCII")

@@ -147,6 +147,47 @@ impl JsValue {
     }
 }
 
+/// One essential internal method (ECMA-262 §6.1.7.2) of a host exotic object
+/// (HOST_EXOTIC.md), sent to [`Host::exotic`].
+#[derive(Clone, Debug, PartialEq)]
+pub enum ExoticOp {
+    /// [[GetPrototypeOf]]: `Prototype` or `Default` (the stored prototype).
+    GetPrototypeOf,
+    /// [[SetPrototypeOf]]: `Bool` or `Default` (OrdinarySetPrototypeOf).
+    SetPrototypeOf(Option<ObjectId>),
+    /// [[IsExtensible]]: `Bool` or `Default`.
+    IsExtensible,
+    /// [[PreventExtensions]]: `Bool` or `Default`.
+    PreventExtensions,
+    /// [[GetOwnProperty]]: `Property` or `Default` (the ordinary property map).
+    GetOwnProperty(PropertyKey),
+    /// [[DefineOwnProperty]]: `Bool` or `Default`.
+    DefineOwnProperty(PropertyKey, PartialDescriptor),
+    /// [[HasProperty]]: `Bool` or `Default` (OrdinaryHasProperty over the
+    /// object's own [[GetOwnProperty]] and [[GetPrototypeOf]]).
+    HasProperty(PropertyKey),
+    /// [[Get]] (key, receiver): `Value` or `Default` (OrdinaryGet).
+    Get(PropertyKey, JsValue),
+    /// [[Set]] (key, value, receiver): `Bool` or `Default` (OrdinarySet).
+    Set(PropertyKey, JsValue, JsValue),
+    /// [[Delete]]: `Bool` or `Default`.
+    Delete(PropertyKey),
+    /// [[OwnPropertyKeys]]: `Keys` or `Default`.
+    OwnPropertyKeys,
+}
+
+/// The host's answer to an [`ExoticOp`]. `Default` runs the ordinary
+/// algorithm, as a `js::BaseProxyHandler` without that trap does.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ExoticReply {
+    Default,
+    Bool(bool),
+    Prototype(Option<ObjectId>),
+    Property(Option<PropertyDescriptor>),
+    Value(JsValue),
+    Keys(Vec<PropertyKey>),
+}
+
 /// The embedder. The engine holds it behind an `Rc` and clones that before each call,
 /// so `call` may re-enter the engine (including other host functions).
 pub trait Host {
@@ -170,6 +211,18 @@ pub trait Host {
     /// queue. A notification only: it must not call into the engine. The host
     /// runs the job later with [`Engine::run_host_job`].
     fn enqueue_job(&self, _serial: u64) {}
+    /// An essential internal method of the host exotic object `object`, created
+    /// with [`Engine::create_host_exotic`] and `handler`. It may re-enter the
+    /// engine; errors propagate as abrupt completions.
+    fn exotic(
+        &self,
+        _engine: &mut Engine<'_>,
+        _object: ObjectId,
+        _handler: u64,
+        _op: ExoticOp,
+    ) -> Result<ExoticReply> {
+        Ok(ExoticReply::Default)
+    }
 }
 
 /// Adapts `Host` to the runtime's id-level tracer.
@@ -374,6 +427,30 @@ impl Engine<'_> {
             e.attach_host(ObjectId(id), class, payload, slots, traced)?;
             Ok(ObjectId(id))
         })
+    }
+    /// A new host exotic object (E3, HOST_EXOTIC.md): its internal methods go
+    /// to [`Host::exotic`] with `handler`; it is also a host object (class,
+    /// payload, `slots` reserved slots) with a static `prototype`.
+    pub fn create_host_exotic(
+        &mut self,
+        prototype: Option<ObjectId>,
+        handler: u64,
+        class: u64,
+        payload: u64,
+        slots: usize,
+        traced: bool,
+    ) -> Result<ObjectId> {
+        self.frame(|e| {
+            let id = e.new_object(prototype.map(|p| p.0))?;
+            e.protect(&Value::Object(id))?;
+            e.attach_host(ObjectId(id), class, payload, slots, traced)?;
+            e.make_host_exotic(id, handler)?;
+            Ok(ObjectId(id))
+        })
+    }
+    /// The handler word of a host exotic object.
+    pub fn exotic_handler_of(&self, object: ObjectId) -> Option<u64> {
+        self.exotic_handler(object.0)
     }
     /// Make an existing ordinary object a host object (used for the global object).
     pub fn attach_host(
@@ -642,9 +719,10 @@ impl Engine<'_> {
     }
     /// Make `object` an immutable prototype exotic object (§10.4.7): later
     /// [[SetPrototypeOf]] calls only accept its current [[Prototype]]. Used for
-    /// WebIDL global objects. False for proxies.
+    /// WebIDL global objects. False for script proxies; host exotics with a
+    /// static prototype accept it (JS_SetImmutablePrototype on a DOM proxy).
     pub fn set_immutable_prototype(&mut self, object: ObjectId) -> Result<bool> {
-        if self.is_proxy(object.0) {
+        if self.is_proxy(object.0) && self.exotic_handler(object.0).is_none() {
             return Ok(false);
         }
         let mut data = self.data(object.0)?.clone();

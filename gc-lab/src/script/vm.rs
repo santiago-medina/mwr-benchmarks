@@ -128,6 +128,13 @@ pub(super) enum Object {
         callable: bool,
         constructor: bool,
     },
+    /// Host exotic object (E3, HOST_EXOTIC.md): ordinary `Data` for its
+    /// prototype, extensibility, host slots and default behaviour, with every
+    /// essential internal method sent to `Host::exotic` with `handler`.
+    HostExotic {
+        data: Data,
+        handler: u64,
+    },
     Node {
         tag: String,
         text: String,

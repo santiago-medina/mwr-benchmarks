@@ -31,7 +31,9 @@ use std::os::raw::c_void;
 use std::ptr;
 use std::rc::Rc;
 
-use gc_lab::script::{Engine, Host, JsValue, ObjectId, RealmId, ScriptError};
+use gc_lab::script::{
+    Engine, ExoticOp, ExoticReply, Host, JsValue, ObjectId, RealmId, ScriptError,
+};
 use gc_lab::Model;
 
 use super::context::{context, Context};
@@ -81,6 +83,9 @@ pub(super) struct Shared {
     /// `AddRawValueRoot` locations: address of the `JS::Value` -> root count.
     /// Each object value read through them is a root (`Host::trace_roots`).
     raw_roots: RefCell<HashMap<usize, usize>>,
+    /// Handler, private value (bit-exact) and prototype mode of each object
+    /// made by `NewProxyObject` (proxy.rs).
+    pub(super) proxies: RefCell<HashMap<ObjectId, super::proxy::ProxyState>>,
 }
 
 #[repr(C)]
@@ -152,6 +157,22 @@ impl Host for FacadeHost {
                 out.push(unsafe { object_cell(value.to_object()) }.id);
             }
         }
+        if let Some(proxy) = self.0.proxies.borrow().get(&object) {
+            if proxy.private.is_object() {
+                // SAFETY: an object private value is a cell pointer.
+                out.push(unsafe { object_cell(proxy.private.to_object()) }.id);
+            }
+        }
+    }
+
+    fn exotic(
+        &self,
+        engine: &mut Engine<'_>,
+        object: ObjectId,
+        handler: u64,
+        op: ExoticOp,
+    ) -> Result<ExoticReply, ScriptError> {
+        super::proxy::exotic(&self.0, engine, object, handler, op)
     }
 }
 

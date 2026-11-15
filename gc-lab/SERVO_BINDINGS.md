@@ -208,8 +208,14 @@ allocation, so an unrooted id fails the test).
   set, define, accessor, delete, own keys and prototype; call and construct;
   exceptions in both directions (`exception_value`, `throw_value`,
   `throw_new_error`).
-- **Not yet:** E3 (host exotic objects), E6 (buffers), arrays and BigInt in
-  the value API, several realms.
+- **E3 (2026-11-16, HOST_EXOTIC.md):** `Engine::create_host_exotic(proto,
+  handler, class, payload, slots, traced)` makes an `Object::HostExotic`
+  whose essential internal methods send an `ExoticOp` to `Host::exotic`;
+  `ExoticReply::Default` runs the ordinary algorithm. `tests/host_exotic.rs`
+  covers the named-properties shape, reentrant traps and the receiver. The
+  facade's `NewProxyObject` builds on it (MOZJS_FACADE.md).
+- **Not yet:** E3b (lazy prototypes, WindowProxy), E6 (buffers), arrays and
+  BigInt in the value API, several realms.
 
 **Interpreter guards on the Servo path:** the call depth limit (32 nested
 `invoke_this` frames) and the default step limit (10,000) are test guards, not

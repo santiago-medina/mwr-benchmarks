@@ -334,7 +334,8 @@ impl Engine<'_> {
                 Object::Ordinary(d)
                 | Object::Builtin { data: d, .. }
                 | Object::Bound { data: d, .. }
-                | Object::Closure { data: d, .. },
+                | Object::Closure { data: d, .. }
+                | Object::HostExotic { data: d, .. },
             ) => Ok(d),
             _ => Err(ScriptError::Unsupported(
                 "ordinary reflection on host objects",
@@ -365,7 +366,8 @@ impl Engine<'_> {
                 Object::Ordinary(d)
                 | Object::Builtin { data: d, .. }
                 | Object::Bound { data: d, .. }
-                | Object::Closure { data: d, .. },
+                | Object::Closure { data: d, .. }
+                | Object::HostExotic { data: d, .. },
             ) => *d = next,
             _ => unreachable!(),
         }
@@ -406,7 +408,8 @@ impl Engine<'_> {
                 Object::Ordinary(d)
                 | Object::Builtin { data: d, .. }
                 | Object::Bound { data: d, .. }
-                | Object::Closure { data: d, .. },
+                | Object::Closure { data: d, .. }
+                | Object::HostExotic { data: d, .. },
             ) => Ok(d),
             _ => Err(ScriptError::Unsupported(
                 "ordinary reflection on host objects",
@@ -433,6 +436,11 @@ impl Engine<'_> {
         if self.is_proxy(id) {
             return self.proxy_own(id, &key);
         }
+        self.ordinary_own(id, key)
+    }
+    /// [[GetOwnProperty]] of a non-proxy object (OrdinaryGetOwnProperty §10.1.5.1
+    /// and the built-in exotic objects); also the default of host exotics.
+    pub(super) fn ordinary_own(&mut self, id: Id, key: Key) -> Result<Option<Property>> {
         if let Some((m, name)) = self.namespace_key(id, &key)? {
             return self.namespace_own(m, &name);
         }
@@ -561,6 +569,11 @@ impl Engine<'_> {
         if self.is_proxy(id) {
             return self.proxy_define(id, &key, d);
         }
+        self.ordinary_define(id, key, d)
+    }
+    /// [[DefineOwnProperty]] of a non-proxy object (§10.1.6 and the built-in
+    /// exotic objects); also the default of host exotics.
+    pub(super) fn ordinary_define(&mut self, id: Id, key: Key, d: Descriptor) -> Result<bool> {
         if let Some((m, name)) = self.namespace_key(id, &key)? {
             return self.namespace_define(m, &name, d);
         }
@@ -811,6 +824,17 @@ impl Engine<'_> {
         if found.is_none() && at.is_some() {
             return Err(ScriptError::Runtime("prototype traversal limit"));
         }
+        self.set_with_own_descriptor(found, key, value, receiver)
+    }
+    /// OrdinarySetWithOwnDescriptor (§10.1.9.2) steps 2-7, `found` being ownDesc
+    /// after step 1 (None: the chain ended without the property).
+    pub(super) fn set_with_own_descriptor(
+        &mut self,
+        found: Option<Property>,
+        key: Key,
+        value: Value,
+        receiver: Value,
+    ) -> Result<bool> {
         match found.map(|p| p.kind).unwrap_or(Kind::Data {
             value: Value::Undefined,
             writable: true,
@@ -863,6 +887,10 @@ impl Engine<'_> {
         if self.is_proxy(id) {
             return self.proxy_delete(id, &key);
         }
+        self.ordinary_delete(id, key)
+    }
+    /// [[Delete]] of a non-proxy object (§10.1.10); also the default of host exotics.
+    pub(super) fn ordinary_delete(&mut self, id: Id, key: Key) -> Result<bool> {
         if let Some((m, name)) = self.namespace_key(id, &key)? {
             return Ok(!self.namespace_has(m, &name));
         }
@@ -902,6 +930,10 @@ impl Engine<'_> {
         if self.is_proxy(id) {
             return self.proxy_set_prototype(id, prototype);
         }
+        self.ordinary_set_prototype(id, prototype)
+    }
+    /// OrdinarySetPrototypeOf (§10.1.2.1); also the default of host exotics.
+    pub(super) fn ordinary_set_prototype(&mut self, id: Id, prototype: Option<Id>) -> Result<bool> {
         if self.data(id)?.prototype == prototype {
             return Ok(true);
         }
@@ -997,6 +1029,11 @@ impl Engine<'_> {
         if self.is_proxy(id) {
             return self.proxy_own_keys(id);
         }
+        self.ordinary_own_keys(id)
+    }
+    /// [[OwnPropertyKeys]] of a non-proxy object (§10.1.11); also the default of
+    /// host exotics.
+    pub(super) fn ordinary_own_keys(&mut self, id: Id) -> Result<Vec<Key>> {
         if let Some(m) = self.data(id)?.namespace {
             return self.namespace_own_keys(id, m);
         }

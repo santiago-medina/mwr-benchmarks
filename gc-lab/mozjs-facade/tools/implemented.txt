@@ -247,3 +247,11 @@ PendingExceptionStackInfo
 CurrentGlobal
 AddRawValueRoot
 RemoveRawValueRoot
+gluebindings.rs:NewProxyObject
+GetProxyPrivate
+SetProxyPrivate
+GetProxyReservedSlot
+SetProxyReservedSlot
+GetProxyHandler
+GetProxyHandlerExtra
+IsProxyHandlerFamily

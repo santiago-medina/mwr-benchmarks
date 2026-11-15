@@ -124,6 +124,10 @@ For each listed name `tools/gen_sys.py` emits a forwarder to
 `crate::sys::imp::NAME(args)` instead of the `unimplemented_entry` stub; the
 generator fails if a listed name is missing from the bindings or appears
 twice. The bodies live in `src/sys/imp/*.rs`, one file per cluster.
+A name declared in two bindings files (jsapi and glue forms of
+`NewProxyObject`, ...) can be qualified as `file:NAME`
+(`gluebindings.rs:NewProxyObject`): only that file's declaration delegates,
+and the ambiguity check skips it.
 
 Context cluster (`src/sys/imp/context.rs`, 40 entry points: everything
 `JSEngine::init`, `Runtime::new` and Servo's `Runtime::new_with_parent` call
@@ -143,6 +147,22 @@ leaked `Handler` holding a copy of the `ProxyTraps`, the `extra` pointer
 address of a static. Principals follow jsglue's `RustJSPrincipals` (a
 `JSPrincipals` prefix, then callbacks and private data), and
 `JS_DropPrincipals` calls the runtime's destroy callback at zero.
+
+Proxy objects (same file, 8 glue entry points, HOST_EXOTIC.md):
+`NewProxyObject` makes an engine host exotic object (E3) with the handler
+pointer as its handler word, a static prototype (or none when `lazyProto`),
+the class's reserved slots and the private value in `Shared::proxies`
+(traced like slots). `FacadeHost::exotic` maps each essential internal
+method to the handler's `ProxyTraps` through `run_parked` (the park/unpark
+of `call_native`, factored out), so traps reenter JSAPI: descriptors go
+through `partial_to_js`/`complete_descriptor`, a failed `ObjectOpResult` is
+`Bool(false)`, a trap returning false throws the pending exception, and a
+missing optional trap (`has`, `get`, `set`, `isExtensible`) or a static
+prototype is `ExoticReply::Default`, the ordinary algorithm.
+`GetProxyPrivate`/`SetProxyPrivate`, `Get/SetProxyReservedSlot`,
+`GetProxyHandler`, `GetProxyHandlerExtra` and `IsProxyHandlerFamily` read
+the same state. `tests/proxies.rs` builds a named-properties proxy whose
+traps keep expandos on the private object.
 
 Globals cluster (`src/sys/imp/objects.rs` plus five hooks in `context.rs`,
 25 entry points: Servo's `create_global_object`, `select_compartment`,
@@ -372,7 +392,7 @@ rooting bugs into immediate, reproducible failures. It is far too slow for
 pages: switch the facade to `GcPolicy::Threshold` before C2 or any
 performance measurement (see "Next (C1)").
 
-246 entry points are implemented in total.
+257 entry points are implemented in total.
 
 ## C1 result (servoshell links)
 

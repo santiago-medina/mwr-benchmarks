@@ -13,7 +13,8 @@ mod vm;
 pub use vm::{Engine, GcPolicy, ScriptError, SuspendedEngine};
 mod embed;
 pub use embed::{
-    Host, JsValue, ObjectId, PartialDescriptor, PropertyDescriptor, PropertyKey, RealmId,
+    ExoticOp, ExoticReply, Host, JsValue, ObjectId, PartialDescriptor, PropertyDescriptor,
+    PropertyKey, RealmId,
 };
 
 mod adapter;
@@ -112,6 +113,7 @@ mod calendar;
 mod dates;
 mod regexp_builtins;
 
+mod host_exotic;
 mod proxy;
 mod realms;
 #[cfg(feature = "temporal")]

@@ -32,6 +32,9 @@ FN = re.compile(r"^(\s*)pub fn ([A-Za-z0-9_]+)\s*\(", re.S)
 # must stay `static mut` (list produced by compiling; one name per line).
 NONSYNC = set((Path(__file__).resolve().parent / "nonsync_statics.txt").read_text().split())
 IMPLEMENTED = set((Path(__file__).resolve().parent / "implemented.txt").read_text().split())
+# A name that exists in both binding files (e.g. `NewProxyObject`) is listed
+# as `<file>:<name>`; only that file's definition delegates.
+QUALIFIED = {entry for entry in IMPLEMENTED if ":" in entry}
 # Statics with a real value: the constant Value handles point at fixed cells,
 # as SpiderMonkey's do (jsapi.cpp `JS::UndefinedHandleValue` and friends).
 STATIC_INIT = {
@@ -87,8 +90,11 @@ def emit(item, stats):
             decl = re.sub(r"^\s*\.\.\.,?\s*\n", "", decl, flags=re.M)
             stats["variadic"].append(name)
         decl = decl.replace("pub fn ", "pub unsafe extern \"C\" fn ", 1)
-        if name in IMPLEMENTED:
-            if name in stats["seen"]:
+        qualified = stats["file"] + ":" + name in QUALIFIED
+        if qualified:
+            stats["seen"].add(stats["file"] + ":" + name)
+        if name in IMPLEMENTED or qualified:
+            if name in stats["seen"] and not qualified:
                 raise SystemExit("implemented name is ambiguous: " + name)
             call = "crate::sys::imp::%s(%s)" % (name, ", ".join(param_names(decl)))
             stats["implemented"] += 1
@@ -136,7 +142,7 @@ def main():
     dst.mkdir(parents=True, exist_ok=True)
     seen = set()
     for name in ("jsapi.rs", "gluebindings.rs"):
-        stats = {"fn": 0, "static": 0, "variadic": [], "implemented": 0, "seen": seen}
+        stats = {"fn": 0, "static": 0, "variadic": [], "implemented": 0, "seen": seen, "file": name}
         # mozjs_sys modules live under crate::sys in the facade.
         text = convert((src / name).read_text().replace("crate::", "crate::sys::")
             .replace("pub type FILE = ::libc::FILE;", "pub type FILE = ::core::ffi::c_void;"), stats)

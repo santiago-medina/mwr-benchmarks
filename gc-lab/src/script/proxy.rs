@@ -64,7 +64,12 @@ fn as_descriptor(p: &Property) -> Descriptor {
 
 impl Engine<'_> {
     pub(super) fn is_proxy(&self, id: Id) -> bool {
-        matches!(self.objects.get(&id), Some(Object::Proxy { .. }))
+        // Host exotics (HOST_EXOTIC.md) count as proxies: no ordinary fast path
+        // applies to them and every internal method reaches the dispatch below.
+        matches!(
+            self.objects.get(&id),
+            Some(Object::Proxy { .. } | Object::HostExotic { .. })
+        )
     }
 
     /// The [[ProxyTarget]] and [[ProxyHandler]] slots after ValidateNonRevokedProxy (§10.5.14).
@@ -211,6 +216,9 @@ impl Engine<'_> {
             if !self.is_proxy(id) {
                 return Ok(self.data(id).is_ok_and(|d| d.array));
             }
+            if self.exotic_handler(id).is_some() {
+                return Ok(false);
+            }
             id = self.proxy_slots(id)?.0;
         }
         Err(ScriptError::Runtime("proxy chain limit"))
@@ -222,6 +230,9 @@ impl Engine<'_> {
     pub(super) fn get_prototype_of(&mut self, id: Id) -> Result<Option<Id>> {
         if !self.is_proxy(id) {
             return Ok(self.data(id)?.prototype);
+        }
+        if let Some(handler) = self.exotic_handler(id) {
+            return self.exotic_get_prototype_of(id, handler);
         }
         self.frame(|e| {
             // §10.5.1
@@ -254,6 +265,9 @@ impl Engine<'_> {
 
     /// Proxy [[SetPrototypeOf]] (§10.5.2).
     pub(super) fn proxy_set_prototype(&mut self, id: Id, proto: Option<Id>) -> Result<bool> {
+        if let Some(handler) = self.exotic_handler(id) {
+            return self.exotic_set_prototype(id, handler, proto);
+        }
         self.frame(|e| {
             let (target, handler) = e.proxy_slots(id)?;
             let Some(trap) = e.proxy_trap(handler, "setPrototypeOf")? else {
@@ -279,6 +293,9 @@ impl Engine<'_> {
     pub(super) fn is_extensible(&mut self, id: Id) -> Result<bool> {
         if !self.is_proxy(id) {
             return Ok(self.data(id)?.extensible);
+        }
+        if let Some(handler) = self.exotic_handler(id) {
+            return self.exotic_is_extensible(id, handler);
         }
         self.frame(|e| {
             // §10.5.3
@@ -310,6 +327,9 @@ impl Engine<'_> {
             self.replace_data(id, data)?;
             return Ok(true);
         }
+        if let Some(handler) = self.exotic_handler(id) {
+            return self.exotic_prevent_extensions(id, handler);
+        }
         self.frame(|e| {
             // §10.5.4
             let (target, handler) = e.proxy_slots(id)?;
@@ -328,6 +348,9 @@ impl Engine<'_> {
 
     /// Proxy [[GetOwnProperty]] (§10.5.5).
     pub(super) fn proxy_own(&mut self, id: Id, key: &Key) -> Result<Option<Property>> {
+        if let Some(handler) = self.exotic_handler(id) {
+            return self.exotic_own(id, handler, key);
+        }
         self.frame(|e| {
             let (target, handler) = e.proxy_slots(id)?;
             let Some(trap) = e.proxy_trap(handler, "getOwnPropertyDescriptor")? else {
@@ -403,6 +426,9 @@ impl Engine<'_> {
 
     /// Proxy [[DefineOwnProperty]] (§10.5.6).
     pub(super) fn proxy_define(&mut self, id: Id, key: &Key, d: Descriptor) -> Result<bool> {
+        if let Some(handler) = self.exotic_handler(id) {
+            return self.exotic_define(id, handler, key, d);
+        }
         self.frame(|e| {
             let (target, handler) = e.proxy_slots(id)?;
             let Some(trap) = e.proxy_trap(handler, "defineProperty")? else {
@@ -448,6 +474,9 @@ impl Engine<'_> {
 
     /// Proxy [[HasProperty]] (§10.5.7).
     pub(super) fn proxy_has(&mut self, id: Id, key: &Key) -> Result<bool> {
+        if let Some(handler) = self.exotic_handler(id) {
+            return self.exotic_has(id, handler, key);
+        }
         self.frame(|e| {
             let (target, handler) = e.proxy_slots(id)?;
             let Some(trap) = e.proxy_trap(handler, "has")? else {
@@ -473,6 +502,9 @@ impl Engine<'_> {
 
     /// Proxy [[Get]] (§10.5.8).
     pub(super) fn proxy_get(&mut self, id: Id, key: &Key, receiver: Value) -> Result<Value> {
+        if let Some(handler) = self.exotic_handler(id) {
+            return self.exotic_get(id, handler, key, receiver);
+        }
         self.frame(|e| {
             let (target, handler) = e.proxy_slots(id)?;
             let Some(trap) = e.proxy_trap(handler, "get")? else {
@@ -511,6 +543,9 @@ impl Engine<'_> {
         value: Value,
         receiver: Value,
     ) -> Result<bool> {
+        if let Some(handler) = self.exotic_handler(id) {
+            return self.exotic_set(id, handler, key, value, receiver);
+        }
         self.frame(|e| {
             let (target, handler) = e.proxy_slots(id)?;
             let Some(trap) = e.proxy_trap(handler, "set")? else {
@@ -552,6 +587,9 @@ impl Engine<'_> {
 
     /// Proxy [[Delete]] (§10.5.10).
     pub(super) fn proxy_delete(&mut self, id: Id, key: &Key) -> Result<bool> {
+        if let Some(handler) = self.exotic_handler(id) {
+            return self.exotic_delete(id, handler, key);
+        }
         self.frame(|e| {
             let (target, handler) = e.proxy_slots(id)?;
             let Some(trap) = e.proxy_trap(handler, "deleteProperty")? else {
@@ -579,6 +617,9 @@ impl Engine<'_> {
 
     /// Proxy [[OwnPropertyKeys]] (§10.5.11).
     pub(super) fn proxy_own_keys(&mut self, id: Id) -> Result<Vec<Key>> {
+        if let Some(handler) = self.exotic_handler(id) {
+            return self.exotic_own_keys(id, handler);
+        }
         self.frame(|e| {
             let (target, handler) = e.proxy_slots(id)?;
             let Some(trap) = e.proxy_trap(handler, "ownKeys")? else {

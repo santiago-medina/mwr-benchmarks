@@ -70,7 +70,8 @@ fn data_mut<'a>(objects: &'a mut crate::dual::IdMap<Object>, id: Id) -> Option<&
             Object::Ordinary(d)
             | Object::Builtin { data: d, .. }
             | Object::Bound { data: d, .. }
-            | Object::Closure { data: d, .. },
+            | Object::Closure { data: d, .. }
+            | Object::HostExotic { data: d, .. },
         ) => Some(d),
         _ => None,
     }
