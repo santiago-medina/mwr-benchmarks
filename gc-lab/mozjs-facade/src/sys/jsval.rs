@@ -78,19 +78,19 @@ enum ValueShiftedTag {
 const JSVAL_PAYLOAD_MASK: u64 = 0x00007FFFFFFFFFFF;
 
 #[inline(always)]
-fn AsJSVal(val: u64) -> JSVal {
+const fn AsJSVal(val: u64) -> JSVal {
     JSVal { asBits_: val }
 }
 
 #[cfg(target_pointer_width = "64")]
 #[inline(always)]
-fn BuildJSVal(tag: ValueTag, payload: u64) -> JSVal {
+const fn BuildJSVal(tag: ValueTag, payload: u64) -> JSVal {
     AsJSVal(((tag as u32 as u64) << JSVAL_TAG_SHIFT) | payload)
 }
 
 #[cfg(target_pointer_width = "32")]
 #[inline(always)]
-fn BuildJSVal(tag: ValueTag, payload: u64) -> JSVal {
+const fn BuildJSVal(tag: ValueTag, payload: u64) -> JSVal {
     AsJSVal(((tag as u32 as u64) << 32) | payload)
 }
 
@@ -101,12 +101,12 @@ pub fn MagicValue(why: u32) -> JSVal {
 }
 
 #[inline(always)]
-pub fn NullValue() -> JSVal {
+pub const fn NullValue() -> JSVal {
     BuildJSVal(ValueTag::NULL, 0)
 }
 
 #[inline(always)]
-pub fn UndefinedValue() -> JSVal {
+pub const fn UndefinedValue() -> JSVal {
     BuildJSVal(ValueTag::UNDEFINED, 0)
 }
 
@@ -157,7 +157,7 @@ pub fn StringValue(s: &JSString) -> JSVal {
 }
 
 #[inline(always)]
-pub fn BooleanValue(b: bool) -> JSVal {
+pub const fn BooleanValue(b: bool) -> JSVal {
     BuildJSVal(ValueTag::BOOLEAN, b as u64)
 }
 
@@ -630,3 +630,11 @@ fn assert_agreement(val1: JSVal, val2: JSVal) {
 
     assert_eq!(unsafe { JS_ValueIsUndefined(&val1) }, val2.is_undefined());
 }
+
+/// Targets of the `JS::{Null,Undefined,True,False}HandleValue` statics
+/// (SpiderMonkey's `static const Value` cells in jsapi.cpp); the generated
+/// statics in `sys::generated::jsapi` point at these (tools/gen_sys.py).
+pub static NULL_HANDLE_TARGET: JSVal = NullValue();
+pub static UNDEFINED_HANDLE_TARGET: JSVal = UndefinedValue();
+pub static TRUE_HANDLE_TARGET: JSVal = BooleanValue(true);
+pub static FALSE_HANDLE_TARGET: JSVal = BooleanValue(false);

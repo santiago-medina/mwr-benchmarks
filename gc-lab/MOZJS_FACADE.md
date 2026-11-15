@@ -44,6 +44,11 @@ loop.
   (`tests/servo_statics.rs`). The exceptions are the const statics whose types
   hold raw pointers: they are not `Sync`, so they stay `static mut`
   (`tools/nonsync_statics.txt`, 27 names).
+  Four statics get real values (`STATIC_INIT` in gen_sys.py):
+  `JS::{Null,Undefined,True,False}HandleValue` point at fixed `JSVal` cells
+  in `sys/jsval.rs`, as SpiderMonkey's point at `static const Value`s.
+  Zeroed, they made `Handle::from_raw(UndefinedHandleValue)` panic in
+  Servo's `window_named_properties::create` (probe at 76859c3).
 - It drops the C variadic tails (`...`), because Rust cannot define variadic
   functions. The affected functions are JS_ReportError{ASCII,Latin1,UTF8},
   JS_ReportErrorNumber{ASCII,Latin1,UTF8,UC}, Warn{ASCII,Latin1,UTF8} and

@@ -32,6 +32,17 @@ FN = re.compile(r"^(\s*)pub fn ([A-Za-z0-9_]+)\s*\(", re.S)
 # must stay `static mut` (list produced by compiling; one name per line).
 NONSYNC = set((Path(__file__).resolve().parent / "nonsync_statics.txt").read_text().split())
 IMPLEMENTED = set((Path(__file__).resolve().parent / "implemented.txt").read_text().split())
+# Statics with a real value: the constant Value handles point at fixed cells,
+# as SpiderMonkey's do (jsapi.cpp `JS::UndefinedHandleValue` and friends).
+STATIC_INIT = {
+    name: "root::JS::Handle { _phantom_0: ::std::marker::PhantomData, ptr: &crate::sys::jsval::%s }" % target
+    for name, target in (
+        ("NullHandleValue", "NULL_HANDLE_TARGET"),
+        ("UndefinedHandleValue", "UNDEFINED_HANDLE_TARGET"),
+        ("TrueHandleValue", "TRUE_HANDLE_TARGET"),
+        ("FalseHandleValue", "FALSE_HANDLE_TARGET"),
+    )
+}
 STATIC = re.compile(r"^(\s*)pub static (mut )?([A-Za-z0-9_]+)\s*:\s*(.*);\s*$", re.S)
 
 
@@ -90,9 +101,10 @@ def emit(item, stats):
     m = STATIC.match(decl)
     if m:
         stats["static"] += 1
+        init = STATIC_INIT.get(m.group(3), "unsafe { ::core::mem::zeroed() }")
         return keep + [
-            "%spub static %s%s: %s = unsafe { ::core::mem::zeroed() };"
-            % (m.group(1), "mut " if m.group(2) or m.group(3) in NONSYNC else "", m.group(3), m.group(4))
+            "%spub static %s%s: %s = %s;"
+            % (m.group(1), "mut " if m.group(2) or m.group(3) in NONSYNC else "", m.group(3), m.group(4), init)
         ]
     raise SystemExit("unknown extern item: %r" % decl)
 

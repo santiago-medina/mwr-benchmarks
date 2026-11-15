@@ -21,3 +21,20 @@ static CLASS: Shared = Shared(JSClass {
 fn proxy_hooks_can_be_borrowed_in_a_static() {
     assert!(!CLASS.0.cOps.is_null());
 }
+
+/// The constant Value handles point at fixed cells, as SpiderMonkey's do:
+/// Servo passes `UndefinedHandleValue` to `NewProxyObject` and
+/// `Handle::from_raw` unwraps the pointer.
+#[test]
+fn constant_value_handles_point_at_values() {
+    use mozjs::jsapi::JS::{
+        FalseHandleValue, NullHandleValue, TrueHandleValue, UndefinedHandleValue,
+    };
+    unsafe {
+        assert!((*UndefinedHandleValue.ptr).is_undefined());
+        assert!((*NullHandleValue.ptr).is_null());
+        assert!((*TrueHandleValue.ptr).to_boolean());
+        assert!((*FalseHandleValue.ptr).is_boolean());
+        assert!(!(*FalseHandleValue.ptr).to_boolean());
+    }
+}

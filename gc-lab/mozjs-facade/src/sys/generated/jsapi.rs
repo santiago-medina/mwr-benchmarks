@@ -7690,10 +7690,10 @@ pub mod root {
             ["Align of template specialization: GCPolicy_open0_Value_close0"]
                 [::std::mem::align_of::<root::JS::GCPolicy>() - 1usize];
         };
-            pub static mut NullHandleValue: root::JS::HandleValue = unsafe { ::core::mem::zeroed() };
-            pub static mut UndefinedHandleValue: root::JS::HandleValue = unsafe { ::core::mem::zeroed() };
-            pub static mut TrueHandleValue: root::JS::HandleValue = unsafe { ::core::mem::zeroed() };
-            pub static mut FalseHandleValue: root::JS::HandleValue = unsafe { ::core::mem::zeroed() };
+            pub static mut NullHandleValue: root::JS::HandleValue = root::JS::Handle { _phantom_0: ::std::marker::PhantomData, ptr: &crate::sys::jsval::NULL_HANDLE_TARGET };
+            pub static mut UndefinedHandleValue: root::JS::HandleValue = root::JS::Handle { _phantom_0: ::std::marker::PhantomData, ptr: &crate::sys::jsval::UNDEFINED_HANDLE_TARGET };
+            pub static mut TrueHandleValue: root::JS::HandleValue = root::JS::Handle { _phantom_0: ::std::marker::PhantomData, ptr: &crate::sys::jsval::TRUE_HANDLE_TARGET };
+            pub static mut FalseHandleValue: root::JS::HandleValue = root::JS::Handle { _phantom_0: ::std::marker::PhantomData, ptr: &crate::sys::jsval::FALSE_HANDLE_TARGET };
         #[allow(clippy::unnecessary_operation, clippy::identity_op)]
         const _: () = {
             ["Size of template specialization: Handle_open0_Maybe_open1_Value_close1_close0"]
