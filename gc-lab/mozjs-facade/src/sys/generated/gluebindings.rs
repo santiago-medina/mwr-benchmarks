@@ -941,7 +941,7 @@ pub mod root {
             crate::sys::unimplemented_entry("RUST_JSID_IS_INT")
         }
         pub unsafe extern "C" fn int_to_jsid(i: i32, id: root::JS::MutableHandleId) {
-            crate::sys::unimplemented_entry("int_to_jsid")
+            crate::sys::imp::int_to_jsid(i, id)
         }
         pub unsafe extern "C" fn RUST_JSID_TO_INT(id: root::JS::HandleId) -> i32 {
             crate::sys::unimplemented_entry("RUST_JSID_TO_INT")
@@ -950,13 +950,13 @@ pub mod root {
             crate::sys::unimplemented_entry("RUST_JSID_IS_STRING")
         }
         pub unsafe extern "C" fn RUST_JSID_TO_STRING(id: root::JS::HandleId) -> *mut root::JSString {
-            crate::sys::unimplemented_entry("RUST_JSID_TO_STRING")
+            crate::sys::imp::RUST_JSID_TO_STRING(id)
         }
         pub unsafe extern "C" fn RUST_SYMBOL_TO_JSID(sym: *mut root::JS::Symbol, id: root::JS::MutableHandleId) {
             crate::sys::imp::RUST_SYMBOL_TO_JSID(sym, id)
         }
         pub unsafe extern "C" fn RUST_JSID_IS_VOID(id: root::JS::HandleId) -> bool {
-            crate::sys::unimplemented_entry("RUST_JSID_IS_VOID")
+            crate::sys::imp::RUST_JSID_IS_VOID(id)
         }
         pub unsafe extern "C" fn SetBuildId(
             buildId: *mut root::JS::BuildIdCharVector,
@@ -973,7 +973,7 @@ pub mod root {
             str_: *mut root::JSString,
             id: root::JS::MutableHandleId,
         ) {
-            crate::sys::unimplemented_entry("RUST_INTERNED_STRING_TO_JSID")
+            crate::sys::imp::RUST_INTERNED_STRING_TO_JSID(cx, str_, id)
         }
         pub unsafe extern "C" fn RUST_js_GetErrorMessage(
             userRef: *mut ::std::os::raw::c_void,
@@ -1010,7 +1010,7 @@ pub mod root {
             cx: *mut root::JSContext,
             stopAtWindowProxy: bool,
         ) -> *mut root::JSObject {
-            crate::sys::unimplemented_entry("UnwrapObjectDynamic")
+            crate::sys::imp::UnwrapObjectDynamic(obj, cx, stopAtWindowProxy)
         }
         pub unsafe extern "C" fn UncheckedUnwrapObject(
             obj: *mut root::JSObject,
@@ -1021,25 +1021,25 @@ pub mod root {
         pub unsafe extern "C" fn CreateRootedIdVector(
             cx: *mut root::JSContext,
         ) -> *mut root::JS::PersistentRootedIdVector {
-            crate::sys::unimplemented_entry("CreateRootedIdVector")
+            crate::sys::imp::CreateRootedIdVector(cx)
         }
         pub unsafe extern "C" fn GetIdVectorAddress(
             v: *mut root::JS::PersistentRootedIdVector,
         ) -> *mut ::std::os::raw::c_void {
-            crate::sys::unimplemented_entry("GetIdVectorAddress")
+            crate::sys::imp::GetIdVectorAddress(v)
         }
         pub unsafe extern "C" fn SliceRootedIdVector(
             v: *const root::JS::PersistentRootedIdVector,
             length: *mut usize,
         ) -> *const root::jsid {
-            crate::sys::unimplemented_entry("SliceRootedIdVector")
+            crate::sys::imp::SliceRootedIdVector(v, length)
         }
         pub unsafe extern "C" fn AppendToIdVector(v: root::JS::MutableHandleIdVector, id: root::JS::HandleId)
             -> bool {
-            crate::sys::unimplemented_entry("AppendToIdVector")
+            crate::sys::imp::AppendToIdVector(v, id)
         }
         pub unsafe extern "C" fn DestroyRootedIdVector(v: *mut root::JS::PersistentRootedIdVector) {
-            crate::sys::unimplemented_entry("DestroyRootedIdVector")
+            crate::sys::imp::DestroyRootedIdVector(v)
         }
         pub unsafe extern "C" fn CreateRootedObjectVector(
             aCx: *mut root::JSContext,
@@ -1427,7 +1427,7 @@ pub mod root {
             value: root::JS::HandleValue,
             attrs: u32,
         ) {
-            crate::sys::unimplemented_entry("SetDataPropertyDescriptor")
+            crate::sys::imp::SetDataPropertyDescriptor(desc, value, attrs)
         }
         pub unsafe extern "C" fn SetAccessorPropertyDescriptor(
             desc: root::JS::MutableHandle<root::JS::PropertyDescriptor>,

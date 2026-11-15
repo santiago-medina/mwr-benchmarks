@@ -219,7 +219,7 @@ values for web pages. The facade must raise or remove both before C2.
 Servo import paths resolve. Every entry point is a stub. The Servo error count
 was 0 at 4cd42d1 (CI `servo-facade` job). C1 (servoshell build and startup
 probe) is measured in the same job: servoshell links at 6513efa, and the
-implemented entry points (142, through WebIDL interface object setup, GC barriers and pending exceptions) are listed in
+implemented entry points (206, through WebIDL interface object setup, GC barriers, pending exceptions, property access by id and calls) are listed in
 MOZJS_FACADE.md.
 
 ## Milestones and how each is measured

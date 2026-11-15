@@ -45,7 +45,7 @@ use crate::sys::jsval::{
 /// its generic method, getter and setter trampolines).
 #[derive(Clone)]
 pub struct Native {
-    op: root::JSNative,
+    pub(super) op: root::JSNative,
     info: *const root::JSJitInfo,
     /// The function object; there is exactly one per native word.
     object: Cell<Option<ObjectId>>,
@@ -54,15 +54,15 @@ pub struct Native {
 /// A `JSString*`.
 #[repr(C, align(8))]
 pub struct StringCell {
-    text: String,
+    pub(super) text: String,
     latin1: Option<Box<[u8]>>,
-    utf16: Box<[u16]>,
+    pub(super) utf16: Box<[u16]>,
 }
 
 /// A `JS::Symbol*`: the engine's symbol number.
 #[repr(C, align(8))]
 pub struct SymbolCell {
-    id: u64,
+    pub(super) id: u64,
 }
 
 /// Interned string and symbol cells of a context.
@@ -73,7 +73,7 @@ pub struct Atoms {
 }
 
 impl Atoms {
-    fn string(&self, text: String) -> *mut root::JSString {
+    pub(super) fn string(&self, text: String) -> *mut root::JSString {
         let mut strings = self.strings.borrow_mut();
         let cell = *strings.entry(text.clone()).or_insert_with(|| {
             let utf16: Box<[u16]> = text.encode_utf16().collect();
@@ -90,7 +90,7 @@ impl Atoms {
         cell as *const StringCell as *mut root::JSString
     }
 
-    fn symbol(&self, id: u64) -> *mut JS::Symbol {
+    pub(super) fn symbol(&self, id: u64) -> *mut JS::Symbol {
         let cell = *self
             .symbols
             .borrow_mut()
@@ -100,13 +100,13 @@ impl Atoms {
     }
 }
 
-unsafe fn string_cell<'a>(s: *mut root::JSString) -> &'a StringCell {
+pub(super) unsafe fn string_cell<'a>(s: *mut root::JSString) -> &'a StringCell {
     assert!(!s.is_null(), "mozjs facade: null JSString");
     // SAFETY: JSString pointers come from StringCell leaks only.
     unsafe { &*(s as *const StringCell) }
 }
 
-unsafe fn symbol_cell<'a>(s: *mut JS::Symbol) -> &'a SymbolCell {
+pub(super) unsafe fn symbol_cell<'a>(s: *mut JS::Symbol) -> &'a SymbolCell {
     assert!(!s.is_null(), "mozjs facade: null Symbol");
     // SAFETY: Symbol pointers come from SymbolCell leaks only.
     unsafe { &*(s as *const SymbolCell) }
@@ -284,19 +284,19 @@ fn new_native(
 
 /// A C string name, read as Latin-1 (SpiderMonkey atomizes `const char*`
 /// names that way).
-unsafe fn latin1(name: *const c_char) -> String {
+pub(super) unsafe fn latin1(name: *const c_char) -> String {
     assert!(!name.is_null(), "mozjs facade: null name");
     // SAFETY: a NUL-terminated string from the embedder.
     let bytes = unsafe { CStr::from_ptr(name) }.to_bytes();
     bytes.iter().map(|&b| b as char).collect()
 }
 
-unsafe fn handle_object(h: JS::Handle<*mut root::JSObject>) -> ObjectId {
+pub(super) unsafe fn handle_object(h: JS::Handle<*mut root::JSObject>) -> ObjectId {
     // SAFETY: a Handle points to a rooted, live location.
     unsafe { object_cell(*h.ptr) }.id
 }
 
-unsafe fn handle_object_or_null(h: JS::Handle<*mut root::JSObject>) -> Option<ObjectId> {
+pub(super) unsafe fn handle_object_or_null(h: JS::Handle<*mut root::JSObject>) -> Option<ObjectId> {
     // SAFETY: a Handle points to a rooted, live location.
     let obj = unsafe { *h.ptr };
     (!obj.is_null()).then(|| unsafe { object_cell(obj) }.id)
@@ -304,7 +304,7 @@ unsafe fn handle_object_or_null(h: JS::Handle<*mut root::JSObject>) -> Option<Ob
 
 /// The property key of a `jsid` (integer ids become their decimal string,
 /// ECMA-262 §7.1.17 CanonicalNumericIndexString's inverse).
-unsafe fn key_of(id: root::jsid) -> PropertyKey {
+pub(super) unsafe fn key_of(id: root::jsid) -> PropertyKey {
     if id.is_int() {
         PropertyKey::String(id.to_int().to_string())
     } else if id.is_string() {
@@ -317,7 +317,7 @@ unsafe fn key_of(id: root::jsid) -> PropertyKey {
 }
 
 /// (writable, enumerable, configurable) of JSPROP_* attributes.
-fn attributes(attrs: c_uint) -> (bool, bool, bool) {
+pub(super) fn attributes(attrs: c_uint) -> (bool, bool, bool) {
     (
         attrs & root::JSPROP_READONLY as c_uint == 0,
         attrs & root::JSPROP_ENUMERATE as c_uint != 0,
@@ -418,7 +418,7 @@ unsafe fn define_jsval(
 
 /// An accessor whose getter and setter are JSNatives, named "get x" / "set x"
 /// (ECMA-262 §10.2.9 SetFunctionName with a prefix).
-fn define_native_accessor(
+pub(super) fn define_native_accessor(
     cx: &Context,
     object: ObjectId,
     key: PropertyKey,
@@ -473,14 +473,14 @@ fn define_object_accessor(
     engine_result(cx, defined).unwrap_or(false)
 }
 
-fn native_wrapper(op: root::JSNative) -> root::JSNativeWrapper {
+pub(super) fn native_wrapper(op: root::JSNative) -> root::JSNativeWrapper {
     root::JSNativeWrapper {
         op,
         info: ptr::null(),
     }
 }
 
-fn object_ptr(cx: &Context, id: Option<ObjectId>) -> *mut root::JSObject {
+pub(super) fn object_ptr(cx: &Context, id: Option<ObjectId>) -> *mut root::JSObject {
     match id {
         Some(id) => cx
             .heap

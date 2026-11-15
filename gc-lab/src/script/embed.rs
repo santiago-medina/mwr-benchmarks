@@ -12,7 +12,7 @@
 //!
 //! Ids returned here are not rooted: a GC can run at any allocation, so the embedder
 //! roots what it keeps before calling back into the engine.
-use super::objects::{Descriptor, Key};
+use super::objects::{Descriptor, Key, Kind};
 use super::vm::{Engine, ScriptError, Value};
 use crate::dual::{ExternalRoot, HostTag, HostTracer, Id};
 use std::rc::Rc;
@@ -33,6 +33,30 @@ pub struct RealmId(usize);
 /// collector does not move objects).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct ObjectId(pub(super) Id);
+
+/// An own property as seen by the embedder (ECMA-262 §6.2.6 Property Descriptor):
+/// `value`/`writable` for data properties, `getter`/`setter` for accessors.
+/// A property descriptor whose fields may be absent (ECMA-262 §6.2.6), as
+/// [[DefineOwnProperty]] takes it. `get`/`set` of `Some(None)` mean undefined.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PartialDescriptor {
+    pub value: Option<JsValue>,
+    pub writable: Option<bool>,
+    pub get: Option<Option<ObjectId>>,
+    pub set: Option<Option<ObjectId>>,
+    pub enumerable: Option<bool>,
+    pub configurable: Option<bool>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PropertyDescriptor {
+    pub value: Option<JsValue>,
+    pub writable: bool,
+    pub getter: Option<ObjectId>,
+    pub setter: Option<ObjectId>,
+    pub enumerable: bool,
+    pub configurable: bool,
+}
 
 /// A JavaScript value as seen by the embedder.
 #[derive(Clone, Debug, PartialEq)]
@@ -534,6 +558,35 @@ impl Engine<'_> {
             )
         })
     }
+    /// [[DefineOwnProperty]] (§10.1.6, or the exotic object's own) of a
+    /// partial descriptor; false when the object refused it.
+    pub fn define_own_property(
+        &mut self,
+        object: ObjectId,
+        key: impl Into<PropertyKey>,
+        desc: PartialDescriptor,
+    ) -> Result<bool> {
+        let key: Key = key.into().into();
+        let function = |f: Option<ObjectId>| f.map_or(Value::Undefined, |f| Value::Object(f.0));
+        let value = desc.value.map(|v| v.0);
+        self.frame(|e| {
+            if let Some(v) = &value {
+                e.protect(v)?;
+            }
+            e.define(
+                object.0,
+                key,
+                Descriptor {
+                    value,
+                    writable: desc.writable,
+                    get: desc.get.map(function),
+                    set: desc.set.map(function),
+                    enumerable: desc.enumerable,
+                    configurable: desc.configurable,
+                },
+            )
+        })
+    }
     pub fn delete_property(
         &mut self,
         object: ObjectId,
@@ -579,6 +632,108 @@ impl Engine<'_> {
     }
     pub fn prototype_of(&self, object: ObjectId) -> Result<Option<ObjectId>> {
         Ok(self.data(object.0)?.prototype.map(ObjectId))
+    }
+    /// [[GetOwnProperty]] (§10.1.5, or the exotic object's own).
+    pub fn own_property(
+        &mut self,
+        object: ObjectId,
+        key: impl Into<PropertyKey>,
+    ) -> Result<Option<PropertyDescriptor>> {
+        let key: Key = key.into().into();
+        let property = self.frame(|e| e.own(object.0, key))?;
+        Ok(property.map(|p| {
+            let (value, getter, setter) = match p.kind {
+                Kind::Data { value, writable } => {
+                    return PropertyDescriptor {
+                        value: Some(JsValue(value)),
+                        writable,
+                        getter: None,
+                        setter: None,
+                        enumerable: p.enumerable,
+                        configurable: p.configurable,
+                    }
+                }
+                Kind::Accessor { get, set } => (None, get, set),
+            };
+            let function = |v: Value| match v {
+                Value::Object(id) => Some(ObjectId(id)),
+                _ => None,
+            };
+            PropertyDescriptor {
+                value,
+                writable: false,
+                getter: function(getter),
+                setter: function(setter),
+                enumerable: p.enumerable,
+                configurable: p.configurable,
+            }
+        }))
+    }
+    /// [[Get]] with an explicit receiver (§10.1.8; `Reflect.get` with a receiver).
+    pub fn get_property_with_receiver(
+        &mut self,
+        object: ObjectId,
+        key: impl Into<PropertyKey>,
+        receiver: &JsValue,
+    ) -> Result<JsValue> {
+        let key: Key = key.into().into();
+        let receiver = receiver.0.clone();
+        self.frame(|e| {
+            e.protect(&receiver)?;
+            e.ordinary_get(object.0, key, receiver).map(JsValue)
+        })
+    }
+    /// [[Set]] with an explicit receiver (§10.1.9); false when it was refused.
+    pub fn set_property_with_receiver(
+        &mut self,
+        object: ObjectId,
+        key: impl Into<PropertyKey>,
+        value: JsValue,
+        receiver: &JsValue,
+    ) -> Result<bool> {
+        let key: Key = key.into().into();
+        let receiver = receiver.0.clone();
+        self.frame(|e| {
+            e.protect(&value.0)?;
+            e.protect(&receiver)?;
+            e.ordinary_set(object.0, key, value.0, receiver)
+        })
+    }
+    /// SetIntegrityLevel(object, frozen) (§7.3.15); false when [[PreventExtensions]]
+    /// or a [[DefineOwnProperty]] refused.
+    pub fn freeze_object(&mut self, object: ObjectId) -> Result<bool> {
+        self.frame(|e| {
+            if !e.prevent_extensions(object.0)? {
+                return Ok(false);
+            }
+            for key in e.own_keys(object.0)? {
+                let mut d = Descriptor {
+                    configurable: Some(false),
+                    ..Descriptor::default()
+                };
+                match e.own(object.0, &key)? {
+                    None => continue,
+                    Some(p) if matches!(p.kind, Kind::Data { .. }) => d.writable = Some(false),
+                    Some(_) => {}
+                }
+                if !e.define(object.0, &key, d)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        })
+    }
+    /// SameValue (§7.2.10).
+    pub fn same_value(&self, a: &JsValue, b: &JsValue) -> bool {
+        a.0.same_value(&b.0)
+    }
+    /// IsArray (§7.2.2): throws on a revoked proxy.
+    pub fn is_array_value(&mut self, value: &JsValue) -> Result<bool> {
+        self.is_array(&value.0)
+    }
+    /// GetFunctionRealm (§7.3.24).
+    pub fn function_realm_id(&mut self, function: &JsValue) -> Result<RealmId> {
+        self.function_realm(&function.0).map(RealmId)
     }
 
     // ----- conversions and errors -----

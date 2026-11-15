@@ -217,7 +217,42 @@ Standard classes: the engine defines every standard class when it creates a
 global, so `JS_ResolveStandardClass` resolves nothing, `JS_MayResolveStandardClass`
 is false and the enumerate hooks add nothing.
 
-142 entry points are implemented in total.
+### Property access by id, descriptors and calls
+
+`imp/props.rs`, 64 entry points: what Servo's generated bindings and DOM proxy
+handlers run on every object once interfaces exist.
+
+- Ids. An array index up to 2^31 - 1 becomes an int jsid and every other key
+  an atom (`RUST_INTERNED_STRING_TO_JSID`, SpiderMonkey's AtomToId), so ids
+  Servo compares by bits match the ones the engine hands back. Array indices
+  follow ECMA-262 §6.1.7 (`StringIsArrayIndex`).
+- Property access by id or name: get (also with a forwarded receiver), set
+  (a refusal throws TypeError, ObjectOpResult::checkStrict), has, has-own,
+  delete (ObjectOpResult with `JSMSG_CANT_DELETE`), define from a partial
+  `JS::PropertyDescriptor` (`Engine::define_own_property`, §10.1.6) or from
+  JSNative accessors, own and inherited descriptors (with the holder), freeze
+  (§7.3.15) and `SetPropertyIgnoringNamedGetter`, which follows
+  OrdinarySetWithOwnDescriptor (§10.1.9.2) with the caller's descriptor.
+- Id vectors: a `PersistentRootedIdVector` is a facade `IdVectorCell`; it holds
+  only interned atoms and symbols, so it needs no tracing. `GetPropertyKeys`
+  honours `JSITER_OWNONLY`, `HIDDEN`, `SYMBOLS` and `SYMBOLSONLY` and walks the
+  prototype chain without duplicates (§14.7.5.9).
+- Linear strings are the interned string cells: char access, length,
+  code-unit comparison (`JS_CompareStrings`), ASCII equality, concatenation,
+  ToString (§7.1.17) and ToBoolean (§7.1.2).
+- Calls: `Call` (§7.3.14), `JS_CallFunctionValue`, `JS_CallFunctionName`,
+  `Construct` (§7.3.15; a `newTarget` other than the function throws
+  TypeError, not supported yet), `IsCallable`, `JS_IsNativeFunction`,
+  `GetFunctionRealm` (§7.3.24). `JS_ObjectIsFunction` is IsCallable: the
+  engine has no callable non-function host objects.
+- Wrappers are the identity, so `IsWindowProxy` compares the class with the
+  registered window proxy class, `JS_IsDeadWrapper` is false and
+  `UnwrapObjectDynamic` returns its argument. `GetCurrentRealmOrNull` reads
+  the context's realm.
+
+Test: `tests/properties.rs`.
+
+206 entry points are implemented in total.
 
 ## C1 result (servoshell links)
 

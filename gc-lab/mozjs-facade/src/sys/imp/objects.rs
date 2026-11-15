@@ -79,7 +79,7 @@ pub(super) struct Shared {
 #[repr(C)]
 pub struct ObjectCell {
     /// Must stay first: this is what `JSObject*` points to.
-    shadow: JS::shadow::Object,
+    pub(super) shadow: JS::shadow::Object,
     context: *const Context,
     pub(super) id: ObjectId,
 }
@@ -269,7 +269,7 @@ impl Heap {
         cell as *const ObjectCell as *mut root::JSObject
     }
 
-    fn realm_ptr(&self, id: RealmId) -> *mut JS::Realm {
+    pub(super) fn realm_ptr(&self, id: RealmId) -> *mut JS::Realm {
         self.realms.borrow().get(&id).map_or(ptr::null_mut(), |r| {
             *r as *const RealmCell as *mut JS::Realm
         })
