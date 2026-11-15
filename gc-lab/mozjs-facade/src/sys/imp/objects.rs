@@ -78,6 +78,9 @@ pub(super) struct Shared {
     pub(super) microtasks: RefCell<std::collections::VecDeque<super::jobs::Microtask>>,
     /// Engine job serial of each dequeued `JSMicroTask*` not yet run.
     pub(super) job_tasks: RefCell<HashMap<ObjectId, u64>>,
+    /// `AddRawValueRoot` locations: address of the `JS::Value` -> root count.
+    /// Each object value read through them is a root (`Host::trace_roots`).
+    raw_roots: RefCell<HashMap<usize, usize>>,
 }
 
 #[repr(C)]
@@ -132,6 +135,14 @@ impl Host for FacadeHost {
 
     fn trace_roots(&self, out: &mut Vec<ObjectId>) {
         out.extend(self.0.cells.borrow().keys().copied());
+        for &location in self.0.raw_roots.borrow().keys() {
+            // SAFETY: a registered raw root stays valid until RemoveRawValueRoot.
+            let value = unsafe { *(location as *const JSVal) };
+            if value.is_object() {
+                // SAFETY: an object value handed out by the facade is a cell pointer.
+                out.push(unsafe { object_cell(value.to_object()) }.id);
+            }
+        }
     }
 
     fn trace(&self, object: ObjectId, _class: u64, _payload: u64, out: &mut Vec<ObjectId>) {
@@ -428,6 +439,50 @@ pub unsafe fn GetRealmGlobalOrNull(realm: *mut JS::Realm) -> *mut root::JSObject
 
 pub unsafe fn CurrentGlobalOrNull(cx: *mut root::JSContext) -> *mut root::JSObject {
     unsafe { GetRealmGlobalOrNull(context(cx).realm()) }
+}
+
+/// `JS::CurrentGlobal` (jsapi.h): a pointer to the current realm's global
+/// slot. SpiderMonkey returns the address of `Realm::global_`, which stays put
+/// while the realm lives; here that is `RealmCell::global` (cells are leaked).
+/// Like SpiderMonkey (MOZ_ASSERT on `cx->realm()`), a realm must be entered.
+pub unsafe fn CurrentGlobal(cx: *mut root::JSContext) -> *const *mut root::JSObject {
+    let realm = unsafe { context(cx) }.realm();
+    assert!(
+        !realm.is_null(),
+        "mozjs facade: CurrentGlobal with no realm entered"
+    );
+    unsafe { realm_cell(realm) }.global.as_ptr()
+}
+
+/// `js::AddRawValueRoot` (jsfriendapi.h): `*vp` is a root until removed.
+/// Registrations are counted per location, like the runtime's root map keyed
+/// by address; the name is only used by SpiderMonkey's leak reports.
+pub unsafe fn AddRawValueRoot(
+    cx: *mut root::JSContext,
+    vp: *mut JS::Value,
+    _name: *const std::os::raw::c_char,
+) -> bool {
+    let context = unsafe { context(cx) };
+    *context
+        .heap
+        .shared
+        .raw_roots
+        .borrow_mut()
+        .entry(vp as usize)
+        .or_insert(0) += 1;
+    true
+}
+
+/// `js::RemoveRawValueRoot`.
+pub unsafe fn RemoveRawValueRoot(cx: *mut root::JSContext, vp: *mut JS::Value) {
+    let context = unsafe { context(cx) };
+    let mut roots = context.heap.shared.raw_roots.borrow_mut();
+    if let Some(count) = roots.get_mut(&(vp as usize)) {
+        *count -= 1;
+        if *count == 0 {
+            roots.remove(&(vp as usize));
+        }
+    }
 }
 
 pub unsafe fn GetObjectRealmOrNull(obj: *mut root::JSObject) -> *mut JS::Realm {

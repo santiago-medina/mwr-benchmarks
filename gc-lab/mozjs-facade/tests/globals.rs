@@ -3,13 +3,13 @@
 //! entry and compartment selection (`src/sys/imp/objects.rs`).
 use mozjs::glue::JS_GetReservedSlot;
 use mozjs::jsapi::{
-    CompartmentIterResult, CompartmentSpecifier, CurrentGlobalOrNull, EnterRealm,
-    GetNonCCWObjectGlobal, GetObjectRealmOrNull, GetRealmGlobalOrNull, IsSharableCompartment,
-    IsSystemCompartment, JSClass, JSContext, JS_DestroyContext, JS_FireOnNewGlobalObject,
-    JS_IsGlobalObject, JS_IterateCompartments, JS_NewContext, JS_NewGlobalObject,
-    JS_NewObjectWithGivenProto, JS_SetReservedSlot, LeaveRealm, OnNewGlobalHookOption, JS,
-    JSCLASS_GLOBAL_SLOT_COUNT, JSCLASS_IS_GLOBAL, JSCLASS_RESERVED_SLOTS_MASK,
-    JSCLASS_RESERVED_SLOTS_SHIFT, JS_GC,
+    AddRawValueRoot, CompartmentIterResult, CompartmentSpecifier, CurrentGlobal,
+    CurrentGlobalOrNull, EnterRealm, GetNonCCWObjectGlobal, GetObjectRealmOrNull,
+    GetRealmGlobalOrNull, IsSharableCompartment, IsSystemCompartment, JSClass, JSContext,
+    JS_DestroyContext, JS_FireOnNewGlobalObject, JS_IsGlobalObject, JS_IterateCompartments,
+    JS_NewContext, JS_NewGlobalObject, JS_NewObjectWithGivenProto, JS_SetReservedSlot, LeaveRealm,
+    OnNewGlobalHookOption, RemoveRawValueRoot, JS, JSCLASS_GLOBAL_SLOT_COUNT, JSCLASS_IS_GLOBAL,
+    JSCLASS_RESERVED_SLOTS_MASK, JSCLASS_RESERVED_SLOTS_SHIFT, JS_GC,
 };
 use mozjs::jsval::{Int32Value, JSVal, ObjectValue, PrivateValue, UndefinedValue};
 use mozjs::rust::RealmOptions;
@@ -144,11 +144,26 @@ fn globals_realms_and_reserved_slots() {
         let inner_old = EnterRealm(cx, second);
         assert_eq!(inner_old, realm);
         assert_eq!(CurrentGlobalOrNull(cx), second);
+        // CurrentGlobal is a stable pointer to the realm's global slot.
+        let slot = CurrentGlobal(cx);
+        assert_eq!(*slot, second);
         LeaveRealm(cx, inner_old);
         assert_eq!(CurrentGlobalOrNull(cx), global);
+        assert_eq!(*CurrentGlobal(cx), global);
+        assert_eq!(*slot, second, "the slot belongs to the second realm");
+
+        // Raw value roots (PermanentRoot) are counted per location.
+        let mut rooted: JSVal = ObjectValue(thing);
+        assert!(AddRawValueRoot(cx, &mut rooted, c"test".as_ptr()));
+        assert!(AddRawValueRoot(cx, &mut rooted, c"test".as_ptr()));
+        RemoveRawValueRoot(cx, &mut rooted);
+        RemoveRawValueRoot(cx, &mut rooted);
+        RemoveRawValueRoot(cx, &mut rooted);
 
         // Objects Servo holds survive a collection (C1 keep-alive policy).
+        assert!(AddRawValueRoot(cx, &mut rooted, c"test".as_ptr()));
         JS_GC(cx, mozjs::jsapi::JS::GCReason::API);
+        RemoveRawValueRoot(cx, &mut rooted);
         JS_GetReservedSlot(thing, 0, &mut out);
         assert_eq!(out.to_object(), global);
         assert_eq!(get_object_class(thing), &THING_CLASS as *const JSClass);

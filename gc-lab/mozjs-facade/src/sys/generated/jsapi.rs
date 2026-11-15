@@ -5480,10 +5480,10 @@ pub mod root {
                 vp: *mut root::JS::Value,
                 name: *const ::std::os::raw::c_char,
             ) -> bool {
-                crate::sys::unimplemented_entry("AddRawValueRoot")
+                crate::sys::imp::AddRawValueRoot(cx, vp, name)
             }
             pub unsafe extern "C" fn RemoveRawValueRoot(cx: *mut root::JSContext, vp: *mut root::JS::Value) {
-                crate::sys::unimplemented_entry("RemoveRawValueRoot")
+                crate::sys::imp::RemoveRawValueRoot(cx, vp)
             }
             #[doc = " Use the runtime's internal handling of job queues for Promise jobs.\n\n Most embeddings, notably web browsers, will have their own task scheduling\n systems and need to integrate handling of Promise jobs into that, so they\n will want to manage job queues themselves. For basic embeddings such as the\n JS shell that don't have an event loop of their own, it's easier to have\n SpiderMonkey handle job queues internally.\n\n Note that the embedding still has to trigger processing of job queues at\n right time(s), such as after evaluation of a script has run to completion."]
             pub unsafe extern "C" fn UseInternalJobQueues(cx: *mut root::JSContext) -> bool {
@@ -9353,7 +9353,7 @@ pub mod root {
             }
             #[doc = " Get the current realm's global. Returns nullptr if no realm has been\n entered."]
             pub unsafe extern "C" fn CurrentGlobal(cx: *mut root::JSContext) -> *const *mut root::JSObject {
-                crate::sys::unimplemented_entry("CurrentGlobal")
+                crate::sys::imp::CurrentGlobal(cx)
             }
             #[doc = " Get the global object associated with an object's realm. The object must not\n be a cross-compartment wrapper (because CCWs are shared by all realms in the\n compartment)."]
             pub unsafe extern "C" fn GetNonCCWObjectGlobal(obj: *mut root::JSObject) -> *mut root::JSObject {

@@ -244,3 +244,6 @@ HideScriptedCaller
 UnhideScriptedCaller
 JS_ErrorFromException
 PendingExceptionStackInfo
+CurrentGlobal
+AddRawValueRoot
+RemoveRawValueRoot

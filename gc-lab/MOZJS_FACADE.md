@@ -336,6 +336,19 @@ frame for it.
 
 Test: `tests/scripts.rs`.
 
+Reporting the error then calls `GlobalScope::from_current_realm`, which reads
+`CurrentRealm::global()`, i.e. `JS::CurrentGlobal`. SpiderMonkey returns the
+address of the entered realm's `global_` field. The facade returns the
+address of the leaked `RealmCell::global`, which is just as stable. With no
+realm entered it panics, where SpiderMonkey's MOZ_ASSERT would fire.
+
+`js::AddRawValueRoot`/`RemoveRawValueRoot` (Servo's `PermanentRoot`) keep a
+count per `JS::Value` address in `Shared::raw_roots`. `Host::trace_roots`
+reads each registered location and reports an object value as a root, so
+these roots still hold once the C1 keep-alive policy is lifted.
+
+Test: `tests/globals.rs`.
+
 ### GC policy
 
 The facade creates its engine with the engine's default policy,
