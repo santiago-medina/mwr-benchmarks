@@ -537,5 +537,6 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 ### Embedding API for Servo (roadmap C, 2026-11-15)
 
 - SERVO_BINDINGS.md E1 (host objects with reserved slots and finalizers), E2 (host functions and constructors), E4 (extra roots and a host tracer) and E5 (the public value and object API) are in `src/script/embed.rs`. `tests/embedding.rs` runs them under the Stress GC policy.
-- Not done: E3 host exotic objects, E6 buffer access, and the `mozjs-facade` crate (C0).
+- C0 skeleton: `mozjs-facade/` (crate `mozjs` 0.26.4, MOZJS_FACADE.md) has mozjs's types and Rust layer over generated stubs. All 562 Servo import paths resolve (`tests/servo_paths.rs`). The Servo `cargo check` error count comes from the CI `servo-facade` job. No entry point is implemented yet (C1).
+- Not done: E3 host exotic objects, E6 buffer access.
 - Servo-path limits to lift before C2: call depth 32 and step limit 10,000.

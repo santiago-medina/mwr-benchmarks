@@ -1,0 +1,34 @@
+# mozjs-compatible facade over the gc-lab engine (SERVO_BINDINGS.md option A,
+# MOZJS_FACADE.md). Servo swaps it in for `mozjs =0.26.4` through its `js`
+# workspace dependency; the package name and version match for that reason.
+[package]
+name = "mozjs"
+version = "0.26.4"
+edition = "2021"
+license = "MPL-2.0"
+description = "mozjs 0.26.4 API over the gc-lab engine (roadmap C facade)"
+publish = false
+
+[lib]
+name = "mozjs"
+path = "src/lib.rs"
+doctest = false
+
+[dependencies]
+gc-lab = { path = ".." }
+
+# Same feature names as mozjs 0.26.4, so Servo's `js` dependency line and its
+# `js/debugmozjs` and `js/profilemozjs` forwards resolve. They select nothing.
+[features]
+default = ["jit", "libz-sys", "intl"]
+crown = []
+debugmozjs = []
+intl = []
+jit = []
+jitspew = []
+libz-rs = []
+libz-sys = []
+profilemozjs = []
+
+# Standalone: never part of an enclosing workspace.
+[workspace]

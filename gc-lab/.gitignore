@@ -20,3 +20,7 @@ conformance/results/cases.json
 /native-microtask-interop-results/
 /temporal/target/
 /conformance/results-temporal/cases.json
+/.servo-facade/
+/c0-results/
+/mozjs-facade/target/
+/mozjs-facade/Cargo.lock

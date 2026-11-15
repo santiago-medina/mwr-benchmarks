@@ -215,6 +215,10 @@ allocation, so an unrooted id fails the test).
 `invoke_this` frames) and the default step limit (10,000) are test guards, not
 values for web pages. The facade must raise or remove both before C2.
 
+**C0 (facade skeleton):** `mozjs-facade/`, design in MOZJS_FACADE.md. All 562
+Servo import paths resolve. Every entry point is a stub. The Servo error count
+comes from the CI `servo-facade` job.
+
 ## Milestones and how each is measured
 
 Servo is built only by CI (the `servo-native` job on `[servo]` commits).

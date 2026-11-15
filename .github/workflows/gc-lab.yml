@@ -18,6 +18,10 @@ jobs:
         run: cargo +stable fmt --manifest-path gc-lab/Cargo.toml --check
       - name: Debug contracts
         run: cargo +stable test --manifest-path gc-lab/Cargo.toml --offline
+      - name: mozjs facade formatting
+        run: cargo +stable fmt --manifest-path gc-lab/mozjs-facade/Cargo.toml --check
+      - name: 'mozjs facade compiles every Servo js:: import path'
+        run: cargo +stable test --manifest-path gc-lab/mozjs-facade/Cargo.toml --offline
       - name: Release contracts
         run: cargo +stable test --manifest-path gc-lab/Cargo.toml --release --offline
       - name: Two-heap recovery demo
@@ -207,3 +211,43 @@ jobs:
             gc-lab/native-microtask-interop-results/
             gc-lab/native-fetch-results/
             gc-lab/native-module-results/
+  servo-facade:
+    # Roadmap C0 (gc-lab/MOZJS_FACADE.md): unpatched Servo with its `js`
+    # dependency swapped for gc-lab/mozjs-facade. The error count is the metric;
+    # the job records it and stays green.
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[servo]')
+    runs-on: ubuntu-24.04
+    needs: contracts
+    timeout-minutes: 120
+    env:
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native Servo build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y patch clang libclang-dev cmake ninja-build gperf m4 pkg-config libdbus-1-dev libfreetype-dev libfontconfig1-dev libglib2.0-dev libudev-dev libunwind-dev libssl-dev libx11-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libxkbcommon-x11-0 libxrandr-dev libxi-dev libxcursor-dev libxinerama-dev libegl-dev libgles-dev libasound2-dev
+      - name: Install pinned Servo Rust toolchain
+        run: rustup toolchain install 1.97.1 --profile minimal
+      - name: Restore verified vendored source archive
+        uses: actions/cache/restore@v4
+        with:
+          path: gc-lab/.servo-native.tar.gz
+          key: servo-source-aac43a3f31a259f04a574f5ec4e959c943ad7cc7-6e26f21e6c8bcb8e
+      - name: Prepare unpatched Servo on the mozjs facade
+        run: python3 gc-lab/servo-native/prepare.py --facade --source gc-lab/.servo-facade --archive gc-lab/.servo-native.tar.gz
+      - uses: actions/cache@v4
+        with:
+          path: gc-lab/.servo-facade/target
+          key: servo-facade-check-v1-0.7.0-rust-1.97.1-${{ hashFiles('gc-lab/.servo-facade/Cargo.lock') }}
+          restore-keys: servo-facade-check-v1-0.7.0-rust-1.97.1-
+      - name: C0 metric - check script_bindings and script against the facade
+        run: >-
+          python3 gc-lab/servo-native/c0_metric.py --source gc-lab/.servo-facade --output gc-lab/c0-results
+          | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Preserve C0 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: servo-facade-c0
+          path: gc-lab/c0-results/
