@@ -139,6 +139,47 @@ address of a static. Principals follow jsglue's `RustJSPrincipals` (a
 `JSPrincipals` prefix, then callbacks and private data), and
 `JS_DropPrincipals` calls the runtime's destroy callback at zero.
 
+## C1 result (servoshell links)
+
+At 6513efa (CI run 43724404942) `cargo build -p servoshell --no-default-features
+--features bundled` against the facade succeeds: 0 compile errors, 0 unresolved
+link symbols, 278 s, a 1.43 GB debug binary. The headless probe aborts at the
+first stub, `GetProxyHandlerFamily` (`script::init`, before any runtime),
+which 849b8a3 implements together with the rest of `script::init` and the
+runtime creation path.
+
+## Engine ownership, reentrancy and object tokens (next cluster)
+
+Global creation (`JS_NewGlobalObject`, script_bindings/interface.rs
+`create_global_object`) is the first entry point that needs engine objects.
+Decisions, following SERVO_BINDINGS.md option A:
+
+- **One engine per context.** The facade `Context` owns a
+  `gc_lab::script::Engine<'static>` in a slot (`RefCell<Option<Engine>>`).
+  Each `JS_NewGlobalObject` is `Engine::create_global_realm` (a new realm,
+  REALMS.md) plus `attach_host` on the realm's global with Servo's `JSClass`
+  address as the class word and `JSCLASS_RESERVED_SLOTS(flags)` slots.
+  `JSAutoRealm` / `JS::EnterRealm` map to `enter_realm_id`.
+- **Reentrancy without `unsafe`.** While Servo code runs, the engine is in
+  the context slot, and facade entry points borrow it there. When the facade
+  calls into the engine (a call, an evaluation), it takes the engine out of
+  the slot. When the engine calls a host function (`Host::call(&mut Engine)`),
+  the facade swaps that engine with a spare one (`mem::replace`), puts the
+  real one back in the slot for the duration of the JSNative, then swaps it
+  back. Each host call costs two moves of the `Engine` struct; the overhead
+  micro-benchmark (Next, item 5) measures it. The alternative, a thread-local
+  raw `*mut Engine` set during host calls, would add a fourth `unsafe` site
+  that the design note does not allow.
+- **Object tokens.** `dual::Id` (heap, index, serial) does not fit the 47-bit
+  JSVal object payload, so the facade keeps a table: a token is
+  `(slot + 1) * 16` (aligned, non-null, below 2^47), mapping to an
+  `ObjectId`, with a reverse map `ObjectId -> token`. Entries of dead objects
+  are dropped after each collection (`is_alive`); a generation check comes
+  with weak references.
+- **Guards.** `create_global_realm` inherits the 64-realm cap of `new_realm`,
+  a test-harness guard. It is listed with the call depth and step limits to
+  lift before C2.
+
 ## Next (C1)
 
 1. Drive the C0 count to 0. Expected sources of errors: items the 0.26.4 Rust

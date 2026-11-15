@@ -1,7 +1,7 @@
 //! The embedding API (SERVO_BINDINGS.md E1, E2, E4, E5) under the Stress GC policy,
 //! which collects at every allocation and so catches unrooted ids.
 use gc_lab::{
-    script::{Engine, Host, JsValue, ObjectId, PropertyKey, ScriptError},
+    script::{Engine, Host, JsValue, ObjectId, PropertyKey, RealmId, ScriptError},
     Model,
 };
 use std::{cell::RefCell, rc::Rc};
@@ -257,4 +257,35 @@ fn properties_and_keys() {
     assert!(e.delete_property(o, "a").unwrap());
     assert_eq!(e.prototype_of(o).unwrap(), e.object_prototype());
     e.unroot(root).unwrap();
+}
+
+#[test]
+fn realms_per_global() {
+    let host = Rc::new(TestHost::default());
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.set_step_limit(1_000_000);
+    e.set_host(host.clone());
+    let r0 = e.create_global_realm().unwrap();
+    let r1 = e.create_global_realm().unwrap();
+    assert_ne!(r0, r1);
+    assert_eq!(e.current_realm_id(), r0);
+    let g0 = e.realm_global(r0).unwrap();
+    let g1 = e.realm_global(r1).unwrap();
+    assert_ne!(g0, g1);
+    assert_eq!(e.global_object(), Some(g0));
+    e.evaluate_script("var x = 1;").unwrap();
+
+    let previous: RealmId = e.enter_realm_id(r1).unwrap();
+    assert_eq!(previous, r0);
+    assert_eq!(e.global_object(), Some(g1));
+    let t = e.evaluate_script("typeof x").unwrap();
+    assert_eq!(t.as_string().as_deref(), Some("undefined"));
+    e.evaluate_script("var x = 2;").unwrap();
+    let o = e.create_object(e.object_prototype()).unwrap();
+    assert_eq!(e.object_realm(o), r1);
+    e.enter_realm_id(previous).unwrap();
+
+    let x = e.evaluate_script("x").unwrap();
+    assert_eq!(x.as_number(), Some(1.0));
+    assert_eq!(e.realm_global(r1).unwrap(), g1);
 }

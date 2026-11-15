@@ -12,7 +12,7 @@ mod props;
 mod vm;
 pub use vm::{Engine, GcPolicy, ScriptError, SuspendedEngine};
 mod embed;
-pub use embed::{Host, JsValue, ObjectId, PropertyKey};
+pub use embed::{Host, JsValue, ObjectId, PropertyKey, RealmId};
 
 mod adapter;
 pub use adapter::DomAdapter;

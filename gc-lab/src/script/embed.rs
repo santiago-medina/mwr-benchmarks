@@ -24,6 +24,11 @@ type Result<T> = std::result::Result<T, ScriptError>;
 pub(super) const HOST_FUNCTION: &str = "%HostFunction%";
 pub(super) const HOST_CONSTRUCTOR: &str = "%HostConstructor%";
 
+/// A realm created through the embedding API (REALMS.md "Servo"): one per Servo
+/// global (window, iframe, worker, worklet). Realm 0 is the first one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct RealmId(usize);
+
 /// An object in this engine's heap. Identity is stable while the object lives (the
 /// collector does not move objects).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -206,6 +211,44 @@ impl Engine<'_> {
         self.frame(|e| e.bootstrap(global))?;
         self.global_object()
             .ok_or(ScriptError::Runtime("no global object"))
+    }
+    /// InitializeHostDefinedRealm (§9.6) for an embedder global: a new realm with fresh
+    /// intrinsics and global object. The running realm is unchanged, except that the
+    /// first call also makes realm 0 the running realm (there was none). The realm
+    /// count is capped at 64 (`new_realm`), a test-harness guard to lift for Servo.
+    pub fn create_global_realm(&mut self) -> Result<RealmId> {
+        if self.intrinsics.is_none() && self.realms.is_empty() {
+            self.init_realm()?;
+            return Ok(RealmId(0));
+        }
+        self.frame(|e| e.new_realm()).map(RealmId)
+    }
+    /// The running realm.
+    pub fn current_realm_id(&self) -> RealmId {
+        RealmId(self.current_realm)
+    }
+    /// Make `realm` the running realm (mozjs `JS::EnterRealm`); returns the previous one,
+    /// to pass back when leaving (`JS::LeaveRealm`).
+    pub fn enter_realm_id(&mut self, realm: RealmId) -> Result<RealmId> {
+        if realm.0 != self.current_realm && realm.0 >= self.realms.len() {
+            return Err(ScriptError::Runtime("no such realm"));
+        }
+        Ok(RealmId(self.enter_realm(realm.0)))
+    }
+    /// The global object of `realm`.
+    pub fn realm_global(&self, realm: RealmId) -> Result<ObjectId> {
+        let intrinsics = if realm.0 == self.current_realm {
+            self.intrinsics.as_ref()
+        } else {
+            self.realms.get(realm.0).and_then(|r| r.intrinsics.as_ref())
+        };
+        intrinsics
+            .map(|i| ObjectId(i.global))
+            .ok_or(ScriptError::Runtime("no such realm"))
+    }
+    /// The realm an object was allocated in ([[Realm]] of functions, §10.2).
+    pub fn object_realm(&self, object: ObjectId) -> RealmId {
+        RealmId(self.realm_of(object.0))
     }
     pub fn global_object(&self) -> Option<ObjectId> {
         self.intrinsics.as_ref().map(|i| ObjectId(i.global))
