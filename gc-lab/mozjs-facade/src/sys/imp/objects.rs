@@ -288,10 +288,19 @@ pub(super) fn engine_result<T>(cx: &Context, result: Result<T, ScriptError>) -> 
     match result {
         Ok(v) => Some(v),
         Err(error) => {
-            // Pending exceptions come with JS_GetPendingException (E5); until
-            // then a failed engine call is logged and reported as failure.
-            let _ = cx;
-            eprintln!("mozjs facade: engine error: {error:?}");
+            // A thrown completion becomes the context's pending exception, as
+            // SpiderMonkey leaves it for JS_GetPendingException. Other errors
+            // (engine faults, Unsupported) are uncatchable, like OOM: logged,
+            // with no exception pending.
+            let pending = cx.heap.with_engine(|engine| {
+                engine
+                    .exception_value(&error)
+                    .map(|v| super::natives::to_jsval(cx, engine, &v))
+            });
+            match pending {
+                Some(value) => cx.state.borrow_mut().pending_exception = Some(value),
+                None => eprintln!("mozjs facade: engine error: {error:?}"),
+            }
             None
         }
     }

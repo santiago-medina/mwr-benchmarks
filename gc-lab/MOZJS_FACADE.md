@@ -187,10 +187,37 @@ one engine heap), so `UncheckedUnwrapObject` and `CheckedUnwrapStatic` are
 identities, `IsWrapper` is false and `JS_WrapObject` / `JS_WrapValue`
 succeed unchanged. There is no Debugger API: `JS_DefineDebuggerObject`
 succeeds without defining `Debugger`, so Servo's devtools debugger scripts
-fail where they use it. A JSNative that returns false fails the engine call
-with a runtime error; pending exceptions come with E5. `tests/interfaces.rs`
-covers the cluster, including a reentrant native getter. 122 entry points are
-implemented in total.
+fail where they use it. `tests/interfaces.rs` covers the cluster, including a
+reentrant native getter.
+
+Pending exceptions (`imp/context.rs`): the context holds one pending
+exception value. `JS_SetPendingException`, `JS_GetPendingException`,
+`JS_IsExceptionPending` and `JS_ClearPendingException` read and write it. A
+JSNative that returns false with an exception pending throws that value into
+the engine (`Engine::throw_value`), so script `try`/`catch` sees it; false with
+nothing pending is an uncatchable error, as OOM is in SpiderMonkey. In the
+other direction, an entry point whose engine call ends in a thrown completion
+returns false and leaves the thrown value pending. Engine faults and
+Unsupported leave nothing pending and are logged.
+
+### GC barriers
+
+`imp/barriers.rs`. SpiderMonkey's write barriers (`HeapObjectWriteBarriers`,
+`HeapValueWriteBarriers` and the string, BigInt and script variants,
+`IncrementalPreWriteBarrier`) serve its incremental marking and its
+generational, moving nursery. Under the C1 keep-alive policy (cells never
+freed, every cell a root) the engine needs neither, so the barriers are
+no-ops, `IsIncrementalBarrierNeeded` is false and
+`SetNativeObjectReservedSlotWithBarrier` is a plain reserved-slot store. When
+C2 lifts the keep-alive policy, `Heap<T>` fields must become traced edges
+instead: the barrier entry points are where a facade-side remembered set
+would hook in, if the collector ever becomes incremental.
+
+Standard classes: the engine defines every standard class when it creates a
+global, so `JS_ResolveStandardClass` resolves nothing, `JS_MayResolveStandardClass`
+is false and the enumerate hooks add nothing.
+
+142 entry points are implemented in total.
 
 ## C1 result (servoshell links)
 

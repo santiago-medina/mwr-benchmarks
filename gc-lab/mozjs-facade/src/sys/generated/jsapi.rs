@@ -3980,7 +3980,7 @@ pub mod root {
                     }
             }
                 pub unsafe extern "C" fn PerformIncrementalReadBarrier(thing: root::JS::GCCellPtr) {
-                    crate::sys::unimplemented_entry("PerformIncrementalReadBarrier")
+                    crate::sys::imp::PerformIncrementalReadBarrier(thing)
                 }
             #[repr(C)]
             #[derive(Debug, Copy, Clone, PartialEq)]
@@ -6475,7 +6475,7 @@ pub mod root {
                     slot: usize,
                     value: *const root::JS::Value,
                 ) {
-                    crate::sys::unimplemented_entry("SetNativeObjectReservedSlotWithBarrier")
+                    crate::sys::imp::SetNativeObjectReservedSlotWithBarrier(obj, slot, value)
                 }
                 pub unsafe extern "C" fn ReportSourceTooLong(cx: *mut root::JSContext) {
                     crate::sys::unimplemented_entry("ReportSourceTooLong")
@@ -6757,13 +6757,13 @@ pub mod root {
                 crate::sys::unimplemented_entry("GCThingTraceKind")
             }
             pub unsafe extern "C" fn IsIncrementalBarrierNeeded(cx: *mut root::JSContext) -> bool {
-                crate::sys::unimplemented_entry("IsIncrementalBarrierNeeded")
+                crate::sys::imp::IsIncrementalBarrierNeeded(cx)
             }
             pub unsafe extern "C" fn IncrementalPreWriteBarrier(obj: *mut root::JSObject) {
-                crate::sys::unimplemented_entry("IncrementalPreWriteBarrier")
+                crate::sys::imp::IncrementalPreWriteBarrier(obj)
             }
             pub unsafe extern "C" fn IncrementalPreWriteBarrier1(thing: root::JS::GCCellPtr) {
-                crate::sys::unimplemented_entry("IncrementalPreWriteBarrier1")
+                crate::sys::imp::IncrementalPreWriteBarrier1(thing)
             }
             #[doc = " Unsets the gray bit for anything reachable from |thing|. |kind| should not be\n JS::TraceKind::Shape. |thing| should be non-null. The return value indicates\n if anything was unmarked."]
             pub unsafe extern "C" fn UnmarkGrayGCThingRecursively(thing: root::JS::GCCellPtr) -> bool {
@@ -7462,35 +7462,35 @@ pub mod root {
                 prev: *mut root::JSObject,
                 next: *mut root::JSObject,
             ) {
-                crate::sys::unimplemented_entry("HeapObjectPostWriteBarrier")
+                crate::sys::imp::HeapObjectPostWriteBarrier(objp, prev, next)
             }
             pub unsafe extern "C" fn HeapObjectWriteBarriers(
                 objp: *mut *mut root::JSObject,
                 prev: *mut root::JSObject,
                 next: *mut root::JSObject,
             ) {
-                crate::sys::unimplemented_entry("HeapObjectWriteBarriers")
+                crate::sys::imp::HeapObjectWriteBarriers(objp, prev, next)
             }
             pub unsafe extern "C" fn HeapStringWriteBarriers(
                 objp: *mut *mut root::JSString,
                 prev: *mut root::JSString,
                 next: *mut root::JSString,
             ) {
-                crate::sys::unimplemented_entry("HeapStringWriteBarriers")
+                crate::sys::imp::HeapStringWriteBarriers(objp, prev, next)
             }
             pub unsafe extern "C" fn HeapBigIntWriteBarriers(
                 bip: *mut *mut root::JS::BigInt,
                 prev: *mut root::JS::BigInt,
                 next: *mut root::JS::BigInt,
             ) {
-                crate::sys::unimplemented_entry("HeapBigIntWriteBarriers")
+                crate::sys::imp::HeapBigIntWriteBarriers(bip, prev, next)
             }
             pub unsafe extern "C" fn HeapScriptWriteBarriers(
                 objp: *mut *mut root::JSScript,
                 prev: *mut root::JSScript,
                 next: *mut root::JSScript,
             ) {
-                crate::sys::unimplemented_entry("HeapScriptWriteBarriers")
+                crate::sys::imp::HeapScriptWriteBarriers(objp, prev, next)
             }
         #[doc = " SafelyInitialized<T>::create() creates a safely-initialized |T|, suitable for\n use as a default value in situations requiring a safe but arbitrary |T|\n value. Implemented as a static method of a struct to allow partial\n specialization for subclasses via the Enable template parameter."]
         #[repr(C)]
@@ -7674,14 +7674,14 @@ pub mod root {
                 prev: *const root::JS::Value,
                 next: *const root::JS::Value,
             ) {
-                crate::sys::unimplemented_entry("HeapValuePostWriteBarrier")
+                crate::sys::imp::HeapValuePostWriteBarrier(valuep, prev, next)
             }
             pub unsafe extern "C" fn HeapValueWriteBarriers(
                 valuep: *mut root::JS::Value,
                 prev: *const root::JS::Value,
                 next: *const root::JS::Value,
             ) {
-                crate::sys::unimplemented_entry("HeapValueWriteBarriers")
+                crate::sys::imp::HeapValueWriteBarriers(valuep, prev, next)
             }
         #[allow(clippy::unnecessary_operation, clippy::identity_op)]
         const _: () = {
@@ -15455,7 +15455,7 @@ pub mod root {
             crate::sys::unimplemented_entry("JS_GetErrorInterceptorCallback")
         }
         pub unsafe extern "C" fn JS_IsExceptionPending(cx: *mut root::JSContext) -> bool {
-            crate::sys::unimplemented_entry("JS_IsExceptionPending")
+            crate::sys::imp::JS_IsExceptionPending(cx)
         }
         pub unsafe extern "C" fn JS_IsThrowingOutOfMemory(cx: *mut root::JSContext) -> bool {
             crate::sys::unimplemented_entry("JS_IsThrowingOutOfMemory")
@@ -15464,17 +15464,17 @@ pub mod root {
             cx: *mut root::JSContext,
             vp: root::JS::MutableHandleValue,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_GetPendingException")
+            crate::sys::imp::JS_GetPendingException(cx, vp)
         }
         pub unsafe extern "C" fn JS_SetPendingException(
             cx: *mut root::JSContext,
             v: root::JS::HandleValue,
             behavior: root::JS::ExceptionStackBehavior,
         ) {
-            crate::sys::unimplemented_entry("JS_SetPendingException")
+            crate::sys::imp::JS_SetPendingException(cx, v, behavior)
         }
         pub unsafe extern "C" fn JS_ClearPendingException(cx: *mut root::JSContext) {
-            crate::sys::unimplemented_entry("JS_ClearPendingException")
+            crate::sys::imp::JS_ClearPendingException(cx)
         }
         #[doc = " If the given object is an exception object, the exception will have (or be\n able to lazily create) an error report struct, and this function will\n populate |errorReport| with it and return true. Otherwise, returns false.\n\n See |BorrowedErrorReport| for a usage example."]
         pub unsafe extern "C" fn JS_ErrorFromException(
@@ -17421,20 +17421,20 @@ pub mod root {
             id: root::JS::HandleId,
             resolved: *mut bool,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_ResolveStandardClass")
+            crate::sys::imp::JS_ResolveStandardClass(cx, obj, id, resolved)
         }
         pub unsafe extern "C" fn JS_MayResolveStandardClass(
             names: *const root::JSAtomState,
             id: root::jsid,
             maybeObj: *mut root::JSObject,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_MayResolveStandardClass")
+            crate::sys::imp::JS_MayResolveStandardClass(names, id, maybeObj)
         }
         pub unsafe extern "C" fn JS_EnumerateStandardClasses(
             cx: *mut root::JSContext,
             obj: root::JS::HandleObject,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_EnumerateStandardClasses")
+            crate::sys::imp::JS_EnumerateStandardClasses(cx, obj)
         }
         #[doc = " Fill \"properties\" with a list of standard class names that have not yet been\n resolved on \"obj\".  This can be used as (part of) a newEnumerate class hook\n on a global.  Already-resolved things are excluded because they might have\n been deleted by script after being resolved and enumeration considers\n already-defined properties anyway."]
         pub unsafe extern "C" fn JS_NewEnumerateStandardClasses(
@@ -17443,7 +17443,7 @@ pub mod root {
             properties: root::JS::MutableHandleIdVector,
             enumerableOnly: bool,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_NewEnumerateStandardClasses")
+            crate::sys::imp::JS_NewEnumerateStandardClasses(cx, obj, properties, enumerableOnly)
         }
         #[doc = " Fill \"properties\" with a list of standard class names.  This can be used for\n proxies that want to define behavior that looks like enumerating a global\n without touching the global itself."]
         pub unsafe extern "C" fn JS_NewEnumerateStandardClassesIncludingResolved(

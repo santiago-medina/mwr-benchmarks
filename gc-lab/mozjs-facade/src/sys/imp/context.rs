@@ -73,6 +73,10 @@ pub struct State {
     pub offthread_compilation: bool,
     pub jit_options: HashMap<u32, u32>,
     pub interrupt_callbacks: Vec<root::JSInterruptCallback>,
+    /// The exception a failed entry point or JSNative left on the context
+    /// (JS_SetPendingException); cells are never freed, so a raw JSVal
+    /// stays valid.
+    pub pending_exception: Option<crate::sys::jsval::JSVal>,
 }
 
 pub struct EventLoopDispatch {
@@ -523,4 +527,39 @@ pub unsafe fn SetWindowProxyClass(cx: *mut root::JSContext, clasp: *const root::
 
 pub unsafe fn GetWindowProxyClass() -> *const root::JSClass {
     *WINDOW_PROXY_CLASS.lock().unwrap() as *const root::JSClass
+}
+
+// --- Pending exceptions (jsapi.h, js/public/Exception.h) ---
+
+pub unsafe fn JS_IsExceptionPending(cx: *mut root::JSContext) -> bool {
+    let cx = unsafe { context(cx) };
+    cx.state.borrow().pending_exception.is_some()
+}
+
+pub unsafe fn JS_GetPendingException(
+    cx: *mut root::JSContext,
+    vp: root::JS::MutableHandleValue,
+) -> bool {
+    let cx = unsafe { context(cx) };
+    let Some(value) = cx.state.borrow().pending_exception else {
+        return false;
+    };
+    // SAFETY: the caller's out-parameter.
+    unsafe { *vp.ptr = value };
+    true
+}
+
+pub unsafe fn JS_SetPendingException(
+    cx: *mut root::JSContext,
+    v: root::JS::HandleValue,
+    _behavior: root::JS::ExceptionStackBehavior,
+) {
+    let cx = unsafe { context(cx) };
+    // SAFETY: a rooted handle to a live value.
+    cx.state.borrow_mut().pending_exception = Some(unsafe { *v.ptr });
+}
+
+pub unsafe fn JS_ClearPendingException(cx: *mut root::JSContext) {
+    let cx = unsafe { context(cx) };
+    cx.state.borrow_mut().pending_exception = None;
 }

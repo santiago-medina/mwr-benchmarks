@@ -10,11 +10,13 @@
 //! These functions take raw pointers because the mozjs API does; the engine
 //! logic stays in the safe `gc_lab::script::embed` API.
 
+mod barriers;
 mod context;
 mod natives;
 mod objects;
 mod proxy;
 
+pub use barriers::*;
 pub use context::*;
 pub use natives::*;
 pub use objects::*;

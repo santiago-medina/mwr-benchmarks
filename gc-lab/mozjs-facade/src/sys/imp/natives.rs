@@ -239,10 +239,16 @@ pub(super) fn call_native(
     heap.spares.borrow_mut().extend(spare.detach().ok());
 
     if !ok {
-        // Pending exceptions come with JS_SetPendingException (E5).
-        return Err(ScriptError::Runtime(
-            "mozjs facade: JSNative failed without a pending exception",
-        ));
+        // A JSNative throws by leaving a pending exception and returning
+        // false; false with none pending is an uncatchable error (OOM-like).
+        let pending = cx.state.borrow_mut().pending_exception.take();
+        return Err(match pending {
+            // SAFETY: a JSVal the embedder stored with JS_SetPendingException.
+            Some(value) => engine.throw_value(unsafe { from_jsval(value) }),
+            None => {
+                ScriptError::Runtime("mozjs facade: JSNative failed without a pending exception")
+            }
+        });
     }
     // SAFETY: vp[0] holds the return value (CallArgs::rval).
     Ok(unsafe { from_jsval(vp[0]) })

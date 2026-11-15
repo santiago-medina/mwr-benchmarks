@@ -19,6 +19,10 @@ use mozjs::jsapi::{
     JSCLASS_RESERVED_SLOTS_MASK, JSCLASS_RESERVED_SLOTS_SHIFT, JSFUN_CONSTRUCTOR, JSPROP_ENUMERATE,
     JSPROP_PERMANENT, JSPROP_READONLY,
 };
+use mozjs::jsapi::{
+    JS_ClearPendingException, JS_GetPendingException, JS_IsExceptionPending,
+    JS_ResolveStandardClass, JS_SetPendingException,
+};
 use mozjs::jsid::VoidId;
 use mozjs::jsval::{Int32Value, JSVal, ObjectValue, UndefinedValue};
 use mozjs::rust::RealmOptions;
@@ -106,6 +110,12 @@ unsafe extern "C" fn answer_getter(cx: *mut JSContext, argc: c_uint, vp: *mut JS
 }
 
 unsafe extern "C" fn failing_getter(_cx: *mut JSContext, _argc: c_uint, _vp: *mut JSVal) -> bool {
+    false
+}
+
+unsafe extern "C" fn throwing_getter(cx: *mut JSContext, _argc: c_uint, _vp: *mut JSVal) -> bool {
+    let value = Int32Value(7);
+    unsafe { JS_SetPendingException(cx, handle(&value), JS::ExceptionStackBehavior::DoNotCapture) };
     false
 }
 
@@ -215,6 +225,7 @@ fn interface_objects_specs_and_natives() {
         let properties = [
             accessor(c"answer", Some(answer_getter)),
             accessor(c"broken", Some(failing_getter)),
+            accessor(c"throwing", Some(throwing_getter)),
             int_constant(c"CONST", 42),
             JSPropertySpec::ZERO,
         ];
@@ -232,6 +243,32 @@ fn interface_objects_specs_and_natives() {
             c"broken".as_ptr(),
             handle_mut(&mut v)
         ));
+        // False with nothing pending is uncatchable: no exception is left.
+        assert!(!JS_IsExceptionPending(cx));
+        // A thrown value crosses the engine and comes back pending.
+        assert!(!JS_GetProperty(
+            cx,
+            handle(&proto),
+            c"throwing".as_ptr(),
+            handle_mut(&mut v)
+        ));
+        assert!(JS_IsExceptionPending(cx));
+        let mut thrown = UndefinedValue();
+        assert!(JS_GetPendingException(cx, handle_mut(&mut thrown)));
+        assert_eq!(thrown.to_int32(), 7);
+        JS_ClearPendingException(cx);
+        assert!(!JS_IsExceptionPending(cx));
+        assert!(!JS_GetPendingException(cx, handle_mut(&mut thrown)));
+        // Standard classes are eager: the resolve hook resolves nothing.
+        let id = VoidId();
+        let mut resolved = true;
+        assert!(JS_ResolveStandardClass(
+            cx,
+            handle(&proto),
+            handle(&id),
+            &mut resolved
+        ));
+        assert!(!resolved);
         assert_eq!(get(cx, proto, c"CONST").to_int32(), 42);
         // Non-configurable: redefining fails.
         assert!(!JS_DefineProperty5(
