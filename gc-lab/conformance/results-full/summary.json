@@ -1,17 +1,15 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "8ee014f9b5738b66b203c512f2356194698d21c15bbe86e2826441f6f3549114",
+  "implementation_sha256": "f1b37a127ffc2306fca69e5ced154d51043706cedb11a6dfdda84f9d9feda2e5",
   "runner_sha256": "0c78213a78a5fc743c6085154da598639acdff8bb6cdfbb2b32d1688939c9965",
-  "new_failures": [
-    "built-ins/Function/prototype/toString/method-computed-property-name.js"
-  ],
+  "new_failures": [],
   "variant": "scripts: strict prefix, or sloppy for noStrict/raw; modules (full profile): includes as scripts, then the module record; original test body",
   "profile": "full",
   "retry_timeouts": {
     "workers": 2,
-    "timeouts": 3,
-    "passed": 3
+    "timeouts": 1,
+    "passed": 1
   },
   "scopes": [
     "built-ins",
@@ -19,31 +17,20 @@
   ],
   "total": 47708,
   "counts": {
-    "passed": 47656,
-    "unsupported": 51,
-    "failed": 1
+    "passed": 47667,
+    "unsupported": 41
   },
-  "assertions": 1259988,
+  "assertions": 1260050,
   "regressions": [],
   "unsupported_reasons": {
     "ordinary reflection on host objects": 11,
     "unpaired UTF-16 string storage": 9,
     "syntax: AST nesting limit": 3,
     "ShadowRealm.prototype.importValue": 6,
-    "with in generator or async function": 10,
     "unsupported module syntax or type": 11,
     "syntax: syntax nesting limit": 1
   },
-  "failures": [
-    {
-      "path": "built-ins/Function/prototype/toString/method-computed-property-name.js",
-      "source_sha256": "f4a7b99eb83bcaceb28b952965a7d04137f7ae5004bdecd31fcba1ba1d115866",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"Conforms to NativeFunction Syntax: \\\"undefined\\\" ([ { a(){} }.a ](){ })\", value: Object(Js(Handle { heap: 2, index: 1157, serial: 2761 })) })); expected None",
-      "assertions": 2,
-      "cleanup": true
-    }
-  ],
+  "failures": [],
   "audit_config": {
     "engine": "checker-default",
     "gc_stress": false,

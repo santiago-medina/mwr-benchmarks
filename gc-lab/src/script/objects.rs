@@ -105,7 +105,8 @@ pub(super) struct Data {
     /// [[IsRawJSON]] (json-parse-with-source, JSON.rawJSON).
     pub raw_json: bool,
     pub boxed: Option<Value>,
-    pub source: Option<String>,
+    /// §20.2.3.5 [[SourceText]] of a script-defined or dynamic function.
+    pub source: Option<super::parser::SourceText>,
     pub date: Option<u64>,
     pub regexp: Option<std::rc::Rc<super::regexp_builtins::Matcher>>,
     pub regexp_cursor: Option<super::regexp_builtins::Cursor>,

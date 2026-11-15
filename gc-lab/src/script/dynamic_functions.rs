@@ -100,7 +100,7 @@ impl Engine<'_> {
             unreachable!()
         };
         let mut data = self.data(id)?.clone();
-        data.source = Some(source);
+        data.source = Some(super::parser::SourceText::owned(source));
         if let Some(prototype) = prototype {
             data.prototype = Some(prototype);
         }
@@ -119,7 +119,7 @@ impl Engine<'_> {
                 self.data(id)?.source.clone()
             };
             if let Some(source) = source {
-                return Ok(Value::String(source.into()));
+                return Ok(Value::String(source.as_str().into()));
             }
         }
         // Source availability is a host choice for pre-existing closures and native functions.

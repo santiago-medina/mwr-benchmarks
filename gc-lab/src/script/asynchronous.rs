@@ -44,6 +44,9 @@ pub(super) enum Op {
     Init(String, usize, bool),
     Bind(super::parser::Pattern, usize, bool),
     Enter(Vec<Stmt>),
+    /// `with (register)`: §14.11.2 steps 1-5, an Object Environment Record over
+    /// ToObject(value) with withEnvironment true, popped by `Exit`.
+    EnterWith(usize),
     Exit,
     Hoist(Vec<Stmt>),
     Branch(usize, usize, usize),
@@ -1016,11 +1019,14 @@ impl Compiler {
     }
     fn statement(&mut self, s: &Stmt) -> Result<()> {
         match s {
-            Stmt::Sloppy => {}
-            Stmt::With(..) => {
-                return Err(ScriptError::Unsupported(
-                    "with in generator or async function",
-                ))
+            Stmt::Sloppy | Stmt::SourceText(_) => {}
+            Stmt::With(object, body) => {
+                // §14.11.2: the body runs in a new object environment; the completion
+                // value is not observable in a function body.
+                let object = self.expression(object)?;
+                self.emit(Op::EnterWith(object));
+                self.statement(body)?;
+                self.emit(Op::Exit);
             }
             Stmt::Declarations(items) => {
                 for item in items {
@@ -2235,6 +2241,13 @@ impl Engine<'_> {
                             let scope = e.new_environment(Some(env), &body, false)?;
                             e.protect(&Value::Object(scope))?;
                             e.hoist_functions(&body, scope)?;
+                            frame.envs.push(scope);
+                        }
+                        Op::EnterWith(r) => {
+                            let object = e.register(&frame, r)?;
+                            let object = e.object_coercible(object)?;
+                            let scope = e.with_environment(env, object)?;
+                            e.protect(&Value::Object(scope))?;
                             frame.envs.push(scope);
                         }
                         Op::Exit => {

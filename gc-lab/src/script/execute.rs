@@ -153,29 +153,32 @@ impl Engine<'_> {
             },
         );
         self.protect(&Value::Object(id))?;
-        self.replace_data(
-            id,
-            Data::new(Some(
-                if matches!(
-                    kind,
-                    FunctionKind::Generator | FunctionKind::GeneratorMethod
-                ) {
-                    self.intrinsics.as_ref().unwrap().collection["GeneratorFunction"]
-                } else if matches!(
-                    kind,
-                    FunctionKind::AsyncGenerator | FunctionKind::AsyncGeneratorMethod
-                ) {
-                    self.intrinsics.as_ref().unwrap().collection["AsyncGeneratorFunction"]
-                } else if matches!(
-                    kind,
-                    FunctionKind::Async | FunctionKind::AsyncArrow | FunctionKind::AsyncMethod
-                ) {
-                    self.intrinsics.as_ref().unwrap().async_function
-                } else {
-                    self.intrinsics.as_ref().unwrap().function
-                },
-            )),
-        )?;
+        let mut data = Data::new(Some(
+            if matches!(
+                kind,
+                FunctionKind::Generator | FunctionKind::GeneratorMethod
+            ) {
+                self.intrinsics.as_ref().unwrap().collection["GeneratorFunction"]
+            } else if matches!(
+                kind,
+                FunctionKind::AsyncGenerator | FunctionKind::AsyncGeneratorMethod
+            ) {
+                self.intrinsics.as_ref().unwrap().collection["AsyncGeneratorFunction"]
+            } else if matches!(
+                kind,
+                FunctionKind::Async | FunctionKind::AsyncArrow | FunctionKind::AsyncMethod
+            ) {
+                self.intrinsics.as_ref().unwrap().async_function
+            } else {
+                self.intrinsics.as_ref().unwrap().function
+            },
+        ));
+        // §20.2.3.5: the parser's [[SourceText]] marker (classes override it with the
+        // whole class text, dynamic functions with the synthesized source).
+        if let Some(Stmt::SourceText(text)) = body.last() {
+            data.source = Some(text.clone());
+        }
+        self.replace_data(id, data)?;
         // §10.2.3 step 22 (SetFunctionLength) precedes SetFunctionName (§10.2.9), so
         // "length" is the first own key, then "name", then "prototype".
         self.define(
@@ -402,7 +405,7 @@ impl Engine<'_> {
             self.set_completion(Value::Undefined)?;
         }
         match s {
-            Stmt::Sloppy => {}
+            Stmt::Sloppy | Stmt::SourceText(_) => {}
             Stmt::With(object, body) => {
                 let object = self.eval(object, env)?;
                 self.protect(&object)?;

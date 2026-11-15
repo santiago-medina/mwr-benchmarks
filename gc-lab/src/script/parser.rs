@@ -6,6 +6,38 @@ pub struct SyntaxError {
     pub offset: usize,
     pub message: &'static str,
 }
+/// A span of the parsed source text (§20.2.3.5 [[SourceText]]). Every span from one
+/// parse shares one `Arc<str>`, so a closure costs no text copy.
+#[derive(Clone)]
+pub struct SourceText {
+    pub text: std::sync::Arc<str>,
+    pub start: usize,
+    pub end: usize,
+}
+impl SourceText {
+    pub fn owned(text: String) -> Self {
+        let end = text.len();
+        SourceText {
+            text: text.into(),
+            start: 0,
+            end,
+        }
+    }
+    pub fn as_str(&self) -> &str {
+        &self.text[self.start..self.end]
+    }
+}
+impl std::fmt::Debug for SourceText {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SourceText({}..{})", self.start, self.end)
+    }
+}
+impl PartialEq for SourceText {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+impl Eq for SourceText {}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Param {
     pub binding: Pattern,
@@ -109,6 +141,9 @@ pub struct Class {
     pub members: Vec<ClassMember>,
     /// The class's DecoratorList in source order (DECORATORS.md).
     pub decorators: Vec<Expr>,
+    /// §15.7.14 step 1 / §20.2.3.5: the ClassDeclaration or ClassExpression text, the
+    /// [[SourceText]] of the class constructor.
+    pub source: Option<SourceText>,
 }
 impl Class {
     /// Whether the class uses decorators or `accessor`: such classes are evaluated by
@@ -190,6 +225,10 @@ pub enum Stmt {
     Empty,
     /// Marker: the enclosing script or function body is sloppy (non-strict) code.
     Sloppy,
+    /// §20.2.3.5 [[SourceText]] of the enclosing function: appended last to every
+    /// script-defined function body (never first: `body.first()` is the strictness marker
+    /// and the directive prologue scan stops at the first non-string statement). A no-op.
+    SourceText(SourceText),
     With(Expr, Box<Stmt>),
     Declarations(Vec<Stmt>),
     Bind {
@@ -364,15 +403,31 @@ struct Parser<'a> {
     /// Token index where the current AssignmentExpression starts: an ArrowFunction is an
     /// AssignmentExpression, never an operand (§15.3), so it may only start there.
     arrow_at: usize,
+    /// (start, end) byte offsets of every token of the parse, sorted by start; shared
+    /// with sub-parsers, whose token vectors are slices (looked up by start offset).
+    spans: std::rc::Rc<Vec<(usize, usize)>>,
+    /// The source as one shared allocation for [[SourceText]] spans, made on first use.
+    shared_source: Option<std::sync::Arc<str>>,
+    /// Token index where the function whose body `function_rest` parses next starts
+    /// (taken on entry, so nested functions set their own).
+    source_start: Option<usize>,
 }
 pub(super) fn tokenize(source: &str) -> Result<Vec<(Token, usize)>, SyntaxError> {
-    tokenize_legacy(source).map(|(tokens, _)| tokens)
+    tokenize_legacy(source).map(|(tokens, _, _)| tokens)
 }
 /// Tokens plus the offsets of legacy literals (`010`, `08`, `"\07"`): early errors in strict code.
 pub(super) fn tokenize_legacy(
     source: &str,
-) -> Result<(Vec<(Token, usize)>, std::collections::HashSet<usize>), SyntaxError> {
+) -> Result<
+    (
+        Vec<(Token, usize)>,
+        std::collections::HashSet<usize>,
+        Vec<(usize, usize)>,
+    ),
+    SyntaxError,
+> {
     let mut legacy = std::collections::HashSet::new();
+    let mut spans = vec![];
     if source.len() > 8 << 20 {
         return Err(SyntaxError {
             offset: 0,
@@ -681,6 +736,7 @@ pub(super) fn tokenize_legacy(
             _ => return Err(error("Invalid or unexpected token")),
         };
         tokens.push((token, offset));
+        spans.push((offset, chars.peek().map_or(source.len(), |&(end, _)| end)));
         if tokens.len() > 1 << 20 {
             return Err(error("token limit"));
         }
@@ -692,8 +748,8 @@ pub(super) fn tokenize_legacy(
         });
     }
     tokens.push((Token::End, source.len()));
-    let tokens = (tokens, legacy);
-    Ok(tokens)
+    spans.push((source.len(), source.len()));
+    Ok((tokens, legacy, spans))
 }
 pub fn parse(source: &str) -> Result<Vec<Stmt>, SyntaxError> {
     parse_eval(source, false, false, false, false, &[], false)
@@ -709,8 +765,9 @@ pub(super) fn parse_eval(
     private_names: &[String],
     field_initializer: bool,
 ) -> Result<Vec<Stmt>, SyntaxError> {
-    let (tokens, legacy) = tokenize_legacy(source)?;
+    let (tokens, legacy, spans) = tokenize_legacy(source)?;
     let mut p = Parser::new(tokens, legacy, source, strict);
+    p.spans = std::rc::Rc::new(spans);
     // §19.2.1.1 steps 5-6 and 11: inside a class, direct eval code may name the private
     // identifiers of the caller's PrivateEnvironment chain (AllPrivateIdentifiersValid).
     if !private_names.is_empty() {
@@ -772,6 +829,31 @@ impl<'a> Parser<'a> {
             await_kw: false,
             no_in: None,
             arrow_at: usize::MAX,
+            spans: Default::default(),
+            shared_source: None,
+            source_start: None,
+        }
+    }
+    /// §20.2.3.5 [[SourceText]] from token `start` to the last consumed token.
+    fn source_text(&mut self, start: usize) -> Option<SourceText> {
+        let from = self.tokens.get(start)?.1;
+        let last = self.tokens.get(self.cursor.checked_sub(1)?)?.1;
+        let index = self.spans.binary_search_by_key(&last, |s| s.0).ok()?;
+        let to = self.spans[index].1;
+        let text = self
+            .shared_source
+            .get_or_insert_with(|| std::sync::Arc::from(self.source))
+            .clone();
+        (from <= to && to <= text.len()).then_some(SourceText {
+            text,
+            start: from,
+            end: to,
+        })
+    }
+    /// Appends the [[SourceText]] marker for a function starting at token `start`.
+    fn mark_source(&mut self, body: &mut Vec<Stmt>, start: usize) {
+        if let Some(text) = self.source_text(start) {
+            body.push(Stmt::SourceText(text));
         }
     }
     /// Is `in` excluded here by an enclosing [~In] parameter (unbracketed in a for init)?
@@ -1225,6 +1307,7 @@ impl Parser<'_> {
         if self.op("...") {
             return Ok((String::new(), Property::Spread(self.expression()?)));
         }
+        let start = self.cursor;
         let mut generator = self.op("*");
         let identifier = matches!(self.current(), Token::Name(_) | Token::EscapedName(_));
         let escaped = matches!(self.current(), Token::EscapedName(_));
@@ -1273,6 +1356,7 @@ impl Parser<'_> {
         {
             let getter = key == "get";
             (key, computed) = self.literal_key()?;
+            self.source_start = Some(start);
             let (params, body) = self.function_rest(true, false, false, false)?;
             match (getter, params.as_slice()) {
                 (true, []) => Property::Getter(body),
@@ -1280,6 +1364,7 @@ impl Parser<'_> {
                 _ => return Err(self.error("invalid accessor parameters")),
             }
         } else if generator || asynchronous || self.current() == &Token::Punct('(') {
+            self.source_start = Some(start);
             let (params, body) = self.function_rest(true, false, generator, asynchronous)?;
             Property::Value(if generator {
                 Expr::GeneratorFunction {
@@ -1341,11 +1426,16 @@ impl Parser<'_> {
         generator: bool,
         asynchronous: bool,
     ) -> Result<(Vec<Param>, Vec<Stmt>), SyntaxError> {
+        let source_start = self.source_start.take();
         let saved_context = (self.yield_kw, self.await_kw);
         (self.yield_kw, self.await_kw) = (generator, asynchronous);
         let result = self.function_rest_inner(super_property, super_call);
         (self.yield_kw, self.await_kw) = saved_context;
-        result
+        let (params, mut body) = result?;
+        if let Some(start) = source_start {
+            self.mark_source(&mut body, start);
+        }
+        Ok((params, body))
     }
     fn function_rest_inner(
         &mut self,
@@ -1461,11 +1551,18 @@ impl Parser<'_> {
         self.strict = strict;
         result
     }
+    /// ClassTail after `class` and the optional (single-token) BindingIdentifier.
     fn class_tail(&mut self, name: Option<String>) -> Result<Class, SyntaxError> {
+        // §20.2.3.5: the class's [[SourceText]] starts at the `class` keyword.
+        let start = self.cursor.checked_sub(if name.is_some() { 2 } else { 1 });
         let saved = std::mem::replace(&mut self.strict, true);
         let result = self.class_tail_strict(name);
         self.strict = saved;
-        result
+        let mut class = result?;
+        if let Some(start) = start.filter(|&s| self.tokens[s].0 == Token::Name("class".into())) {
+            class.source = self.source_text(start);
+        }
+        Ok(class)
     }
     fn class_tail_strict(&mut self, name: Option<String>) -> Result<Class, SyntaxError> {
         let heritage = if self.word("extends") {
@@ -1509,6 +1606,7 @@ impl Parser<'_> {
             constructor,
             members,
             decorators: vec![],
+            source: None,
         })
     }
     #[allow(clippy::type_complexity)]
@@ -1602,6 +1700,8 @@ impl Parser<'_> {
             if auto_accessor {
                 self.take();
             }
+            // §20.2.3.5: a method's [[SourceText]] is its MethodDefinition (no `static`).
+            let method_start = self.cursor;
             let next = self.tokens.get(self.cursor + 1).map(|t| t.0.clone());
             let mut generator = !auto_accessor && self.op("*");
             let mut asynchronous = false;
@@ -1681,6 +1781,7 @@ impl Parser<'_> {
                 if is_static && named(&key, "prototype") {
                     return Err(self.error("static prototype method"));
                 }
+                self.source_start = Some(method_start);
                 let (params, body) = self.function_rest(true, false, generator, asynchronous)?;
                 let kind = match accessor {
                     Some(true) => {
@@ -1833,6 +1934,8 @@ impl Parser<'_> {
                     tokens.push((Token::End, self.tokens[index].1));
                     let mut head =
                         Parser::new(tokens, self.legacy.clone(), self.source, self.strict);
+                    head.spans = self.spans.clone();
+                    head.shared_source = self.shared_source.clone();
                     head.depth = self.depth;
                     if !self.private_refs.is_empty() {
                         head.private_refs = vec![vec![]];
@@ -2370,10 +2473,12 @@ impl Parser<'_> {
                         .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
             })
         {
+            let start = self.cursor;
             self.take();
             self.take();
             let generator = self.op("*");
             let name = self.name()?;
+            self.source_start = Some(start);
             let (params, body) = self.function_rest(false, false, generator, true)?;
             self.strict_function_name(Some(&name), &body)?;
             if generator {
@@ -2396,9 +2501,12 @@ impl Parser<'_> {
             let class = self.class_tail(Some(name.clone()))?;
             return Ok(Stmt::Let(name, Expr::Class(Box::new(class))));
         }
-        if self.word("function") {
+        if self.current() == &Token::Name("function".into()) {
+            let start = self.cursor;
+            self.take();
             let generator = self.op("*");
             let n = self.name()?;
+            self.source_start = Some(start);
             let (p, body) = self.function_rest(false, false, generator, false)?;
             self.strict_function_name(Some(&n), &body)?;
             return Ok(if generator {
@@ -2944,19 +3052,26 @@ impl Parser<'_> {
         }
     }
     /// §15.3 ConciseBody: [~Yield, ~Await].
-    fn arrow_body(&mut self) -> Result<Vec<Stmt>, SyntaxError> {
-        self.arrow_body_in(false)
+    fn arrow_body(&mut self, start: usize) -> Result<Vec<Stmt>, SyntaxError> {
+        self.arrow_body_in(false, start)
     }
     /// §15.9 AsyncConciseBody: [~Yield, +Await].
-    fn async_arrow_body(&mut self) -> Result<Vec<Stmt>, SyntaxError> {
-        self.arrow_body_in(true)
+    fn async_arrow_body(&mut self, start: usize) -> Result<Vec<Stmt>, SyntaxError> {
+        self.arrow_body_in(true, start)
     }
-    fn arrow_body_in(&mut self, asynchronous: bool) -> Result<Vec<Stmt>, SyntaxError> {
+    /// `start`: token index where the ArrowFunction begins (its [[SourceText]]).
+    fn arrow_body_in(
+        &mut self,
+        asynchronous: bool,
+        start: usize,
+    ) -> Result<Vec<Stmt>, SyntaxError> {
         let saved = (self.yield_kw, self.await_kw);
         (self.yield_kw, self.await_kw) = (false, asynchronous);
         let result = self.arrow_body_inner();
         (self.yield_kw, self.await_kw) = saved;
-        result
+        let mut body = result?;
+        self.mark_source(&mut body, start);
+        Ok(body)
     }
     fn arrow_body_inner(&mut self) -> Result<Vec<Stmt>, SyntaxError> {
         if self.current() == &Token::Punct('{') {
@@ -3044,6 +3159,7 @@ impl Parser<'_> {
         // §15.3 / §15.9: arrows are AssignmentExpressions, so `class extends () => {} {}`
         // and `#x in () => {}` are early errors.
         let arrow_ok = self.cursor == self.arrow_at;
+        let start = self.cursor;
         let not_operand = |p: &Self| Err(p.error("arrow function is not an operand"));
         if matches!(self.current(), Token::Template { start: true, .. }) {
             return self.template(None);
@@ -3072,7 +3188,7 @@ impl Parser<'_> {
             self.take();
             let name = self.name_in(false, true)?;
             self.op("=>");
-            let body = self.async_arrow_body()?;
+            let body = self.async_arrow_body(start)?;
             return Ok(Expr::AsyncArrow {
                 params: vec![name.into()],
                 body,
@@ -3093,7 +3209,7 @@ impl Parser<'_> {
             }
             let name = self.name()?;
             self.op("=>");
-            let body = self.arrow_body()?;
+            let body = self.arrow_body(start)?;
             return Ok(Expr::Arrow {
                 params: vec![name.into()],
                 body,
@@ -3117,6 +3233,7 @@ impl Parser<'_> {
                     // §15.8 / §15.6: the expression's own name takes its [Yield] / [Await].
                     Some(self.name_in(generator, true)?)
                 };
+                self.source_start = Some(start);
                 let (params, body) = self.function_rest(false, false, generator, true)?;
                 self.strict_function_name(name.as_deref(), &body)?;
                 if generator {
@@ -3149,7 +3266,7 @@ impl Parser<'_> {
                     return Err(self.error("duplicate parameter"));
                 }
                 self.op("=>");
-                let body = self.async_arrow_body()?;
+                let body = self.async_arrow_body(start)?;
                 return Ok(Expr::AsyncArrow { params, body });
             }
             self.cursor = save;
@@ -3163,6 +3280,7 @@ impl Parser<'_> {
                 // §15.2 / §15.5: the expression's own name takes its [Yield] / [Await].
                 Some(self.name_in(generator, false)?)
             };
+            self.source_start = Some(start);
             let (params, body) = self.function_rest(false, false, generator, false)?;
             self.strict_function_name(name.as_deref(), &body)?;
             return Ok(if generator {
@@ -3191,7 +3309,7 @@ impl Parser<'_> {
                 return Err(self.error("duplicate parameter"));
             }
             self.op("=>");
-            let body = self.arrow_body()?;
+            let body = self.arrow_body(start)?;
             return Ok(Expr::Arrow { params, body });
         }
         let decorators = if self.current() == &Token::Punct('@') {
@@ -3856,7 +3974,7 @@ fn validate_loop(
                     in_generator,
                 )?;
             }
-            Stmt::Empty | Stmt::Sloppy => {}
+            Stmt::Empty | Stmt::Sloppy | Stmt::SourceText(_) => {}
             Stmt::With(object, body) => {
                 work.push((object, depth));
                 validate_loop(

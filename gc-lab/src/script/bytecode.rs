@@ -991,7 +991,7 @@ impl Compiler {
     }
     fn statement_inner(&mut self, statement: &Stmt) -> CResult<()> {
         match statement {
-            Stmt::Empty | Stmt::Sloppy => {}
+            Stmt::Empty | Stmt::Sloppy | Stmt::SourceText(_) => {}
             Stmt::Declarations(items) => {
                 for item in items {
                     self.statement_inner(item)?;

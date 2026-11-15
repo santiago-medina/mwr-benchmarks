@@ -236,6 +236,7 @@ impl Walk for Class {
             constructor,
             members,
             decorators,
+            source: _,
         } = self;
         decorators.walk(v)
             || name.walk(v)
@@ -297,7 +298,7 @@ impl Walk for Stmt {
             return stopped;
         }
         match self {
-            Stmt::Empty | Stmt::Sloppy | Stmt::Continue => false,
+            Stmt::Empty | Stmt::Sloppy | Stmt::SourceText(_) | Stmt::Continue => false,
             Stmt::With(e, body) => e.walk(v) || body.walk(v),
             Stmt::Declarations(items) | Stmt::Block(items) => items.walk(v),
             Stmt::Bind {

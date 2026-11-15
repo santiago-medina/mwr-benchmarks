@@ -417,6 +417,13 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Smoke: built-ins/Atomics 389/389; a 600-case buffer sample has 1 failure that already failed in full52. cargo test passes, including `tests/agents.rs`.
 - Full run t262-full53 (VM): 47458/47708 = 99.5%, +114 (gained 114, lost 0). Unsupported fell 217 -> 108; the largest remaining buckets are "unsupported character" (20 + 3 strict) and "strict unsupported property key" (12).
 
+### with in resumable functions, function source text (checkpoint 51, 2026-11-15)
+
+- `with` inside generator and async functions (§14.11.2): the resumable Op compiler emits `Op::EnterWith(register)`, which pushes an Object Environment Record (withEnvironment true) over ToObject(value) onto the frame's environment stack; `Exit` pops it and abrupt exits truncate it to the handler depth, as for blocks. Probe `vmprobe/with_resumable.js` (yield, labelled break, throw and await across a `with`).
+- Function.prototype.toString (§20.2.3.5) returns the [[SourceText]] of every script-defined function: declarations, expressions, methods (without `static`), accessors, arrows and classes (the whole class text for the constructor). Token end offsets come from the tokenizer; a `Stmt::SourceText` marker appended to each function body points into one shared `Arc<str>` of the source. Design: FUNCTION_SOURCE.md. Probe `vmprobe/fn_source.js`.
+- Smoke: built-ins/Function/prototype/toString 80/80; the 10 `with` in generator/async cases pass; neighbour samples 50/50 and 50/50.
+- Full run t262-full59 (VM): 47667/47708 = 99.9%, +11 vs full58, lost 0; failed 0, unsupported 41. cargo test passes. This is the recorded baseline. Remaining unsupported: ordinary reflection on host objects (11), module syntax or types (11), unpaired UTF-N string storage (9), ShadowRealm.prototype.importValue (6), AST/syntax nesting limits (4).
+
 ### failures57 singletons (checkpoint 50, 2026-11-15)
 
 - Promise.try (sec-promise.try) calls the callback before NewPromiseCapability and returns PromiseResolve(C, value) on a normal completion, so a promise value is not wrapped.
@@ -429,7 +436,7 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Async generators: bare `return;` does not Await (§14.10.1); a `yield*` resumed with a return completion awaits the value first (AsyncGeneratorUnwrapYieldResumption, §27.6.3.7) and forwards a rejection to the delegate as a throw.
 - js_check defines the host `print` that test262's INTERPRETING.md requires, and its `compareArray` mirrors harness/compare-array.js (raw length comparison).
 - Smoke: Promise/try, TypedArray length/byteLength, TypedArrayConstructors/ctors, GeneratorPrototype, AsyncFunction, Date/UTC, Function/prototype/toString, global-code, try, with, async-generator, Symbol.replace, yield 400-case sample 399 passed (1 pre-existing unsupported); async-generator, AsyncGeneratorPrototype, try, with in full 1351/1354 (3 pre-existing `with` in generator).
-- Full run t262-full58 (VM): 47656/47708 = 99.9%, +16 vs full57, lost 0; failed 1, unsupported 51. cargo test passes. This is the recorded baseline. The only failure is Function/prototype/toString/method-computed-property-name: functions keep no source text (§20.2.3.5), so toString returns NativeFunction syntax for every function.
+- Full run t262-full58 (VM): 47656/47708 = 99.9%, +16 vs full57, lost 0; failed 1, unsupported 51. cargo test passes. This was the recorded baseline until checkpoint 51. The only failure was Function/prototype/toString/method-computed-property-name (no function source text; fixed in checkpoint 51).
 
 ### Eval scopes and reference evaluation order (checkpoint 49, 2026-11-15)
 

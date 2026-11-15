@@ -423,6 +423,7 @@ fn export_default(
         && !p.source[p.tokens[p.cursor].1..p.tokens[p.cursor + 1].1]
             .contains(['\n', '\r', '\u{2028}', '\u{2029}']);
     if p.current() == &Token::Name("function".into()) || async_function {
+        let start = p.cursor;
         if async_function {
             p.take();
         }
@@ -433,6 +434,7 @@ fn export_default(
         {
             local = p.name()?;
         }
+        p.source_start = Some(start);
         let (params, body) = p.function_rest(false, false, generator, async_function)?;
         p.strict_function_name(Some(&local), &body)?;
         module.body.push(if generator {
@@ -477,8 +479,9 @@ fn export_default(
     Ok(())
 }
 pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
-    let (tokens, legacy) = tokenize_legacy(source)?;
+    let (tokens, legacy, spans) = tokenize_legacy(source)?;
     let mut p = Parser::new(tokens, legacy, source, true);
+    p.spans = std::rc::Rc::new(spans);
     p.module = true;
     p.await_kw = true;
     p.new_target = false;

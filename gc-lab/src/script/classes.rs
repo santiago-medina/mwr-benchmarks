@@ -208,6 +208,10 @@ impl Engine<'_> {
         let Value::Object(fid) = f else {
             unreachable!()
         };
+        // §15.7.14 step 1 / §20.2.3.5: F.[[SourceText]] is the whole class text.
+        if let Some(text) = &class.source {
+            self.data_mut(fid)?.source = Some(text.clone());
+        }
         self.set_prototype(fid, Some(ctor_parent))?;
         self.define_or_throw(
             fid,
