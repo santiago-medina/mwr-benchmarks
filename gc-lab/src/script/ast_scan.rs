@@ -218,7 +218,10 @@ impl Walk for Property {
         match self {
             Property::CoverDefault(name, e) => name.walk(v) || e.walk(v),
             Property::Computed(key, value) => key.walk(v) || value.walk(v),
-            Property::Spread(e) | Property::Value(e) | Property::Prototype(e) => e.walk(v),
+            Property::Spread(e)
+            | Property::Value(e)
+            | Property::Prototype(e)
+            | Property::CoverDuplicatePrototype(e) => e.walk(v),
             Property::Getter(body) => body.walk(v),
             Property::Setter(param, body) => param.walk(v) || body.walk(v),
         }

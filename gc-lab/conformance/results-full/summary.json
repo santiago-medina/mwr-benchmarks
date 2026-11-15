@@ -1,7 +1,7 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "18282be1b9d43d90e62b48f893d760933cd4629f83d5ac5c1a918b47172dab6c",
+  "implementation_sha256": "6b4de4be1e0ea748fa0ac9867d162518df17e2808b728e7e38f6616bff008561",
   "runner_sha256": "0c78213a78a5fc743c6085154da598639acdff8bb6cdfbb2b32d1688939c9965",
   "new_failures": [
     "built-ins/AsyncFunction/AsyncFunction-is-subclass.js",
@@ -49,8 +49,8 @@
   "profile": "full",
   "retry_timeouts": {
     "workers": 2,
-    "timeouts": 6,
-    "passed": 6
+    "timeouts": 3,
+    "passed": 3
   },
   "scopes": [
     "built-ins",
@@ -58,28 +58,20 @@
   ],
   "total": 47708,
   "counts": {
-    "passed": 47585,
-    "unsupported": 83,
+    "passed": 47617,
+    "unsupported": 51,
     "failed": 40
   },
-  "assertions": 1259497,
+  "assertions": 1259533,
   "regressions": [],
   "unsupported_reasons": {
     "ordinary reflection on host objects": 11,
     "unpaired UTF-16 string storage": 9,
     "syntax: AST nesting limit": 3,
     "ShadowRealm.prototype.importValue": 6,
-    "syntax: duplicate prototype literal": 1,
-    "syntax: invalid shorthand property": 4,
     "with in generator or async function": 10,
-    "syntax (strict): unsupported property key": 12,
     "unsupported module syntax or type": 11,
-    "syntax: invalid accessor parameters": 4,
-    "syntax: unsupported or missing expression": 1,
-    "syntax: unexpected token": 1,
-    "syntax: binding declaration requires initializer": 8,
-    "syntax: syntax nesting limit": 1,
-    "syntax: invalid shorthand binding": 1
+    "syntax: syntax nesting limit": 1
   },
   "failures": [
     {

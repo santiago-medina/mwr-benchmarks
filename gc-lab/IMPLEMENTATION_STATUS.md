@@ -417,6 +417,21 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Smoke: built-ins/Atomics 389/389; a 600-case buffer sample has 1 failure that already failed in full52. cargo test passes, including `tests/agents.rs`.
 - Full run t262-full53 (VM): 47458/47708 = 99.5%, +114 (gained 114, lost 0). Unsupported fell 217 -> 108; the largest remaining buckets are "unsupported character" (20 + 3 strict) and "strict unsupported property key" (12).
 
+### Syntax residue (checkpoint 48, 2026-11-15)
+
+- Eight parser root causes behind 32 "syntax:" unsupported cases:
+  1. A PrivateIdentifier as an object-literal or pattern key is an early SyntaxError (it is a ClassElementName only).
+  2. Object-literal setters accept an Initializer on their parameter (PropertySetParameterList is a FormalParameter, §15.4).
+  3. `{yield}` is a valid shorthand in sloppy code outside generators (§13.1.1).
+  4. Binding-pattern shorthands use the contextual reserved-word check: `var {await}` in an arrow inside a static block is valid, and directly in the block it stays an error.
+  5. `${ yield }`: a `yield` with nothing before a template middle or tail has no operand.
+  6. `for (async of => {};;)`: an `of` followed by `=>` is not the for-of keyword.
+  7. In sloppy code, where only a Statement is allowed (if, loop and with bodies, labelled items), `let` followed by a line terminator (not `[`) is an identifier expression statement, ended by ASI (§14.7, §14.13).
+  8. A duplicate `__proto__` (`Property::CoverDuplicatePrototype`) is allowed when the literal is reparsed as an ObjectAssignmentPattern, and is an early error otherwise (§13.2.5.1).
+- Smoke: 32/32 residue cases; 3738 neighbouring cases with no new non-passes.
+- Full run t262-full56 (VM): 47617/47708 = 99.8%, +32 vs full55, lost 0; failed 40, unsupported 51. cargo test 206/0. This is the recorded baseline.
+- Left: 11 import-text/import-bytes module cases (separate proposals) and 4 nesting-limit cases (roadmap B).
+
 ### Decorators and auto-accessors (checkpoint 47, 2026-11-15)
 
 - Class and class element decorators and the `accessor` keyword, per tc39/ecma262 PR #2417 (Stage 3 text). Design, the defective-text readings and the limits are in `DECORATORS.md`. Decorator metadata (`context.metadata`) is a separate proposal and is not implemented.
@@ -427,7 +442,7 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - `invoke_inner` dispatches internal-slot builtins through `#[inline(never)] internal_builtin_call`. The extra branch had overflowed the debug stack in `tests/script_execution.rs` (`recursive_closure_is_bounded...`).
 - Smoke: the decorator directories, staging/decorators and class/elements (3090 cases) give 3080 passed, 10 unsupported (Proxy/host reflection, pre-existing) and 0 failed. Probes `vmprobe/decorators_order.js` (tree and vm) and `decorators_module.mjs` pass, as do the module negatives.
 - Full run t262-full54 (VM): 47485/47708 = 99.5%, +27 (gained 27, lost 0). Gained: 23 decorator/accessor syntax cases, 3 lexer negatives (vertical tilde, Mongolian vowel separator), and the decodeURI/decodeURIComponent S15.1.3.x_A2.5_T1 timeouts. Unsupported fell 108 -> 83.
-- Rebased onto 51 commits from 2026-11-14 (PRs #26-#36, VERIFIED_STATUS 47,560). Full run t262-full55 on the combined tree (VM): 47585/47708 = 99.7%, +100 vs full54, lost 0; failed 40, unsupported 83. cargo test 206/0. This is the recorded baseline.
+- Rebased onto 51 commits from 2026-11-14 (PRs #26-#36, VERIFIED_STATUS 47,560). Full run t262-full55 on the combined tree (VM): 47585/47708 = 99.7%, +100 vs full54, lost 0; failed 40, unsupported 83. cargo test 206/0. This was the recorded baseline until checkpoint 48.
 
 ### Object model slice 3 part b: root-record hints (checkpoint 44, 2026-11-11)
 

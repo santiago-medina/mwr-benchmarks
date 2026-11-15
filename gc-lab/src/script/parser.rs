@@ -176,6 +176,8 @@ impl Expr {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Property {
     CoverDefault(String, Expr),
+    /// A second `__proto__: v` in an object literal: valid only as an assignment pattern.
+    CoverDuplicatePrototype(Expr),
     Computed(Expr, Box<Property>),
     Spread(Expr),
     Value(Expr),
@@ -974,6 +976,9 @@ impl Parser<'_> {
             Token::BigInt(s) => super::bigint::Big::parse(&s)
                 .map(|n| n.radix_string(10))
                 .map_err(|_| self.error("invalid BigInt property name")),
+            // §15.4.1 / §13.2.5.1: a PrivateIdentifier is a ClassElementName only; in an object
+            // literal or pattern it is an early SyntaxError.
+            Token::PrivateName(_) => Err(self.error("private names are only valid in classes")),
             _ => Err(self.error("unsupported property key")),
         }
     }
@@ -1127,7 +1132,7 @@ impl Parser<'_> {
                         self.binding_element()?
                     } else {
                         if !shorthand
-                            || reserved(&key)
+                            || self.reserved_here(&key)
                             || (self.strict
                                 && (strict_restricted(&key) || strict_future_reserved(&key)))
                         {
@@ -1247,7 +1252,9 @@ impl Parser<'_> {
             let value = self.expression()?;
             if computed.is_none() && key == "__proto__" {
                 if *prototype {
-                    return Err(self.error("duplicate prototype literal"));
+                    // §13.2.5.1: duplicate `__proto__` is an early error only when the literal
+                    // is not reparsed as an ObjectAssignmentPattern (validated later).
+                    return Ok((key, Property::CoverDuplicatePrototype(value)));
                 }
                 *prototype = true;
                 Property::Prototype(value)
@@ -1269,9 +1276,7 @@ impl Parser<'_> {
             let (params, body) = self.function_rest(true, false, false, false)?;
             match (getter, params.as_slice()) {
                 (true, []) => Property::Getter(body),
-                (false, [param]) if !param.rest && param.default.is_none() => {
-                    Property::Setter(param.clone(), body)
-                }
+                (false, [param]) if !param.rest => Property::Setter(param.clone(), body),
                 _ => return Err(self.error("invalid accessor parameters")),
             }
         } else if generator || asynchronous || self.current() == &Token::Punct('(') {
@@ -1302,7 +1307,8 @@ impl Parser<'_> {
         } else {
             if computed.is_some()
                 || !identifier
-                || (reserved(&key) && !matches!(key.as_str(), "await" | "let"))
+                || (reserved(&key) && !matches!(key.as_str(), "await" | "let" | "yield"))
+                || (key == "yield" && !self.contextual_identifier("yield"))
                 // §13.2.5.1: an IdentifierReference shorthand takes the [Await] parameter
                 // (`static { ({ await }); }`).
                 || (key == "await" && !self.contextual_identifier("await"))
@@ -1814,7 +1820,13 @@ impl Parser<'_> {
                 }
                 Token::Punct(';') if depth == 0 => break,
                 Token::Name(word)
-                    if depth == 0 && index > start && (word == "in" || word == "of") =>
+                    if depth == 0
+                        && index > start
+                        && (word == "in"
+                            || (word == "of"
+                                // `for (async of => {};;)`: `of` is an arrow parameter.
+                                && self.tokens.get(index + 1).map(|t| &t.0)
+                                    != Some(&Token::Op("=>".into())))) =>
                 {
                     let enumeration = word == "in";
                     let mut tokens = self.tokens[start..index].to_vec();
@@ -1892,7 +1904,28 @@ impl Parser<'_> {
         if declaration {
             return Err(self.error("declaration in statement position"));
         }
+        if let Some(s) = self.let_identifier_statement() {
+            return s;
+        }
         self.statement()
+    }
+    /// §14.7 / §14.5: where only a Statement may appear, sloppy `let` followed by a line
+    /// terminator (and not `[`) is an IdentifierReference expression statement ended by ASI
+    /// (`if (x) let \n {}`), not a LexicalDeclaration.
+    fn let_identifier_statement(&mut self) -> Option<Result<Stmt, SyntaxError>> {
+        if self.strict
+            || self.current() != &Token::Name("let".into())
+            || self.cursor + 1 >= self.tokens.len()
+            || self.tokens[self.cursor + 1].0 == Token::Punct('[')
+            || !self.source[self.tokens[self.cursor].1..self.tokens[self.cursor + 1].1]
+                .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
+        {
+            return None;
+        }
+        Some(self.sequence().and_then(|e| {
+            self.semi()?;
+            Ok(Stmt::Expr(e))
+        }))
     }
     /// A `using` (1 token) or `await using` (2 tokens) declaration starts at token `i`
     /// (§14.3.1 UsingDeclaration: `using [no LineTerminator here] BindingList`,
@@ -2026,7 +2059,10 @@ impl Parser<'_> {
         let mark = self.labels.len();
         self.labels
             .extend(names.iter().map(|name| (name.clone(), is_loop, false)));
-        let body = self.statement();
+        let body = match self.let_identifier_statement() {
+            Some(s) => s,
+            None => self.statement(),
+        };
         let labels: Vec<_> = self.labels.drain(mark..).collect();
         let mut body = body?;
         if let Stmt::While { body: inner, .. }
@@ -2517,7 +2553,9 @@ impl Parser<'_> {
             if self.newline()
                 || matches!(
                     self.current(),
-                    Token::End | Token::Punct(';' | '}' | ')' | ']' | ',' | ':')
+                    Token::End
+                        | Token::Punct(';' | '}' | ')' | ']' | ',' | ':')
+                        | Token::Template { start: false, .. }
                 )
             {
                 return Ok(Expr::Yield(None, false));
@@ -2659,7 +2697,9 @@ impl Parser<'_> {
                             self.strict_target(&Expr::Name(name.clone()))?;
                             Pattern::Default(Box::new(Pattern::Name(name)), default)
                         })),
-                        Property::Value(expression) | Property::Prototype(expression) => {
+                        Property::Value(expression)
+                        | Property::Prototype(expression)
+                        | Property::CoverDuplicatePrototype(expression) => {
                             patterns.push((key, self.assignment_pattern(expression)?))
                         }
                         Property::Spread(expression) => {
@@ -4061,6 +4101,9 @@ fn validate_loop(
                     match p {
                         Property::CoverDefault(..) => {
                             return Err(err("initialized shorthand requires an assignment pattern"))
+                        }
+                        Property::CoverDuplicatePrototype(_) => {
+                            return Err(err("duplicate __proto__ fields are not allowed"))
                         }
                         Property::Computed(key, property) => {
                             work.push((key, d + 1));

@@ -940,6 +940,9 @@ impl Engine<'_> {
                     "unconverted initialized shorthand",
                 ))
             }
+            Literal::CoverDuplicatePrototype(..) => {
+                return Err(ScriptError::Unsupported("unconverted duplicate __proto__"))
+            }
             Literal::Computed(expression, property) => {
                 let value = self.eval(expression, env)?;
                 self.protect(&value)?;
