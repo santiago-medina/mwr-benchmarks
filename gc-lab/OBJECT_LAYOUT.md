@@ -223,3 +223,42 @@ test262 checkpoint (CLAUDE.md "Large implementation lines").
 ## Results
 
 (none yet)
+
+## L1 result (2026-11-15)
+
+Implemented: `Data` keeps the hot core inline (`prototype`, `properties`, `extensible`,
+`raw_json`, `arguments`, `array`, `source`) and every other internal slot in
+`ext: Option<Box<Ext>>`. Field access goes through `Deref`/`DerefMut` to `Ext` (reads of an
+object without one see a per-thread empty `Ext`; the first mutable access allocates it), so the
+~400 slot sites compile unchanged. `Data::edges` traces `Ext` only when present. A size guard
+test (`layout_tests`) bounds `Object`, `Data` and `Ext`.
+
+Sizes: `Object` 3 112 -> 352 B, `Data` 2 976 -> 192 B, `Ext` 2 792 B. `Object` is now bounded
+by `Bound` (two 56-byte `Value`s) and `Environment`, not by `Data`.
+
+B0 callgrind, eb06a7f -> L1 (Ir, millions):
+
+| bench | before | after | delta |
+|---|---:|---:|---:|
+| decode_tiny | 224.1 | 224.7 | +0.3% |
+| copywithin_small | 2519.0 | 2545.6 | +1.1% |
+| exotic (new) | 1367.7 | 1387.0 | +1.4% |
+| fib_small | 39.0 | 35.7 | -8.5% |
+| loop_small | 366.4 | 356.2 | -2.8% |
+| closures | 1683.8 | 1562.6 | -7.2% |
+| objects | 1361.9 | 1365.3 | +0.2% |
+| global_intrinsics | 520.9 | 517.2 | -0.7% |
+| strings | 558.2 | 564.1 | +1.1% |
+| props_class | 913.9 | 865.2 | -5.3% |
+| props_poly | 452.9 | 465.3 | +2.7% |
+| tree_walk | 630.2 | 621.9 | -1.3% |
+
+Kill line: the -15% instruction target on props_class and objects is **missed**; exotic stays
+within +5%. So the cost model above was wrong about instructions: a 3 KB move is few
+instructions (callgrind counts a `rep movs` once), and the allocator row is dominated by the
+number of allocations, not their size. L1 is kept for memory (9x less per object, which matters
+for DOM-heavy pages in Servo), not for speed.
+
+Decision (Santiago, 2026-11-15: "focus on completion"): slices L2-L5 are parked. Performance
+work resumes only where a measured Servo or test262 case is blocked by it. Roadmap C (Servo
+bindings) is next.

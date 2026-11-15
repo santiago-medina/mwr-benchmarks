@@ -96,17 +96,28 @@ impl Descriptor {
         self.get.is_some() || self.set.is_some()
     }
 }
+/// An ordinary object's state (OBJECT_LAYOUT.md, slice L1): the hot core inline, every
+/// other internal slot in a lazily allocated `Ext`. Field access reaches `Ext` through
+/// `Deref` (reads see a shared empty `Ext` when none is allocated) and `DerefMut` (the
+/// first mutable access allocates it), so plain objects, arrays and closures stay small.
 #[derive(Clone)]
 pub(super) struct Data {
     pub prototype: Option<Id>,
     pub properties: super::props::PropertyMap,
     pub extensible: bool,
-    pub error_class: Option<String>,
     /// [[IsRawJSON]] (json-parse-with-source, JSON.rawJSON).
     pub raw_json: bool,
-    pub boxed: Option<Value>,
+    pub arguments: bool,
+    pub array: bool,
     /// §20.2.3.5 [[SourceText]] of a script-defined or dynamic function.
     pub source: Option<super::parser::SourceText>,
+    ext: Option<Box<Ext>>,
+}
+/// The cold internal slots of `Data` (exotic and builtin kinds).
+#[derive(Clone, Default)]
+pub(super) struct Ext {
+    pub error_class: Option<String>,
+    pub boxed: Option<Value>,
     pub date: Option<u64>,
     pub regexp: Option<std::rc::Rc<super::regexp_builtins::Matcher>>,
     pub regexp_cursor: Option<super::regexp_builtins::Cursor>,
@@ -114,10 +125,8 @@ pub(super) struct Data {
     pub view: Option<super::buffers::View>,
     pub typed: Option<super::typed_arrays::Typed>,
     pub enumeration: Option<super::enumeration::Cursor>,
-    pub arguments: bool,
     /// Mapped arguments object: index → (environment, binding name) still aliased.
     pub parameter_map: Option<Vec<Option<(Id, String)>>>,
-    pub array: bool,
     pub response: Option<super::network::Response>,
     pub request: Option<super::network::Request>,
     pub activation: Option<super::asynchronous::Activation>,
@@ -140,51 +149,31 @@ pub(super) struct Data {
     #[cfg(feature = "temporal")]
     pub temporal: Option<std::rc::Rc<super::temporal::Slot>>,
 }
-impl Data {
-    pub fn new(prototype: Option<Id>) -> Self {
-        Self {
-            prototype,
-            properties: Default::default(),
-            extensible: true,
-            namespace: None,
-            shadow_realm: None,
-            error_class: None,
-            raw_json: false,
-            boxed: None,
-            source: None,
-            date: None,
-            regexp: None,
-            regexp_cursor: None,
-            buffer: None,
-            view: None,
-            typed: None,
-            enumeration: None,
-            arguments: false,
-            parameter_map: None,
-            array: false,
-            iterator: None,
-            iter_slot: None,
-            weak: None,
-            dispose: None,
-            collection: None,
-            collection_cursor: None,
-            string_cursor: None,
-            activation: None,
-            generator: None,
-            response: None,
-            request: None,
-            promise: None,
-            internal: None,
-            cell: None,
-            job: None,
-            #[cfg(feature = "temporal")]
-            temporal: None,
+thread_local! {
+    /// The `Ext` that reads see on an object without one. Leaked once per thread
+    /// (one per test262 agent), so `Deref` can hand out a plain reference.
+    static EMPTY_EXT: &'static Ext = Box::leak(Box::default());
+}
+impl std::ops::Deref for Data {
+    type Target = Ext;
+    fn deref(&self) -> &Ext {
+        match &self.ext {
+            Some(ext) => ext,
+            None => EMPTY_EXT.with(|e| *e),
         }
     }
-    fn edges(&self) -> Vec<Id> {
-        self.prototype
+}
+impl std::ops::DerefMut for Data {
+    fn deref_mut(&mut self) -> &mut Ext {
+        self.ext.get_or_insert_with(Box::default)
+    }
+}
+impl Ext {
+    fn edges(&self) -> impl Iterator<Item = Id> + '_ {
+        self.collection
+            .as_ref()
             .into_iter()
-            .chain(self.collection.as_ref().into_iter().flat_map(|t| t.edges()))
+            .flat_map(|t| t.edges())
             .chain(self.collection_cursor.as_ref().and_then(|c| c.target))
             .chain(self.enumeration.as_ref().and_then(|c| c.current))
             .chain(self.view.as_ref().map(|v| v.buffer))
@@ -209,6 +198,29 @@ impl Data {
             .chain(self.internal.as_ref().into_iter().flat_map(|p| p.edges()))
             .chain(self.cell.as_ref().into_iter().flat_map(|p| p.edges()))
             .chain(self.job.as_ref().into_iter().flat_map(|p| p.edges()))
+    }
+}
+impl Data {
+    pub fn new(prototype: Option<Id>) -> Self {
+        Self {
+            prototype,
+            properties: Default::default(),
+            extensible: true,
+            raw_json: false,
+            arguments: false,
+            array: false,
+            source: None,
+            ext: None,
+        }
+    }
+    /// Whether this object has allocated its cold slots (size reports and tests).
+    pub fn has_ext(&self) -> bool {
+        self.ext.is_some()
+    }
+    fn edges(&self) -> Vec<Id> {
+        self.prototype
+            .into_iter()
+            .chain(self.ext.as_deref().into_iter().flat_map(Ext::edges))
             .chain(self.properties.iter().flat_map(|(_, p)| p.edges()))
             .collect()
     }
@@ -1021,5 +1033,29 @@ impl Engine<'_> {
             .chain(strings)
             .chain(symbols)
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::{Data, Ext};
+    use crate::script::vm::Object;
+    use std::mem::size_of;
+
+    /// OBJECT_LAYOUT.md slice L1: a field added to the hot core must not bring back
+    /// multi-kilobyte objects; cold slots belong in `Ext`.
+    #[test]
+    fn object_and_ext_sizes_stay_bounded() {
+        eprintln!(
+            "size_of: Object {} Data {} Ext {}",
+            size_of::<Object>(),
+            size_of::<Data>(),
+            size_of::<Ext>()
+        );
+        // L1 bound: the largest variants are `Bound` (two 56-byte `Value`s) and
+        // `Environment`; slice L2 (compact `Value`) tightens this toward 256.
+        assert!(size_of::<Object>() <= 352, "Object {}", size_of::<Object>());
+        assert!(size_of::<Data>() <= 256, "Data {}", size_of::<Data>());
+        assert!(size_of::<Ext>() <= 2816, "Ext {}", size_of::<Ext>());
     }
 }

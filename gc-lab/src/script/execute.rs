@@ -1145,11 +1145,17 @@ impl Engine<'_> {
     #[inline(never)]
     fn callee(&self, id: Id) -> Option<Object> {
         match self.objects.get(&id) {
+            // Only the name and [[Internal]] action are needed; an empty `Data` keeps the
+            // cold slots unallocated for the common builtin without one (OBJECT_LAYOUT.md L1).
             Some(Object::Builtin { name, data }) => Some(Object::Builtin {
                 name: name.clone(),
-                data: Data {
-                    internal: data.internal.clone(),
-                    ..Data::new(None)
+                data: match &data.internal {
+                    Some(internal) => {
+                        let mut d = Data::new(None);
+                        d.internal = Some(internal.clone());
+                        d
+                    }
+                    None => Data::new(None),
                 },
             }),
             Some(Object::Closure {
@@ -1206,7 +1212,7 @@ impl Engine<'_> {
                 if name == "%ProxyRevoke%" {
                     return self.proxy_revoke(id);
                 }
-                match data.internal {
+                match data.internal.clone() {
                     Some(action) => self.internal_builtin_call(action, receiver, args),
                     None => self.builtin(&name, receiver, args),
                 }

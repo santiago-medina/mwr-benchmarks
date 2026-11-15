@@ -301,10 +301,10 @@ impl Engine<'_> {
         self.protect(&Value::Object(prototype))?;
         if let Value::Object(source_id) = source.clone() {
             let data = self.data(source_id)?.clone();
-            if let Some(buffer) = data.buffer {
+            if let Some(buffer) = data.buffer.clone() {
                 return self.typed_from_buffer(prototype, kind, source_id, buffer, &args);
             }
-            if let Some(typed) = data.typed {
+            if let Some(typed) = data.typed.clone() {
                 let Some(length) = self.typed_length(&typed)? else {
                     return self.throw_error("TypeError", "invalid source typed array");
                 };
