@@ -148,6 +148,8 @@ pub(super) struct Ext {
     pub shadow_realm: Option<usize>,
     #[cfg(feature = "temporal")]
     pub temporal: Option<std::rc::Rc<super::temporal::Slot>>,
+    /// Embedder object reserved slots (embed.rs, SERVO_BINDINGS.md E1).
+    pub host_slots: Option<Vec<Value>>,
 }
 thread_local! {
     /// The `Ext` that reads see on an object without one. Leaked once per thread
@@ -198,6 +200,7 @@ impl Ext {
             .chain(self.internal.as_ref().into_iter().flat_map(|p| p.edges()))
             .chain(self.cell.as_ref().into_iter().flat_map(|p| p.edges()))
             .chain(self.job.as_ref().into_iter().flat_map(|p| p.edges()))
+            .chain(self.host_slots.iter().flatten().filter_map(Value::id))
     }
 }
 impl Data {

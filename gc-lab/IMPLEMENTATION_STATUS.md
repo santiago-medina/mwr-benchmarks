@@ -533,3 +533,9 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Spec fix on both engines: `Object.freeze` on a mapped arguments object goes through [[DefineOwnProperty]] (§10.4.4.2), so it unmaps the frozen indices.
 - Over the 600 sampled cases, 97.3% of function bodies compile (89.7% at checkpoint 32). Remaining fallbacks: template 40, non-simple parameter 33, eval 18, switch 16, captured block lexical 5.
 - Full run on the VM: 47223/47708 pass (99.0%), unchanged from full39, with 0 gained and 0 lost. The probes `vmprobe/{closure,arguments,forof}.js` pass on both engines and under `--gc-stress`.
+
+### Embedding API for Servo (roadmap C, 2026-11-15)
+
+- SERVO_BINDINGS.md E1 (host objects with reserved slots and finalizers), E2 (host functions and constructors), E4 (extra roots and a host tracer) and E5 (the public value and object API) are in `src/script/embed.rs`. `tests/embedding.rs` runs them under the Stress GC policy.
+- Not done: E3 host exotic objects, E6 buffer access, and the `mozjs-facade` crate (C0).
+- Servo-path limits to lift before C2: call depth 32 and step limit 10,000.

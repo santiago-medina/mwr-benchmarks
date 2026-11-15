@@ -186,6 +186,35 @@ Start with **A**, then take on **B gradually** behind the same facade:
   already exists as internals; it needs a stable embedding surface.
 - **E6. Buffer and typed-array data access** scoped to a no-GC borrow.
 
+### Status (2026-11-15)
+
+E1, E2, E4 and E5 are in `src/script/embed.rs`, with tests in
+`tests/embedding.rs` that run under the Stress GC policy (a collection at every
+allocation, so an unrooted id fails the test).
+
+- **E1:** `Engine::create_host_object(proto, class, payload, slots, traced)`
+  and `attach_host`. Reserved slots live in `Ext.host_slots` and are ordinary
+  graph edges. The collector records each swept host object, and
+  `prune_metadata` hands it to `Host::finalize(class, payload)`.
+- **E2:** `Engine::create_function(name, length, word, constructor)` makes a
+  builtin whose [[Call]] and [[Construct]] reach `Host::call` with the
+  receiver, the arguments and `new_target`. Subclassing with `class extends`
+  passes `new.target` through, so the host can run GetPrototypeFromConstructor
+  (§10.1.14).
+- **E4:** `Host::trace_roots` reports extra roots. `Host::trace(object, class,
+  payload)` reports a traced host object's hidden edges when the marker
+  reaches it. The runtime ignores stale ids.
+- **E5:** `init_realm` and `evaluate_script`; root and unroot; property get,
+  set, define, accessor, delete, own keys and prototype; call and construct;
+  exceptions in both directions (`exception_value`, `throw_value`,
+  `throw_new_error`).
+- **Not yet:** E3 (host exotic objects), E6 (buffers), arrays and BigInt in
+  the value API, several realms.
+
+**Interpreter guards on the Servo path:** the call depth limit (32 nested
+`invoke_this` frames) and the default step limit (10,000) are test guards, not
+values for web pages. The facade must raise or remove both before C2.
+
 ## Milestones and how each is measured
 
 Servo is built only by CI (the `servo-native` job on `[servo]` commits).
@@ -212,6 +241,45 @@ one milestone line to Santiago.
 - The facade crate lives in this repo (`gc-lab/mozjs-facade/`) so that the
   engine and the facade change together. The Servo-side patch stays in
   `servo-native/servo.patch`.
+
+## Literature check (Literature Review (#82), request #424, 2026-11-15)
+
+Verdict: adopt A as a bootstrap, with corrections. No source-level mozjs facade
+over a different GC has been published. The closest family is API-compatible
+engine shims: ChakraShim in node-chakracore, Bun's V8 API over JavaScriptCore,
+and JXcore. They all ran real programs on an API subset. They also all hit
+version drift, inline and layout assumptions, and an unfinished GC/handle
+story. Node then moved to an engine-neutral API (N-API). Full report:
+`/home/santi/tasky_spaces/task-2573-solicitud-424-request-literature-check-c/docs/literature-check-mozjs-facade-engine-swap-2026-11-15.md`.
+
+Corrections adopted:
+
+- **A is the bootstrap and B is the endpoint.** The facade-first phase ends
+  once the facade lines touched per Servo rebase exceed the lines migrated to
+  the safe API.
+- **Pin Servo at aac43a3 for C0-C2.** Track the facade diff per later Servo
+  rebase next to the unsafe counts, because upstream is moving jsapi to
+  wrappers2 and JSContext.
+- **C2 adds tests the 1500-cycle joint-GC run does not cover:**
+  - quick token-slot reuse under WeakReferenceable and pointer-keyed maps
+    across a sweep;
+  - finalizer ordering;
+  - weak-pointer update.
+  
+  A slot is reused only after its weak and finalize callbacks have run. The
+  engine already finalizes in `prune_metadata`, after the sweep, so the facade
+  must not recycle a token before `Host::finalize` returns.
+- **The root list is growable** (Bun's fixed handle buffer crashed when it
+  overflowed). Tests cover early return and panic through `rooted!`. No panic
+  unwinds across an `extern "C"` boundary.
+- **Static layout asserts** (size and alignment) against mozjs 0.26.4 for
+  JSClass, JSPropertySpec, JSFunctionSpec, JSJitInfo, JSVal, Rooted and Heap.
+- **A facade-overhead micro-benchmark in C2:** a DOM getter or method round
+  trip, mozjs Servo versus the facade.
+- **Before designing B's `Handle<'gc, T>`:** compare it with Josephine's
+  `JSManaged<C, T>` (arXiv 1807.00067) and Nova's `Scoped`/`NoGcToken`, and
+  check it against the JSI gaps in Servo's report (native-object GC
+  integration, ArrayBuffer, codegen).
 
 ## Open questions for review
 

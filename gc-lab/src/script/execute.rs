@@ -1195,6 +1195,9 @@ impl Engine<'_> {
             super::promises::Internal::Decorator(action) => {
                 self.decorator_internal(action, receiver, args)
             }
+            super::promises::Internal::Host { function } => {
+                self.host_call(function, receiver, args, None)
+            }
             action => self.promise_internal(action, args),
         }
     }
@@ -1360,6 +1363,7 @@ impl Engine<'_> {
             Some(Object::Proxy { constructor, .. }) => *constructor,
             Some(Object::Builtin { name, .. }) => {
                 super::typed_arrays::kind(name).is_some()
+                    || name == super::embed::HOST_CONSTRUCTOR
                     || name == "%TypedArray%"
                     || name == "%AbstractModuleSource%"
                     || Self::temporal_constructor(name)
@@ -1444,6 +1448,17 @@ impl Engine<'_> {
             Some(Object::Proxy {
                 constructor: true, ..
             }) => self.proxy_construct(id, args, new_target),
+            Some(Object::Builtin { name, data }) if name == super::embed::HOST_CONSTRUCTOR => {
+                let Some(super::promises::Internal::Host { function }) = data.internal.clone()
+                else {
+                    unreachable!("host constructors carry their function word")
+                };
+                let new_target = match new_target {
+                    Value::Object(target) => target,
+                    _ => id,
+                };
+                self.host_call(function, Value::Undefined, args, Some(new_target))
+            }
             Some(Object::Builtin { name, .. }) => {
                 // [[Construct]] exists on Symbol and BigInt, but always throws
                 // before coercing any arguments.

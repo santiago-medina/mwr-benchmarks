@@ -11,6 +11,8 @@ pub mod parser;
 mod props;
 mod vm;
 pub use vm::{Engine, GcPolicy, ScriptError, SuspendedEngine};
+mod embed;
+pub use embed::{Host, JsValue, ObjectId, PropertyKey};
 
 mod adapter;
 pub use adapter::DomAdapter;

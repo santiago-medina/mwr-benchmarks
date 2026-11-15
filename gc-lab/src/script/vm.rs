@@ -239,6 +239,8 @@ pub struct Engine<'host> {
     pub(super) tail_call: Option<TailCall>,
     /// Bytecode cache, register file and mode (BYTECODE_VM.md stage 3).
     pub(super) bytecode: super::interp::VmState,
+    /// The embedder (embed.rs, SERVO_BINDINGS.md E2/E4).
+    pub(super) host: Option<std::rc::Rc<dyn super::embed::Host>>,
 }
 
 /// A deferred tail call; `roots` keep its values alive after the callee's frame is gone.
@@ -301,6 +303,7 @@ impl<'host> Engine<'host> {
             non_tail: 0,
             tail_call: None,
             bytecode: Default::default(),
+            host: None,
         })
     }
     // Move all VM state while changing only the lifetime of the borrowed host.
@@ -357,6 +360,7 @@ impl<'host> Engine<'host> {
             non_tail: self.non_tail,
             tail_call: self.tail_call,
             bytecode: self.bytecode,
+            host: self.host,
             adapter,
         };
         engine.flush_network();
@@ -457,6 +461,7 @@ impl<'host> Engine<'host> {
             self.intrinsics = None;
         }
         self.pending_release.extend(dead);
+        self.run_host_finalizers();
         self.prune_responses();
         self.flush_remote_releases();
     }

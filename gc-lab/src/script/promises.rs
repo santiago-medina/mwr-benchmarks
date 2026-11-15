@@ -119,6 +119,10 @@ pub(super) enum Internal {
     /// Decorator context and auto-accessor builtins; called through
     /// `decorator_internal` with the receiver (decorators.rs).
     Decorator(super::decorators::Action),
+    /// An embedder function (embed.rs, SERVO_BINDINGS.md E2): the host's function word.
+    Host {
+        function: u64,
+    },
 }
 impl Internal {
     pub fn edges(&self) -> Vec<Id> {
@@ -142,6 +146,7 @@ impl Internal {
             Self::CloseSyncIterator { iterator } => iterator.id().into_iter().collect(),
             Self::Wrapped { target } => target.id().into_iter().collect(),
             Self::Decorator(action) => action.edges(),
+            Self::Host { .. } => vec![],
         }
     }
 }
@@ -654,6 +659,7 @@ impl Engine<'_> {
             Internal::DisposeStep { job, reject } => self.dispose_step(job, arg(0), reject),
             Internal::Wrapped { target } => self.wrapped_call(target, Value::Undefined, args),
             Internal::Decorator(action) => self.decorator_internal(action, Value::Undefined, args),
+            Internal::Host { function } => self.host_call(function, Value::Undefined, args, None),
             Internal::CloseSyncIterator { iterator } => {
                 self.close_sync_iterator_rejected(iterator, arg(0))
             }

@@ -88,6 +88,23 @@ pub struct Collected {
     pub reclaimed_charge: usize,
 }
 
+/// Embedder tracing hooks (SERVO_BINDINGS.md E4). `roots` adds the embedder's extra
+/// roots (mozjs `JS_AddExtraGCRootsTracer`); `trace` reports the edges an embedder
+/// object holds outside the graph (a JSClass trace hook). Neither may touch the runtime.
+pub trait HostTracer {
+    fn roots(&self, out: &mut Vec<Id>);
+    fn trace(&self, id: Id, class: u64, payload: u64, out: &mut Vec<Id>);
+}
+
+/// An embedder object's class and payload words (opaque to the runtime).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HostTag {
+    pub class: u64,
+    pub payload: u64,
+    /// Call `HostTracer::trace` when the object is marked.
+    pub traced: bool,
+}
+
 pub struct Runtime {
     dom: Heap,
     js: Heap,
@@ -100,6 +117,10 @@ pub struct Runtime {
     collections: u64,
     /// Object ids held in bytecode registers (BYTECODE_VM.md stage 3): seed roots.
     vm_seeds: Vec<Option<Id>>,
+    host_tracer: Option<std::rc::Rc<dyn HostTracer>>,
+    host_objects: IdMap<HostTag>,
+    /// Tags of host objects swept since the last `take_finalized`.
+    finalized: Vec<HostTag>,
 }
 
 impl Runtime {
@@ -119,6 +140,9 @@ impl Runtime {
             charged: 0,
             collections: 0,
             vm_seeds: vec![],
+            host_tracer: None,
+            host_objects: IdMap::default(),
+            finalized: vec![],
         })
     }
 
@@ -346,6 +370,31 @@ impl Runtime {
     pub fn vm_seeds(&mut self) -> &mut Vec<Option<Id>> {
         &mut self.vm_seeds
     }
+    pub fn set_host_tracer(&mut self, tracer: Option<std::rc::Rc<dyn HostTracer>>) {
+        self.host_tracer = tracer;
+    }
+    /// Register (or retag) a live object as an embedder object.
+    pub fn set_host_tag(&mut self, id: Id, tag: HostTag) -> Result<(), Error> {
+        self.value(id)?;
+        self.host_objects.insert(id, tag);
+        Ok(())
+    }
+    pub fn host_tag(&self, id: Id) -> Option<HostTag> {
+        self.host_objects.get(&id).copied()
+    }
+    /// Tags of host objects the last collections swept, for the embedder's finalizers.
+    pub fn take_finalized(&mut self) -> Vec<HostTag> {
+        std::mem::take(&mut self.finalized)
+    }
+    /// Embedder-reported ids, without the stale ones (the embedder may hold dead tokens).
+    fn host_edges(&self, report: impl FnOnce(&dyn HostTracer, &mut Vec<Id>)) -> Vec<Id> {
+        let mut out = vec![];
+        if let Some(tracer) = &self.host_tracer {
+            report(tracer.as_ref(), &mut out);
+            out.retain(|id| self.records.contains_key(id));
+        }
+        out
+    }
     pub fn reachable(&self, seeds: &[Id]) -> Result<IdSet, Error> {
         // Ephemerons indexed by key (WEAK_REFS.md): a value whose key is not marked yet
         // waits in `waiting[key]` and is pushed when the key gets marked. Linear in edges.
@@ -367,6 +416,14 @@ impl Runtime {
                 if let Some(values) = waiting.remove(&id) {
                     pending.extend(values);
                 }
+                if let Some(tag) = (!self.host_objects.is_empty())
+                    .then(|| self.host_objects.get(&id))
+                    .flatten()
+                    .filter(|t| t.traced)
+                {
+                    pending
+                        .extend(self.host_edges(|t, out| t.trace(id, tag.class, tag.payload, out)));
+                }
             }
         }
         Ok(live)
@@ -382,6 +439,7 @@ impl Runtime {
         let before = self.charged_bytes();
         let mut seeds = self.root_ids();
         seeds.extend_from_slice(native);
+        seeds.extend(self.host_edges(|t, out| t.roots(out)));
         let live = self.reachable(&seeds)?;
         let dom: Vec<_> = live
             .iter()
@@ -419,6 +477,14 @@ impl Runtime {
         self.charged = before - reclaimed;
         debug_assert_eq!(self.charged, self.recount_charge());
         self.foreign_roots.retain(|id| live.contains(id));
+        let finalized = &mut self.finalized;
+        self.host_objects.retain(|id, tag| {
+            let keep = live.contains(id);
+            if !keep {
+                finalized.push(*tag);
+            }
+            keep
+        });
         self.collections += 1;
         Ok(Collected {
             dom,
