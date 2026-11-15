@@ -377,7 +377,12 @@ fn main() {
 /// The plain global helpers that test262's harness/assert.js defines next to `assert`
 /// (`assert` itself is native via `enable_test_harness`). Upstream moved `compareArray`
 /// and `isPrimitive` into assert.js, and harness files such as testTypedArray.js use them.
-const ASSERT_GLOBALS: &str = r#"function isNegativeZero(value) { return value === 0 && 1 / value === -Infinity; }
+///
+/// `print` is the host function test262's INTERPRETING.md requires of every host
+/// ("exposes the string value of its first argument to the test runner"); js_check
+/// reports through its JSON verdict, so the text is dropped.
+const ASSERT_GLOBALS: &str = r#"function print(message) {}
+function isNegativeZero(value) { return value === 0 && 1 / value === -Infinity; }
 function isPrimitive(value) { return !value || (typeof value !== 'object' && typeof value !== 'function'); }
 function compareArray(a, b) {
   if (b.length !== a.length) return false;

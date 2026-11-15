@@ -37,6 +37,8 @@ fn unclipped(values: [f64; 7]) -> f64 {
     if values.iter().any(|n| !n.is_finite()) {
         return f64::NAN;
     }
+    // ToIntegerOrInfinity of every field; +0 for -0 does not change sums.
+    let values_f: Vec<f64> = values.iter().map(|n| n.trunc() + 0.0).collect();
     let values: Vec<_> = values
         .into_iter()
         .map(|n| Big::from_float(n.trunc()).unwrap())
@@ -52,14 +54,21 @@ fn unclipped(values: [f64; 7]) -> f64 {
     let leap = multiple(&year, 4) && (!multiple(&year, 100) || multiple(&year, 400));
     let prior = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334][month]
         + i64::from(leap && month >= 2);
-    days = days.add(&small(prior)).add(&values[2]).sub(&small(1));
-    let time = days
-        .mul(&small(86400000))
-        .add(&values[3].mul(&small(3600000)))
-        .add(&values[4].mul(&small(60000)))
-        .add(&values[5].mul(&small(1000)))
-        .add(&values[6]);
-    time.to_float()
+    // MakeDay (§21.4.1.29): the first day of (ym, mn) is exact; then
+    // `Day(t) + dt - 1` uses Number arithmetic.
+    let first = days.add(&small(prior)).to_float();
+    let day = first + values_f[2] - 1.0;
+    // MakeTime (§21.4.1.28): ((h * msPerHour + m * msPerMinute) + s * msPerSecond) + milli,
+    // with IEEE 754 operations, as the spec requires.
+    let time =
+        ((values_f[3] * 3600000.0 + values_f[4] * 60000.0) + values_f[5] * 1000.0) + values_f[6];
+    // MakeDate (§21.4.1.30): day * msPerDay + time; not finite -> NaN.
+    let date = day * 86400000.0 + time;
+    if date.is_finite() {
+        date
+    } else {
+        f64::NAN
+    }
 }
 pub(super) fn make(values: [f64; 7]) -> f64 {
     clip(unclipped(values))

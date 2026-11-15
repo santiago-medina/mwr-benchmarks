@@ -322,20 +322,21 @@ impl Engine<'_> {
                 Insn::GetName { dst, name } => {
                     let n = name as usize;
                     let (value, _) =
-                        self.lookup_hinted(*env, &chunk.names[n], Some(&chunk.hints[n]))?;
+                        self.lookup_hinted(*env, &chunk.names[n], Some(&chunk.hints[n]), strict)?;
                     self.set_reg(base, dst, value);
                 }
                 Insn::GetCallee { dst, this, name } => {
                     let n = name as usize;
                     let (value, object) =
-                        self.lookup_hinted(*env, &chunk.names[n], Some(&chunk.hints[n]))?;
+                        self.lookup_hinted(*env, &chunk.names[n], Some(&chunk.hints[n]), strict)?;
                     self.set_reg(base, dst, value);
                     let receiver = object.map(Value::Object).unwrap_or(Value::Undefined);
                     self.set_reg(base, this, receiver);
                 }
                 Insn::TypeofName { dst, name } => {
                     let n = name as usize;
-                    let found = self.lookup_hinted(*env, &chunk.names[n], Some(&chunk.hints[n]));
+                    let found =
+                        self.lookup_hinted(*env, &chunk.names[n], Some(&chunk.hints[n]), strict);
                     let value = match found.map(|(v, _)| v) {
                         Err(ScriptError::Thrown(ex))
                             if ex.name.as_deref() == Some("ReferenceError")
@@ -372,7 +373,8 @@ impl Engine<'_> {
                     let r = self.reference_of(&encoded, &chunk.names[n], *env, strict);
                     let value = match r {
                         Reference::Binding(env, name, _) => {
-                            self.lookup_hinted(env, name, Some(&chunk.hints[n]))?.0
+                            self.lookup_hinted(env, name, Some(&chunk.hints[n]), strict)?
+                                .0
                         }
                         r => self.reference_get(&r)?,
                     };

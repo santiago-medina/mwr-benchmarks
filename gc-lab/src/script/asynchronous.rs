@@ -51,7 +51,10 @@ pub(super) enum Op {
     Await(usize, usize),
     Yield(usize, usize),
     Delegate(usize, usize),
-    Return(usize),
+    /// `return` of a register; the flag is false for a bare `return;`, which an async
+    /// generator does not Await (§14.10.1 Evaluation: only `return Expression`
+    /// awaits in an async generator).
+    Return(usize, bool),
     Throw(usize),
     Object(usize),
     TemplateObject(super::templates::Template, usize),
@@ -1159,7 +1162,7 @@ impl Compiler {
             }
             Stmt::Return(e) => {
                 let r = self.expression(e)?;
-                self.emit(Op::Return(r));
+                self.emit(Op::Return(r, !matches!(e, Expr::Undefined)));
             }
             Stmt::Throw(e) => {
                 let r = self.expression(e)?;
@@ -1400,6 +1403,10 @@ pub(super) enum Target {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Pending {
     Return,
+    /// A `yield*` resumed with a return completion: AsyncGeneratorYield's
+    /// AsyncGeneratorUnwrapYieldResumption (§27.6.3.7 step 2) awaits the value before
+    /// the delegation sees `received` (§15.5.5 step 7.c).
+    DelegateReturn,
     Delegate(super::generators::Resume),
 }
 #[derive(Clone)]
@@ -1900,6 +1907,15 @@ impl Engine<'_> {
             if let Some(pending) = frame.pending.take() {
                 frame.awaiting = None;
                 let step = match (pending, mode) {
+                    (Pending::DelegateReturn, m) => {
+                        // A rejected Await is a throw completion for the delegation.
+                        let m = if m == super::generators::Resume::Throw {
+                            m
+                        } else {
+                            super::generators::Resume::Return
+                        };
+                        e.async_delegate_call(id, &mut frame, value, m)
+                    }
                     (_, super::generators::Resume::Throw) => {
                         frame.delegate = None;
                         Ok(Some(Completion::Throw(value)))
@@ -1912,7 +1928,11 @@ impl Engine<'_> {
                 }
             } else if frame.delegate.is_some() {
                 let step = if frame.async_generator().is_some() {
-                    e.async_delegate_call(id, &mut frame, value, mode)
+                    if mode == super::generators::Resume::Return {
+                        e.await_value(id, &mut frame, value, None, Some(Pending::DelegateReturn))
+                    } else {
+                        e.async_delegate_call(id, &mut frame, value, mode)
+                    }
                 } else {
                     e.process_delegate(id, &mut frame, value, mode)
                 };
@@ -2292,8 +2312,11 @@ impl Engine<'_> {
                             let value = e.register(&frame, r)?;
                             return e.await_value(id, &mut frame, value, Some(out), None);
                         }
-                        Op::Return(r) => {
+                        Op::Return(r, awaits) => {
                             let value = e.register(&frame, r)?;
+                            if !awaits {
+                                return Ok(Some(Completion::Return(value)));
+                            }
                             return e.return_value(id, &mut frame, value);
                         }
                         Op::Throw(r) => return Ok(Some(Completion::Throw(e.register(&frame, r)?))),

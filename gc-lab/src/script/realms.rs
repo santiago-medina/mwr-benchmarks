@@ -233,10 +233,8 @@ impl Engine<'_> {
         self.set_env_strict(env, saved);
         result.map(|_| value)
     }
-    /// GlobalDeclarationInstantiation (§16.1.7) of a further Script against an existing
-    /// global environment `env`.
-    fn global_declaration_instantiation(&mut self, program: &[Stmt], env: Id) -> Result<()> {
-        let global = self.intrinsics.as_ref().unwrap().global;
+    /// LexicallyDeclaredNames of a Script's top level, with the constant subset.
+    fn global_lexical_names(program: &[Stmt]) -> (Vec<String>, Vec<String>) {
         let mut lexical_names = vec![];
         let mut constant_names = vec![];
         for stmt in parser::direct_statements(program) {
@@ -257,6 +255,31 @@ impl Engine<'_> {
                 _ => {}
             }
         }
+        (lexical_names, constant_names)
+    }
+    /// GlobalDeclarationInstantiation (§16.1.7) step 5.c-d for the first Script:
+    /// a lexical name that is a non-configurable global property
+    /// (HasRestrictedGlobalProperty, §9.1.1.4.14) is a SyntaxError.
+    pub(super) fn check_restricted_globals(&mut self, program: &[Stmt]) -> Result<()> {
+        let global = self.intrinsics.as_ref().unwrap().global;
+        for name in Self::global_lexical_names(program).0 {
+            if self
+                .own(global, name.as_str())?
+                .is_some_and(|p| !p.configurable)
+            {
+                return self.throw_error(
+                    "SyntaxError",
+                    &format!("Identifier '{name}' has already been declared"),
+                );
+            }
+        }
+        Ok(())
+    }
+    /// GlobalDeclarationInstantiation (§16.1.7) of a further Script against an existing
+    /// global environment `env`.
+    fn global_declaration_instantiation(&mut self, program: &[Stmt], env: Id) -> Result<()> {
+        let global = self.intrinsics.as_ref().unwrap().global;
+        let (lexical_names, constant_names) = Self::global_lexical_names(program);
         let mut functions: Vec<String> = vec![];
         for s in program.iter().map(parser::strip_labels) {
             if let Stmt::Function(n, ..)

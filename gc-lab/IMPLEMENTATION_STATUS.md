@@ -417,6 +417,20 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Smoke: built-ins/Atomics 389/389; a 600-case buffer sample has 1 failure that already failed in full52. cargo test passes, including `tests/agents.rs`.
 - Full run t262-full53 (VM): 47458/47708 = 99.5%, +114 (gained 114, lost 0). Unsupported fell 217 -> 108; the largest remaining buckets are "unsupported character" (20 + 3 strict) and "strict unsupported property key" (12).
 
+### failures57 singletons (checkpoint 50, 2026-11-15)
+
+- Promise.try (sec-promise.try) calls the callback before NewPromiseCapability and returns PromiseResolve(C, value) on a normal completion, so a promise value is not wrapped.
+- Intrinsic prototypes: %GeneratorFunction%, %AsyncGeneratorFunction% and %AsyncFunction% have [[Prototype]] %Function%; %GeneratorPrototype%.constructor and %AsyncFunction.prototype%.constructor are non-writable, configurable. Function.prototype.toString has length 0.
+- TypedArray constructor (§23.2.5.1): ToIndex of a non-object argument runs before GetPrototypeFromConstructor.
+- Scripts check HasRestrictedGlobalProperty (§9.1.1.4.14) before running: `let undefined;` is a SyntaxError.
+- MakeDay/MakeTime/MakeDate (§21.4.1.28-30) use IEEE double arithmetic in spec order (Date.UTC fp-evaluation-order).
+- TryStatement completion (§14.15.3): an abrupt finally completion is UpdateEmpty(F, undefined), so `finally { break; }` makes the statement's value undefined. The finally handling sits in an `#[inline(never)]` helper: inlined, it grew `statement`'s frame and overflowed the debug-build stack in `recursive_closure_is_bounded_and_memory_errors_are_recoverable`.
+- Object environment GetBindingValue (§9.1.1.2.6) takes S from the referencing code (the VM chunk's strictness), not from the `with` record: a binding deleted by the @@unscopables getter throws a ReferenceError in strict code.
+- Async generators: bare `return;` does not Await (§14.10.1); a `yield*` resumed with a return completion awaits the value first (AsyncGeneratorUnwrapYieldResumption, §27.6.3.7) and forwards a rejection to the delegate as a throw.
+- js_check defines the host `print` that test262's INTERPRETING.md requires, and its `compareArray` mirrors harness/compare-array.js (raw length comparison).
+- Smoke: Promise/try, TypedArray length/byteLength, TypedArrayConstructors/ctors, GeneratorPrototype, AsyncFunction, Date/UTC, Function/prototype/toString, global-code, try, with, async-generator, Symbol.replace, yield 400-case sample 399 passed (1 pre-existing unsupported); async-generator, AsyncGeneratorPrototype, try, with in full 1351/1354 (3 pre-existing `with` in generator).
+- Full run t262-full58 (VM): 47656/47708 = 99.9%, +16 vs full57, lost 0; failed 1, unsupported 51. cargo test passes. This is the recorded baseline. The only failure is Function/prototype/toString/method-computed-property-name: functions keep no source text (§20.2.3.5), so toString returns NativeFunction syntax for every function.
+
 ### Eval scopes and reference evaluation order (checkpoint 49, 2026-11-15)
 
 - Sloppy functions whose parameter list has expressions and mentions `eval` get a separate calleeEnv as the parent of the parameter environment (§10.2.11 step 20). A direct eval in a default declares its `var`s there (§19.2.1.3), not in the enclosing scope (8 eval-code/direct/arrow-fn-*-declare-arguments-assign cases).
@@ -425,7 +439,7 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - `var` binding patterns (statements and for-in/of heads) are BindingInitialization with environment undefined, i.e. ResolveBinding + PutValue (§14.3.2.1, §14.7.5.7), so a `with` object sees the target name before the source is read.
 - Callgrind (instructions, 8493270 vs this checkpoint): `vm-bench/global_intrinsics.js` (Math/Array/undefined/NaN/Object in a hot loop) 499.7M -> 516.2M (+3.3%), fib_small 34.23M -> 34.02M (-0.6%), closures 1629.4M -> 1631.2M (+0.1%). Intrinsics now resolve through the global object's properties instead of a declarative slot.
 - Smoke: eval/function/arguments directories 1621/1622 (1 pre-existing nesting limit); 1500 neighbouring cases (assignment, destructuring, delete, super, types, global-code, with, for-in/of, class elements) 1494 passed, 6 unsupported (pre-existing), 0 failed.
-- Full run t262-full57 (VM): 47640/47708 = 99.9%, +23 vs full56, lost 0; failed 17, unsupported 51. cargo test passes. This is the recorded baseline.
+- Full run t262-full57 (VM): 47640/47708 = 99.9%, +23 vs full56, lost 0; failed 17, unsupported 51. cargo test passes. This was the recorded baseline until checkpoint 50.
 
 ### Syntax residue (checkpoint 48, 2026-11-15)
 

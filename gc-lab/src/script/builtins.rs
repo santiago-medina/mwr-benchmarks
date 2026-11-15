@@ -349,7 +349,8 @@ impl Engine<'_> {
             | "Number.prototype.valueOf"
             | "Number.prototype.toLocaleString"
             | "Boolean.prototype.valueOf"
-            | "Boolean.prototype.toString" => 0,
+            | "Boolean.prototype.toString"
+            | "Function.prototype.toString" => 0,
             _ => 1,
         };
         self.define(
@@ -641,6 +642,31 @@ impl Engine<'_> {
                     ..Descriptor::default()
                 },
             )?;
+        }
+        // %GeneratorFunction%, %AsyncGeneratorFunction% and %AsyncFunction%
+        // inherit from %Function% (§27.3.2, §27.4.2, §27.7.2), and
+        // %AsyncFunction.prototype%.constructor is non-writable (§27.7.3.1).
+        let async_proto = self.intrinsics.as_ref().unwrap().async_function;
+        let async_ctor = self.get_member(Value::Object(async_proto), "constructor")?;
+        self.define(
+            async_proto,
+            "constructor",
+            Descriptor {
+                writable: Some(false),
+                ..Descriptor::default()
+            },
+        )?;
+        let function_ctor = objects["Function"];
+        let mut ctors = vec![async_ctor];
+        for name in ["GeneratorFunction", "AsyncGeneratorFunction"] {
+            ctors.push(Value::Object(
+                self.intrinsics.as_ref().unwrap().functions[name],
+            ));
+        }
+        for ctor in ctors {
+            if let Value::Object(id) = ctor {
+                self.data_mut(id)?.prototype = Some(function_ctor);
+            }
         }
         for (owner, methods) in METHODS {
             if matches!(*owner, "assert" | "Test262Error") && !self.test_harness {
@@ -2018,21 +2044,32 @@ impl Engine<'_> {
         if !matches!(actual, Value::Object(_)) || !matches!(expected, Value::Object(_)) {
             return Ok(false);
         }
-        let length = |engine: &mut Self, v: &Value| -> Result<f64> {
-            let n = engine.get_member(v.clone(), "length")?;
-            engine.to_number(n)
+        // Mirrors harness/assert.js: `b.length !== a.length` (strict
+        // equality on the raw values, so two undefined lengths match), then
+        // `for (i = 0; i < a.length; i++) _isSameValue(b[i], a[i])`.
+        let a_len = self.get_member(actual.clone(), "length")?;
+        self.protect(&a_len)?;
+        let b_len = self.get_member(expected.clone(), "length")?;
+        let equal = match (&a_len, &b_len) {
+            (Value::Number(x), Value::Number(y)) => x == y,
+            (x, y) => x.same_value(y),
         };
-        let (a, b) = (length(self, &actual)?, length(self, &expected)?);
-        if a != b {
+        if !equal {
             return Ok(false);
         }
-        for i in 0..a as usize {
-            let x = self.get_member(actual.clone(), &i.to_string())?;
-            self.protect(&x)?;
+        let mut i = 0usize;
+        loop {
+            let n = self.get_member(actual.clone(), "length")?;
+            if !((i as f64) < self.to_number(n)?) {
+                break;
+            }
             let y = self.get_member(expected.clone(), &i.to_string())?;
+            self.protect(&y)?;
+            let x = self.get_member(actual.clone(), &i.to_string())?;
             if !x.same_value(&y) {
                 return Ok(false);
             }
+            i += 1;
         }
         Ok(true)
     }

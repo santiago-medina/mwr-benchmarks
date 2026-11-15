@@ -1,33 +1,17 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "f17fdae8b12e0d1d91b0698550b23f6651f45b4c39bb2f0aaa54576dbb94d68c",
+  "implementation_sha256": "8ee014f9b5738b66b203c512f2356194698d21c15bbe86e2826441f6f3549114",
   "runner_sha256": "0c78213a78a5fc743c6085154da598639acdff8bb6cdfbb2b32d1688939c9965",
   "new_failures": [
-    "built-ins/AsyncFunction/AsyncFunction-is-subclass.js",
-    "built-ins/Date/UTC/fp-evaluation-order.js",
-    "built-ins/Function/prototype/toString/S15.3.4.2_A11.js",
-    "built-ins/Function/prototype/toString/method-computed-property-name.js",
-    "built-ins/GeneratorPrototype/constructor.js",
-    "built-ins/Promise/try/avoids-wrap-for-subclass.js",
-    "built-ins/Promise/try/avoids-wrap.js",
-    "built-ins/RegExp/named-groups/unicode-match.js",
-    "built-ins/RegExp/prototype/Symbol.replace/coerce-global.js",
-    "built-ins/TypedArray/prototype/byteLength/resizable-buffer-assorted.js",
-    "built-ins/TypedArray/prototype/length/resizable-buffer-assorted.js",
-    "built-ins/TypedArrayConstructors/ctors/typedarray-arg/throw-type-error-before-custom-proto-access.js",
-    "language/global-code/decl-lex-restricted-global.js",
-    "language/statements/async-generator/return-undefined-implicit-and-explicit.js",
-    "language/statements/async-generator/yield-star-return-then-getter-ticks.js",
-    "language/statements/try/completion-values.js",
-    "language/statements/with/get-mutable-binding-binding-deleted-in-get-unscopables-strict-mode.js"
+    "built-ins/Function/prototype/toString/method-computed-property-name.js"
   ],
   "variant": "scripts: strict prefix, or sloppy for noStrict/raw; modules (full profile): includes as scripts, then the module record; original test body",
   "profile": "full",
   "retry_timeouts": {
     "workers": 2,
-    "timeouts": 6,
-    "passed": 6
+    "timeouts": 3,
+    "passed": 3
   },
   "scopes": [
     "built-ins",
@@ -35,11 +19,11 @@
   ],
   "total": 47708,
   "counts": {
-    "passed": 47640,
+    "passed": 47656,
     "unsupported": 51,
-    "failed": 17
+    "failed": 1
   },
-  "assertions": 1259536,
+  "assertions": 1259988,
   "regressions": [],
   "unsupported_reasons": {
     "ordinary reflection on host objects": 11,
@@ -52,139 +36,11 @@
   },
   "failures": [
     {
-      "path": "built-ins/AsyncFunction/AsyncFunction-is-subclass.js",
-      "source_sha256": "8007dcefff45bfca251ae938d14dba82056bae9118e19f94223746652b37afe0",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 897, serial: 1005 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "built-ins/Date/UTC/fp-evaluation-order.js",
-      "source_sha256": "aed1e6ce51bb7b3c6ae503989be3d8654432b064ece38677d03aeb3eb9876c09",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 896, serial: 998 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "built-ins/Function/prototype/toString/S15.3.4.2_A11.js",
-      "source_sha256": "2072d2a4fc9c764676ced362cc13a9e8ebcc1168d36711d1801e31a1f0e8ff35",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 896, serial: 999 })) })); expected None",
-      "assertions": 2,
-      "cleanup": true
-    },
-    {
       "path": "built-ins/Function/prototype/toString/method-computed-property-name.js",
       "source_sha256": "f4a7b99eb83bcaceb28b952965a7d04137f7ae5004bdecd31fcba1ba1d115866",
       "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"Conforms to NativeFunction Syntax: \\\"undefined\\\" ([ { a(){} }.a ](){ })\", value: Object(Js(Handle { heap: 2, index: 1155, serial: 2756 })) })); expected None",
+      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"Conforms to NativeFunction Syntax: \\\"undefined\\\" ([ { a(){} }.a ](){ })\", value: Object(Js(Handle { heap: 2, index: 1157, serial: 2761 })) })); expected None",
       "assertions": 2,
-      "cleanup": true
-    },
-    {
-      "path": "built-ins/GeneratorPrototype/constructor.js",
-      "source_sha256": "3393eef304fc3e2abf715a59c0c140fa264e68adfbb9bdb693ce06d41c40f639",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 943, serial: 1243 })) })); expected None",
-      "assertions": 9,
-      "cleanup": true
-    },
-    {
-      "path": "built-ins/Promise/try/avoids-wrap-for-subclass.js",
-      "source_sha256": "96c263037c9be38105ab34d20bef4a5cbf17c437d6258828483e3201cffa854c",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 922, serial: 1109 })) })); expected None",
-      "assertions": 2,
-      "cleanup": true
-    },
-    {
-      "path": "built-ins/Promise/try/avoids-wrap.js",
-      "source_sha256": "bbcb3cb7f9c20c7042e85b28a5c12d02f16d61e17d47cddbb401e12c31f37342",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 914, serial: 1067 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "built-ins/RegExp/named-groups/unicode-match.js",
-      "source_sha256": "bb35cd56f0748fa6b2a3f3dcf6d66d962863ce0ef6e13cb9e54a491e36ca9fd5",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 1017, serial: 2872 })) })); expected None",
-      "assertions": 30,
-      "cleanup": true
-    },
-    {
-      "path": "built-ins/RegExp/prototype/Symbol.replace/coerce-global.js",
-      "source_sha256": "6a86894c0a3e7a8ac9ea101ac6c93a9e660674fdfbd7c7c0f924023d92d1f336",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"ReferenceError\"), message: \"print is not defined\", value: Object(Js(Handle { heap: 2, index: 896, serial: 994 })) })); expected None",
-      "assertions": 0,
-      "cleanup": true
-    },
-    {
-      "path": "built-ins/TypedArray/prototype/byteLength/resizable-buffer-assorted.js",
-      "source_sha256": "74a3225af806b17b8508cbdc6c5b3431b9da42ee3f4fed027f2968eb48c5e617",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 946, serial: 1172 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "built-ins/TypedArray/prototype/length/resizable-buffer-assorted.js",
-      "source_sha256": "10fe697a22beb8786be7515102ad2b5c62b0d44745be5b3b1ccc2eb72ad0500d",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 946, serial: 1172 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "built-ins/TypedArrayConstructors/ctors/typedarray-arg/throw-type-error-before-custom-proto-access.js",
-      "source_sha256": "a1578ce1471f7624485d289a5c019368017346a0e4498d93dc2285833e3821d1",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed (Testing with Float64Array and makePassthrough.)\", value: Object(Js(Handle { heap: 2, index: 966, serial: 1338 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/global-code/decl-lex-restricted-global.js",
-      "source_sha256": "54144224daf116d80361873263516e7376f0d6bb7aec6d144099d725fcae6052",
-      "status": "failed",
-      "reason": "Ok(()); expected Some(\"SyntaxError\")",
-      "assertions": 0,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/async-generator/return-undefined-implicit-and-explicit.js",
-      "source_sha256": "c098706621623114a96578462d96a39fb399f3c255a6dd7873195c03b2f72ba6",
-      "status": "failed",
-      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 1021, serial: 1646 })) })",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/async-generator/yield-star-return-then-getter-ticks.js",
-      "source_sha256": "27b5aa61c3c5ca4283cd92c75b9a70cbdc0c19d6dba80c74630253432519958f",
-      "status": "failed",
-      "reason": "$DONE: Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 940, serial: 1441 })) })",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/try/completion-values.js",
-      "source_sha256": "9ca9d0d7af85e5a300682c22ab258cf6339df9a2b0e537ea336dccdd1a64ae2a",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 902, serial: 1020 })) })); expected None",
-      "assertions": 3,
-      "cleanup": true
-    },
-    {
-      "path": "language/statements/with/get-mutable-binding-binding-deleted-in-get-unscopables-strict-mode.js",
-      "source_sha256": "ed75d3637447c2d3204c195a19db320609c63d3d53a0636394090814a8f965fc",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 902, serial: 1027 })) })); expected None",
-      "assertions": 1,
       "cleanup": true
     }
   ],

@@ -250,10 +250,16 @@ impl Engine<'_> {
                 ..Default::default()
             },
         )?;
-        self.hidden(
+        // %GeneratorPrototype%.constructor (§27.5.1.1): { [[Writable]]: false,
+        // [[Enumerable]]: false, [[Configurable]]: true }.
+        self.define(
             generator_proto,
             "constructor",
-            Value::Object(function_proto),
+            Descriptor {
+                value: Some(Value::Object(function_proto)),
+                configurable: Some(true),
+                ..Default::default()
+            },
         )?;
         for method in ["next", "return", "throw"] {
             let full = format!("%Generator%.prototype.{method}");

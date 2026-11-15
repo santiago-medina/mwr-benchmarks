@@ -111,6 +111,28 @@ impl Engine<'_> {
         constructor: Value,
         args: Vec<Value>,
     ) -> Result<Value> {
+        if name == "Promise.try" {
+            // Promise.try (sec-promise.try): the callback runs first; a normal
+            // completion goes through PromiseResolve (no wrap when it is
+            // already a C promise), an abrupt one rejects a new capability.
+            if !matches!(constructor, Value::Object(_)) {
+                return self.throw_error("TypeError", "Promise.try called on non-object");
+            }
+            let callback = args.first().cloned().unwrap_or(Value::Undefined);
+            return match self.invoke(callback, args.into_iter().skip(1).collect()) {
+                Ok(value) => {
+                    self.protect(&value)?;
+                    self.promise_resolve(constructor, value)
+                }
+                Err(ScriptError::Thrown(error)) => {
+                    self.protect(&error.value)?;
+                    let cap = self.capability(constructor)?;
+                    self.invoke(cap.reject, vec![error.value])?;
+                    Ok(cap.promise)
+                }
+                Err(error) => Err(error),
+            };
+        }
         let cap = self.capability(constructor.clone())?;
         if name == "Promise.withResolvers" {
             let id = self.new_object(Some(self.intrinsics.as_ref().unwrap().object))?;
@@ -119,21 +141,6 @@ impl Engine<'_> {
             self.put_data(id, "resolve", cap.resolve)?;
             self.put_data(id, "reject", cap.reject)?;
             return Ok(Value::Object(id));
-        }
-        if name == "Promise.try" {
-            let callback = args.first().cloned().unwrap_or(Value::Undefined);
-            match self.invoke(callback, args.into_iter().skip(1).collect()) {
-                Ok(value) => {
-                    self.protect(&value)?;
-                    self.invoke(cap.resolve, vec![value])?;
-                }
-                Err(ScriptError::Thrown(error)) => {
-                    self.protect(&error.value)?;
-                    self.invoke(cap.reject, vec![error.value])?;
-                }
-                Err(error) => return Err(error),
-            }
-            return Ok(cap.promise);
         }
         if name == "Promise.allKeyed" || name == "Promise.allSettledKeyed" {
             let outcome = self.promise_combine_keyed(

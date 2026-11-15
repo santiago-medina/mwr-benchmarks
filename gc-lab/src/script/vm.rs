@@ -562,6 +562,7 @@ impl<'host> Engine<'host> {
         self.global = Some(self.runtime.root(global)?);
         let result = self.frame(|e| {
             e.bootstrap(global)?;
+            e.check_restricted_globals(&program)?;
             if let Some(chunk) = e.vm_script_chunk(&program) {
                 return e.run_chunk(&chunk, global).map(|_| ());
             }
@@ -950,7 +951,8 @@ impl<'host> Engine<'host> {
         }
     }
     pub(super) fn lookup_with_base(&mut self, env: Id, name: &str) -> Result<(Value, Option<Id>)> {
-        self.lookup_hinted(env, name, None)
+        let strict = self.env_strict(env);
+        self.lookup_hinted(env, name, None, strict)
     }
     /// `lookup_with_base` with a global-name slot hint (OBJECT_MODEL.md slice 3).
     pub(super) fn lookup_hinted(
@@ -958,6 +960,7 @@ impl<'host> Engine<'host> {
         mut env: Id,
         name: &str,
         hint: Option<&super::global_names::NameHint>,
+        strict: bool,
     ) -> Result<(Value, Option<Id>)> {
         // OBJECT_MODEL.md slice 3 part b: the walk from this root record is known to stop
         // at the global object record on its first step.
@@ -975,7 +978,9 @@ impl<'host> Engine<'host> {
                     if self.with_binding(object, name)? {
                         // §9.1.1.2.6 GetBindingValue: HasProperty again, then Get.
                         if !self.has(object, name)? {
-                            if self.env_strict(env) {
+                            // S is the strictness of the referencing code (the caller's
+                            // flag), not of the `with` statement's record.
+                            if strict {
                                 return self.throw_error(
                                     "ReferenceError",
                                     &format!("{name} is not defined"),

@@ -350,6 +350,35 @@ impl Engine<'_> {
         self.protect(&Value::Object(local))?;
         self.block(body, local, can_return)
     }
+    /// The Finally of a try statement (§14.15.3): `None` when it completes normally (the
+    /// try/catch value is kept), else its own completion. Kept out of `statement` so the
+    /// recursive frame stays small (a debug-build stack overflow, checkpoint 50).
+    #[inline(never)]
+    fn finally_block(
+        &mut self,
+        b: &[Stmt],
+        env: Id,
+        can_return: bool,
+    ) -> Option<Result<Option<Value>>> {
+        let step = (|| {
+            let kept = self.completion_value();
+            if let Some(v) = &kept {
+                self.protect(v)?;
+                // An abrupt finally completion F is returned as UpdateEmpty(F, undefined),
+                // so the finally block starts empty.
+                self.set_completion(Value::Undefined)?;
+            }
+            let r = self.scoped(b, env, can_return);
+            if let (Ok(None), Some(v)) = (&r, kept) {
+                self.set_completion(v)?;
+            }
+            r
+        })();
+        match step {
+            Ok(None) => None,
+            other => Some(other),
+        }
+    }
     pub(super) fn statement(
         &mut self,
         s: &Stmt,
@@ -579,18 +608,8 @@ impl Engine<'_> {
                     _ => {}
                 }
                 if let Some(b) = finally {
-                    // A normally completing finally block keeps the try/catch value.
-                    let kept = self.completion_value();
-                    if let Some(v) = &kept {
-                        self.protect(v)?;
-                    }
-                    match self.scoped(b, env, can_return) {
-                        Ok(None) => {
-                            if let Some(v) = kept {
-                                self.set_completion(v)?;
-                            }
-                        }
-                        other => return other,
+                    if let Some(abrupt) = self.finally_block(b, env, can_return) {
+                        return abrupt;
                     }
                 }
                 return pending;

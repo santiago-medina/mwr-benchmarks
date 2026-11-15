@@ -287,9 +287,18 @@ impl Engine<'_> {
         args: Vec<Value>,
     ) -> Result<Value> {
         let kind = kind(name).unwrap();
+        let source = args.first().cloned().unwrap_or(Value::Undefined);
+        // TypedArray ( ...args ) §23.2.5.1 step 6: a non-Object first
+        // argument goes through ToIndex before AllocateTypedArray reads
+        // NewTarget's "prototype".
+        if !matches!(source, Value::Object(_)) {
+            let length = self.to_index(source)?;
+            let prototype = self.prototype_from_constructor(target, |i| i.collection[name])?;
+            self.protect(&Value::Object(prototype))?;
+            return self.typed_owned(prototype, kind, length);
+        }
         let prototype = self.prototype_from_constructor(target, |i| i.collection[name])?;
         self.protect(&Value::Object(prototype))?;
-        let source = args.first().cloned().unwrap_or(Value::Undefined);
         if let Value::Object(source_id) = source.clone() {
             let data = self.data(source_id)?.clone();
             if let Some(buffer) = data.buffer {
@@ -351,8 +360,7 @@ impl Engine<'_> {
             }
             return Ok(output);
         }
-        let length = self.to_index(source)?;
-        self.typed_owned(prototype, kind, length)
+        unreachable!("non-object first argument handled above")
     }
     pub(super) fn bootstrap_typed(
         &mut self,
