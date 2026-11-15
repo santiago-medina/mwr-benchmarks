@@ -373,7 +373,8 @@ fn export_declaration(
         return Ok(());
     }
     // `export` VariableStatement / Declaration.
-    let declaration = matches!(p.current(), Token::Name(n) if matches!(n.as_str(), "var" | "let" | "const" | "function" | "class" | "async"));
+    let declaration = matches!(p.current(), Token::Name(n) if matches!(n.as_str(), "var" | "let" | "const" | "function" | "class" | "async"))
+        || p.current() == &Token::Punct('@');
     if !declaration {
         return Err(p.error("expected export declaration"));
     }
@@ -441,7 +442,12 @@ fn export_default(
         } else {
             Stmt::Function(local.clone(), params, body)
         });
-    } else if p.word("class") {
+    } else if p.current() == &Token::Name("class".into()) || p.current() == &Token::Punct('@') {
+        // `export default DecoratorList_opt ClassDeclaration[+Default]`.
+        let decorators = p.decorator_list()?;
+        if !p.word("class") {
+            return Err(p.error("decorators must precede a class"));
+        }
         let name = match p.current() {
             Token::Name(n) if n != "extends" => Some(p.binding_name(true)?),
             Token::EscapedName(_) => Some(p.binding_name(true)?),
@@ -449,7 +455,8 @@ fn export_default(
         };
         // An anonymous ClassDeclaration gets the name "default" from NamedEvaluation
         // of the "\0default" binding (eval_named maps it), with no inner binding.
-        let class = p.class_tail(name.clone())?;
+        let mut class = p.class_tail(name.clone())?;
+        class.decorators = decorators;
         if let Some(n) = name {
             local = n;
         }
@@ -496,6 +503,40 @@ pub fn parse_module(source: &str) -> Result<Module, SyntaxError> {
             import_declaration(&mut p, &mut module)?;
         } else if p.word("export") {
             export_declaration(&mut p, &mut module, &mut exports, &mut referenced)?;
+        } else if p.current() == &Token::Punct('@') {
+            // Decorators proposal: `DecoratorList export ClassDeclaration` and
+            // `DecoratorList export default ClassDeclaration`; decorators may come
+            // before or after `export`, not both.
+            let decorators = p.decorator_list()?;
+            if p.word("export") {
+                if p.current() == &Token::Punct('@') {
+                    return Err(p.error("decorators may not appear both before and after export"));
+                }
+                let default = p.current() == &Token::Name("default".into());
+                let class_next = if default {
+                    p.tokens.get(p.cursor + 1).map(|t| &t.0) == Some(&Token::Name("class".into()))
+                } else {
+                    p.current() == &Token::Name("class".into())
+                };
+                if !class_next {
+                    return Err(p.error("decorators must precede a class"));
+                }
+                export_declaration(&mut p, &mut module, &mut exports, &mut referenced)?;
+                match module.body.last_mut() {
+                    Some(Stmt::Let(_, Expr::Class(class))) => class.decorators = decorators,
+                    _ => return Err(p.error("decorators must precede a class")),
+                }
+            } else {
+                if !p.word("class") {
+                    return Err(p.error("decorators must precede a class"));
+                }
+                let name = p.class_name()?;
+                let mut class = p.class_tail(Some(name.clone()))?;
+                class.decorators = decorators;
+                module
+                    .body
+                    .push(Stmt::Let(name, Expr::Class(Box::new(class))));
+            }
         } else {
             module.body.push(p.statement()?);
         }

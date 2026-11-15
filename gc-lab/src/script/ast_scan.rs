@@ -232,8 +232,13 @@ impl Walk for Class {
             heritage,
             constructor,
             members,
+            decorators,
         } = self;
-        name.walk(v) || heritage.walk(v) || constructor.walk(v) || members.walk(v)
+        decorators.walk(v)
+            || name.walk(v)
+            || heritage.walk(v)
+            || constructor.walk(v)
+            || members.walk(v)
     }
 }
 
@@ -243,8 +248,9 @@ impl Walk for ClassMember {
             is_static: _,
             key,
             kind,
+            decorators,
         } = self;
-        key.walk(v) || kind.walk(v)
+        decorators.walk(v) || key.walk(v) || kind.walk(v)
     }
 }
 
@@ -266,7 +272,7 @@ impl Walk for MemberKind {
             MemberKind::Method(e) => e.walk(v),
             MemberKind::Getter(body) | MemberKind::Block(body) => body.walk(v),
             MemberKind::Setter(param, body) => param.walk(v) || body.walk(v),
-            MemberKind::Field(init) => init.walk(v),
+            MemberKind::Field(init) | MemberKind::Accessor(init) => init.walk(v),
         }
     }
 }
@@ -276,6 +282,8 @@ impl Walk for ClassInit {
         match self {
             ClassInit::Field(key, init) => key.walk(v) || init.walk(v),
             ClassInit::PrivateMethod(name) => name.walk(v),
+            ClassInit::Element(_) => false,
+            ClassInit::Value(_, init) => init.walk(v),
         }
     }
 }

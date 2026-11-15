@@ -147,7 +147,11 @@ fn expr_await(e: &Expr) -> bool {
         // ClassTail: the heritage and computed keys are evaluated in the enclosing context
         // (§15.7.15); field initializers and methods are functions of their own.
         Expr::Class(c) => {
-            c.heritage.as_ref().is_some_and(expr_await)
+            c.decorators.iter().any(expr_await)
+                || c.members
+                    .iter()
+                    .any(|m| m.decorators.iter().any(expr_await))
+                || c.heritage.as_ref().is_some_and(expr_await)
                 || c.members.iter().any(
                     |m| matches!(&m.key, super::parser::ClassKey::Computed(k) if expr_await(k)),
                 )
@@ -810,6 +814,13 @@ impl Compiler {
     /// rather than resolved against the wrong environment.
     fn class(&mut self, c: &super::parser::Class, name: Option<&str>) -> Result<usize> {
         use super::parser::ClassKey;
+        // Lowering pre-evaluates the suspending keys, ahead of the decorators that the
+        // spec evaluates first (DECORATORS.md, Limits).
+        if c.decorated() {
+            return Err(ScriptError::Unsupported(
+                "resumable class with decorators or accessor",
+            ));
+        }
         let last = c
             .members
             .iter()

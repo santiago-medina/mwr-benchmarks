@@ -116,6 +116,9 @@ pub(super) enum Internal {
         job: Id,
         reject: bool,
     },
+    /// Decorator context and auto-accessor builtins; called through
+    /// `decorator_internal` with the receiver (decorators.rs).
+    Decorator(super::decorators::Action),
 }
 impl Internal {
     pub fn edges(&self) -> Vec<Id> {
@@ -138,6 +141,7 @@ impl Internal {
             Self::FromAsyncStep { job, .. } | Self::DisposeStep { job, .. } => vec![*job],
             Self::CloseSyncIterator { iterator } => iterator.id().into_iter().collect(),
             Self::Wrapped { target } => target.id().into_iter().collect(),
+            Self::Decorator(action) => action.edges(),
         }
     }
 }
@@ -649,6 +653,7 @@ impl Engine<'_> {
             Internal::FromAsyncStep { job, reject } => self.from_async_step(job, arg(0), reject),
             Internal::DisposeStep { job, reject } => self.dispose_step(job, arg(0), reject),
             Internal::Wrapped { target } => self.wrapped_call(target, Value::Undefined, args),
+            Internal::Decorator(action) => self.decorator_internal(action, Value::Undefined, args),
             Internal::CloseSyncIterator { iterator } => {
                 self.close_sync_iterator_rejected(iterator, arg(0))
             }

@@ -1148,6 +1148,26 @@ impl Engine<'_> {
             other => other.cloned(),
         }
     }
+    /// Builtins with internal slots (wrapped functions, decorator context functions,
+    /// promise jobs). Kept out of `invoke_inner` so the recursive call frame stays small
+    /// in debug builds (checkpoint 40 / 47 stack overflows).
+    #[inline(never)]
+    fn internal_builtin_call(
+        &mut self,
+        action: super::promises::Internal,
+        receiver: Value,
+        args: Vec<Value>,
+    ) -> Result<Value> {
+        match action {
+            super::promises::Internal::Wrapped { target } => {
+                self.wrapped_call(target, receiver, args)
+            }
+            super::promises::Internal::Decorator(action) => {
+                self.decorator_internal(action, receiver, args)
+            }
+            action => self.promise_internal(action, args),
+        }
+    }
     fn invoke_inner(&mut self, f: Value, receiver: Value, args: Vec<Value>) -> Result<Value> {
         if let Value::Native { receiver, name } = f {
             return self.call_native(receiver, &name, args);
@@ -1162,12 +1182,9 @@ impl Engine<'_> {
                 if name == "%ProxyRevoke%" {
                     return self.proxy_revoke(id);
                 }
-                if let Some(super::promises::Internal::Wrapped { target }) = data.internal {
-                    self.wrapped_call(target, receiver, args)
-                } else if let Some(action) = data.internal {
-                    self.promise_internal(action, args)
-                } else {
-                    self.builtin(&name, receiver, args)
+                match data.internal {
+                    Some(action) => self.internal_builtin_call(action, receiver, args),
+                    None => self.builtin(&name, receiver, args),
                 }
             }
             Some(Object::Bound {

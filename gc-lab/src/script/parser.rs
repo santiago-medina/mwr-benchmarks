@@ -107,12 +107,27 @@ pub struct Class {
     pub heritage: Option<Expr>,
     pub constructor: Option<(Vec<Param>, Vec<Stmt>)>,
     pub members: Vec<ClassMember>,
+    /// The class's DecoratorList in source order (DECORATORS.md).
+    pub decorators: Vec<Expr>,
+}
+impl Class {
+    /// Whether the class uses decorators or `accessor`: such classes are evaluated by
+    /// `eval_decorated_class` (decorators.rs), all others by `eval_class`.
+    pub fn decorated(&self) -> bool {
+        !self.decorators.is_empty()
+            || self
+                .members
+                .iter()
+                .any(|m| !m.decorators.is_empty() || matches!(m.kind, MemberKind::Accessor(_)))
+    }
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClassMember {
     pub is_static: bool,
     pub key: ClassKey,
     pub kind: MemberKind,
+    /// The element's DecoratorList in source order.
+    pub decorators: Vec<Expr>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ClassKey {
@@ -126,6 +141,8 @@ pub enum MemberKind {
     Getter(Vec<Stmt>),
     Setter(Param, Vec<Stmt>),
     Field(Option<Expr>),
+    /// `accessor` ClassElementName Initializer? (auto-accessor, DECORATORS.md).
+    Accessor(Option<Expr>),
     Block(Vec<Stmt>),
 }
 /// Internal statements of the synthesized field-initializer functions.
@@ -135,6 +152,14 @@ pub enum ClassInit {
     Field(ClassKey, Option<Expr>),
     /// Install the private method or accessor "#x" from the class scope.
     PrivateMethod(String),
+    /// Decorated classes: InitializeFieldOrAccessor for the element record bound as
+    /// `%e{n}` in the class scope, or with `None` run the instance method extra
+    /// initializers (`%mx`) (decorators.rs).
+    Element(Option<usize>),
+    /// Decorated classes: the body of a field initializer function
+    /// (CreateFieldInitializerFunction): the initializer's value, with NamedEvaluation
+    /// by the field's name.
+    Value(String, Expr),
 }
 impl Expr {
     pub fn anonymous_function(&self) -> bool {
@@ -463,9 +488,8 @@ pub(super) fn tokenize_legacy(
                 continue;
             }
             // `#` that starts neither a hashbang at offset 0 nor a PrivateIdentifier is not a
-            // token of the grammar (§12): an early SyntaxError. `#\` (escaped private names)
-            // stays unsupported below.
-            '#' if !chars.peek().is_some_and(|(_, c)| *c == '\\') => {
+            // token of the grammar (§12): an early SyntaxError.
+            '#' => {
                 return Err(error("Invalid or unexpected token"));
             }
             '0'..='9' | '.'
@@ -648,7 +672,11 @@ pub(super) fn tokenize_legacy(
                 }
                 Token::Op(op)
             }
-            _ => return Err(error("unsupported character")),
+            // `@` starts a Decorator (tc39/ecma262 PR #2417, DECORATORS.md).
+            '@' => Token::Punct('@'),
+            // §12: no InputElement production starts with any other source character (e.g.
+            // U+180E, Cf since Unicode 6.3, or U+2E2F, Pattern_Syntax): an early SyntaxError.
+            _ => return Err(error("Invalid or unexpected token")),
         };
         tokens.push((token, offset));
         if tokens.len() > 1 << 20 {
@@ -1379,6 +1407,46 @@ impl Parser<'_> {
         }
         Ok(Expr::Member(Box::new(e), self.identifier_name()?))
     }
+    /// DecoratorList (tc39/ecma262 PR #2417, DECORATORS.md): zero or more `@` Decorator.
+    fn decorator_list(&mut self) -> Result<Vec<Expr>, SyntaxError> {
+        let mut list = vec![];
+        while self.punct('@') {
+            list.push(self.decorator()?);
+        }
+        Ok(list)
+    }
+    /// Decorator : `@` DecoratorMemberExpression | `@` DecoratorParenthesizedExpression |
+    /// `@` DecoratorCallExpression. A DecoratorMemberExpression is an IdentifierReference
+    /// followed by `.IdentifierName` / `.PrivateIdentifier` links; a call takes one
+    /// Arguments list. Anything else after `@` is a SyntaxError.
+    fn decorator(&mut self) -> Result<Expr, SyntaxError> {
+        if self.punct('(') {
+            let e = self.sequence()?;
+            self.expect(')')?;
+            return Ok(e);
+        }
+        // IdentifierReference: `primary` applies the reserved-word and contextual checks;
+        // whatever it returns that is not a plain name (`this`, a literal, an arrow, ...)
+        // is not a DecoratorMemberExpression.
+        let mut e = match self.current() {
+            Token::Name(n) if n == "async" => {
+                self.take();
+                Expr::Name("async".into())
+            }
+            Token::Name(_) | Token::EscapedName(_) => self.primary()?,
+            _ => return Err(self.error("invalid decorator")),
+        };
+        if !matches!(e, Expr::Name(_)) {
+            return Err(self.error("invalid decorator"));
+        }
+        while self.punct('.') {
+            e = self.member_after_dot(e)?;
+        }
+        if self.punct('(') {
+            e = Expr::Call(Box::new(e), self.arguments()?);
+        }
+        Ok(e)
+    }
     /// A class's BindingIdentifier is strict mode code (§11.2.2), so `let`,
     /// `yield` and `static` are reserved there even in sloppy scripts.
     fn class_name(&mut self) -> Result<String, SyntaxError> {
@@ -1434,6 +1502,7 @@ impl Parser<'_> {
             heritage,
             constructor,
             members,
+            decorators: vec![],
         })
     }
     #[allow(clippy::type_complexity)]
@@ -1468,6 +1537,11 @@ impl Parser<'_> {
             if self.current() == &Token::End {
                 return Err(self.error("unterminated class body"));
             }
+            // ClassElement : DecoratorList? MethodDefinition / FieldDefinition (PR #2417).
+            let decorators = self.decorator_list()?;
+            if !decorators.is_empty() && matches!(self.current(), Token::Punct(';' | '}')) {
+                return Err(self.error("decorators must precede a class element"));
+            }
             let next = self.tokens.get(self.cursor + 1).map(|t| t.0.clone());
             let mut is_static = false;
             if self.current() == &Token::Name("static".into())
@@ -1478,6 +1552,9 @@ impl Parser<'_> {
                 self.take();
                 is_static = true;
                 if self.current() == &Token::Punct('{') {
+                    if !decorators.is_empty() {
+                        return Err(self.error("decorators are not valid on a static block"));
+                    }
                     let saved = (self.super_property, self.super_call);
                     self.super_property = true;
                     self.super_call = false;
@@ -1497,15 +1574,34 @@ impl Parser<'_> {
                         is_static: true,
                         key: ClassKey::Named(String::new()),
                         kind: MemberKind::Block(body?),
+                        decorators: vec![],
                     });
                     continue;
                 }
             }
+            let same_line = |p: &Self| {
+                !p.source[p.tokens[p.cursor].1..p.tokens[p.cursor + 1].1]
+                    .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
+            };
             let next = self.tokens.get(self.cursor + 1).map(|t| t.0.clone());
-            let mut generator = self.op("*");
+            // `accessor [no LineTerminator here] ClassElementName`; only the unescaped
+            // name is the keyword, and `accessor` before `(`, `=`, `;`, `}`, `*` or a line
+            // break is an ordinary element named "accessor".
+            let auto_accessor = self.current() == &Token::Name("accessor".into())
+                && self.source[self.tokens[self.cursor].1..].starts_with("accessor")
+                && next
+                    .as_ref()
+                    .is_some_and(|t| starts_key(t) && t != &Token::Op("*".into()))
+                && same_line(self);
+            if auto_accessor {
+                self.take();
+            }
+            let next = self.tokens.get(self.cursor + 1).map(|t| t.0.clone());
+            let mut generator = !auto_accessor && self.op("*");
             let mut asynchronous = false;
             let mut accessor = None;
-            if !generator
+            if auto_accessor {
+            } else if !generator
                 && self.current() == &Token::Name("async".into())
                 && next.as_ref().is_some_and(starts_key)
                 && !self.source[self.tokens[self.cursor].1..self.tokens[self.cursor + 1].1]
@@ -1546,6 +1642,9 @@ impl Parser<'_> {
                 || asynchronous
                 || accessor.is_some()
                 || self.current() == &Token::Punct('(');
+            if method && auto_accessor {
+                return Err(self.error("unexpected token after accessor"));
+            }
             if let ClassKey::Private(n) = &key {
                 let tag = match accessor {
                     Some(true) => 1,
@@ -1566,6 +1665,9 @@ impl Parser<'_> {
                     }
                     if constructor.is_some() {
                         return Err(self.error("duplicate class constructor"));
+                    }
+                    if !decorators.is_empty() {
+                        return Err(self.error("decorators are not valid on a constructor"));
                     }
                     constructor = Some(self.function_rest(true, derived, false, false)?);
                     continue;
@@ -1613,6 +1715,7 @@ impl Parser<'_> {
                     is_static,
                     key,
                     kind,
+                    decorators,
                 });
             } else {
                 if named(&key, "constructor") || (is_static && named(&key, "prototype")) {
@@ -1636,7 +1739,12 @@ impl Parser<'_> {
                 members.push(ClassMember {
                     is_static,
                     key,
-                    kind: MemberKind::Field(init),
+                    kind: if auto_accessor {
+                        MemberKind::Accessor(init)
+                    } else {
+                        MemberKind::Field(init)
+                    },
+                    decorators,
                 });
             }
         }
@@ -1839,6 +1947,7 @@ impl Parser<'_> {
                 .contains(['\n', '\r', '\u{2028}', '\u{2029}'])
         };
         match at(i) {
+            Some(Token::Punct('@')) => true,
             Some(Token::Name(w)) if w == "class" || w == "const" => true,
             Some(Token::Name(w)) if w == "let" => match at(i + 1) {
                 Some(Token::Punct('[')) => true,
@@ -2235,6 +2344,16 @@ impl Parser<'_> {
                 return Ok(Stmt::GeneratorFunction(name, params, body, true));
             }
             return Ok(Stmt::AsyncFunction(name, params, body));
+        }
+        if self.current() == &Token::Punct('@') {
+            let decorators = self.decorator_list()?;
+            if !self.word("class") {
+                return Err(self.error("decorators must precede a class"));
+            }
+            let name = self.class_name()?;
+            let mut class = self.class_tail(Some(name.clone()))?;
+            class.decorators = decorators;
+            return Ok(Stmt::Let(name, Expr::Class(Box::new(class))));
         }
         if self.word("class") {
             let name = self.class_name()?;
@@ -3035,13 +3154,24 @@ impl Parser<'_> {
             let body = self.arrow_body()?;
             return Ok(Expr::Arrow { params, body });
         }
+        let decorators = if self.current() == &Token::Punct('@') {
+            let list = self.decorator_list()?;
+            if self.current() != &Token::Name("class".into()) {
+                return Err(self.error("decorators must precede a class"));
+            }
+            list
+        } else {
+            vec![]
+        };
         if self.word("class") {
             let name = match self.current() {
                 Token::Name(n) if n != "extends" => Some(self.class_name()?),
                 Token::EscapedName(_) => Some(self.class_name()?),
                 _ => None,
             };
-            return Ok(Expr::Class(Box::new(self.class_tail(name)?)));
+            let mut class = self.class_tail(name)?;
+            class.decorators = decorators;
+            return Ok(Expr::Class(Box::new(class)));
         }
         if self.word("super") {
             if self.current() == &Token::Punct('(') {
@@ -3947,6 +4077,7 @@ fn validate_loop(
                 }
             }
             Expr::Class(class) => {
+                work.extend(class.decorators.iter().map(|e| (e, d + 1)));
                 if let Some(heritage) = &class.heritage {
                     work.push((heritage, d + 1));
                 }
@@ -3954,6 +4085,7 @@ fn validate_loop(
                     validate_function(body, params, d + 1, false, false)?;
                 }
                 for member in &class.members {
+                    work.extend(member.decorators.iter().map(|e| (e, d + 1)));
                     if let ClassKey::Computed(key) = &member.key {
                         work.push((key, d + 1));
                     }
@@ -3963,10 +4095,10 @@ fn validate_loop(
                         MemberKind::Setter(n, b) => {
                             validate_function(b, std::slice::from_ref(n), d + 1, false, false)?
                         }
-                        MemberKind::Field(Some(e)) => {
+                        MemberKind::Field(Some(e)) | MemberKind::Accessor(Some(e)) => {
                             validate(&[Stmt::Expr(e.clone())], &[], false, d + 1)?
                         }
-                        MemberKind::Field(None) => {}
+                        MemberKind::Field(None) | MemberKind::Accessor(None) => {}
                         MemberKind::Block(b) => validate(b, &[], false, d + 1)?,
                     }
                 }

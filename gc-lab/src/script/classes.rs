@@ -49,14 +49,14 @@ impl Engine<'_> {
             env = (*parent)?;
         }
     }
-    fn define_or_throw(&mut self, id: Id, key: Key, d: Descriptor) -> Result<()> {
+    pub(super) fn define_or_throw(&mut self, id: Id, key: Key, d: Descriptor) -> Result<()> {
         if self.define(id, key, d)? {
             Ok(())
         } else {
             self.throw_error("TypeError", "class element definition refused")
         }
     }
-    fn key_display(&self, key: &Key) -> String {
+    pub(super) fn key_display(&self, key: &Key) -> String {
         match key {
             Key::String(s) => s.clone(),
             Key::Symbol(id) if self.private_symbols.contains(id) => {
@@ -93,7 +93,7 @@ impl Engine<'_> {
         }
         Ok(value)
     }
-    fn class_key(&mut self, key: &ClassKey, scope: Id) -> Result<Key> {
+    pub(super) fn class_key(&mut self, key: &ClassKey, scope: Id) -> Result<Key> {
         match key {
             ClassKey::Named(s) => Ok(Key::from(s.as_str())),
             ClassKey::Private(n) => {
@@ -107,7 +107,7 @@ impl Engine<'_> {
             }
         }
     }
-    fn method_function(&mut self, env: Id, name: &str, method: &Expr) -> Result<Value> {
+    pub(super) fn method_function(&mut self, env: Id, name: &str, method: &Expr) -> Result<Value> {
         let (params, body, kind) = match method {
             Expr::Function { params, body, .. } => (params, body, FunctionKind::Method),
             Expr::GeneratorFunction {
@@ -129,12 +129,15 @@ impl Engine<'_> {
         };
         self.make_function(env, Some(name), params, body, kind, false)
     }
-    pub(super) fn eval_class(
+    /// ClassDefinitionEvaluation (§15.7.14) steps 1-15: the class scope with its private
+    /// names, the heritage, the prototype and the constructor F, plus the scope of static
+    /// elements (whose `%home` is F). Returns (scope, proto, F, F's id, static scope).
+    pub(super) fn class_prologue(
         &mut self,
         class: &Class,
         env: Id,
         inferred: Option<&str>,
-    ) -> Result<Value> {
+    ) -> Result<(Id, Id, Value, Id, Id)> {
         let declarations: Vec<_> = class
             .name
             .iter()
@@ -231,6 +234,18 @@ impl Engine<'_> {
         let static_scope = self.new_environment(Some(scope), &[], false)?;
         self.protect(&Value::Object(static_scope))?;
         self.initialize(static_scope, "%home", f.clone())?;
+        Ok((scope, proto, f, fid, static_scope))
+    }
+    pub(super) fn eval_class(
+        &mut self,
+        class: &Class,
+        env: Id,
+        inferred: Option<&str>,
+    ) -> Result<Value> {
+        if class.decorated() {
+            return self.eval_decorated_class(class, env, inferred);
+        }
+        let (scope, proto, f, fid, static_scope) = self.class_prologue(class, env, inferred)?;
         let mut instance: Vec<Stmt> = vec![];
         let mut instance_fields: Vec<Stmt> = vec![];
         let mut statics: Vec<(Option<Key>, &MemberKind)> = vec![];
@@ -268,7 +283,7 @@ impl Engine<'_> {
                     }
                     continue;
                 }
-                MemberKind::Block(_) => unreachable!(),
+                MemberKind::Block(_) | MemberKind::Accessor(_) => unreachable!(),
                 MemberKind::Method(m) => (self.method_function(menv, &display, m)?, "%pm:"),
                 MemberKind::Getter(b) => (
                     self.make_function(
@@ -422,7 +437,7 @@ impl Engine<'_> {
     /// The parent environment of a field initializer function: it marks the function as
     /// having a [[ClassFieldInitializerName]] (§15.7.10), which direct eval reads for the
     /// §19.2.1.2 `arguments` early error.
-    fn field_initializer_env(&mut self, scope: Id) -> Result<Id> {
+    pub(super) fn field_initializer_env(&mut self, scope: Id) -> Result<Id> {
         let fenv = self.new_environment(Some(scope), &[], false)?;
         self.protect(&Value::Object(fenv))?;
         self.initialize(fenv, "%fieldinit", Value::Bool(true))?;
@@ -469,6 +484,8 @@ impl Engine<'_> {
                     )?;
                 }
             }
+            ClassInit::Value(name, x) => return self.eval_named(x, env, name),
+            ClassInit::Element(n) => return self.decorated_element_init(*n, env, target),
             ClassInit::PrivateMethod(n) => {
                 let symbol = self.lookup(env, n)?;
                 let key = self.to_key(symbol)?;

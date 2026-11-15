@@ -417,6 +417,18 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Smoke: built-ins/Atomics 389/389; a 600-case buffer sample has 1 failure that already failed in full52. cargo test passes, including `tests/agents.rs`.
 - Full run t262-full53 (VM): 47458/47708 = 99.5%, +114 (gained 114, lost 0). Unsupported fell 217 -> 108; the largest remaining buckets are "unsupported character" (20 + 3 strict) and "strict unsupported property key" (12).
 
+### Decorators and auto-accessors (checkpoint 47, 2026-11-15)
+
+- Class and class element decorators and the `accessor` keyword, per tc39/ecma262 PR #2417 (Stage 3 text). Design, the defective-text readings and the limits are in `DECORATORS.md`. Decorator metadata (`context.metadata`) is a separate proposal and is not implemented.
+- Parser: `@` is a punctuator; the Decorator grammar (member chain, `@(expr)`, one call); decorators on classes, methods, getters, setters, fields and auto-accessors; SyntaxError on static blocks, constructors and empty elements. Module forms: `@d export class`, `export @d class`, and both `export default` forms. Decorators both before and after `export` are a SyntaxError. An escaped `accessor` is not the keyword (it lexes as a plain Name, so the source text is checked).
+- Lexer: every source character that starts no InputElement (§12, e.g. U+180E, U+2E2F) is now an early SyntaxError "Invalid or unexpected token", where it used to be "unsupported character".
+- Runtime: `script/decorators.rs` (`eval_decorated_class`): decorator evaluation and application order, `context` objects with `access` and `addInitializer` (a TypeError once decoration has finished), initializer chaining, class replacement, and auto-accessor storage on a hidden private name. Decorated classes take the tree path. A resumable class (suspending heritage or keys) with decorators is Unsupported.
+- `conformance/run.py`: `decorators` was removed from UNIMPLEMENTED_SYNTAX, which is now empty.
+- `invoke_inner` dispatches internal-slot builtins through `#[inline(never)] internal_builtin_call`. The extra branch had overflowed the debug stack in `tests/script_execution.rs` (`recursive_closure_is_bounded...`).
+- Smoke: the decorator directories, staging/decorators and class/elements (3090 cases) give 3080 passed, 10 unsupported (Proxy/host reflection, pre-existing) and 0 failed. Probes `vmprobe/decorators_order.js` (tree and vm) and `decorators_module.mjs` pass, as do the module negatives.
+- Full run t262-full54 (VM): 47485/47708 = 99.5%, +27 (gained 27, lost 0). Gained: 23 decorator/accessor syntax cases, 3 lexer negatives (vertical tilde, Mongolian vowel separator), and the decodeURI/decodeURIComponent S15.1.3.x_A2.5_T1 timeouts. Unsupported fell 108 -> 83.
+- Rebased onto 51 commits from 2026-11-14 (PRs #26-#36, VERIFIED_STATUS 47,560). Full run t262-full55 on the combined tree (VM): 47585/47708 = 99.7%, +100 vs full54, lost 0; failed 40, unsupported 83. cargo test 206/0. This is the recorded baseline.
+
 ### Object model slice 3 part b: root-record hints (checkpoint 44, 2026-11-11)
 
 - Each per-chunk name hint (`NameHint`, `script/global_names.rs`) also remembers the root global Environment Record whose VarNames held the name. A later access that starts at that record skips the §9.1.2.1 environment walk. The global-object step is still validated by key on every use. `Engine::var_names_epoch`, bumped only by DeleteBinding, drops every root. The hinted get and set now do one map lookup instead of two or three. Details are in `OBJECT_MODEL.md`, under "Slice 3 (part b)".
