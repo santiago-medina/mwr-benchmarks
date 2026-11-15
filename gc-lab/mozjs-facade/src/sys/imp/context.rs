@@ -189,6 +189,11 @@ pub unsafe fn JS_NewContext(_maxbytes: u32, _parent: *mut root::JSRuntime) -> *m
         state: RefCell::new(State::default()),
         heap: super::objects::Heap::default(),
     });
+    context
+        .heap
+        .shared
+        .context
+        .set(&*context as *const Context as usize);
     LIVE_CONTEXTS.fetch_add(1, Ordering::SeqCst);
     Box::into_raw(context) as *mut root::JSContext
 }

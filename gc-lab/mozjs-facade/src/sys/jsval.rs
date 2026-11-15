@@ -94,6 +94,12 @@ fn BuildJSVal(tag: ValueTag, payload: u64) -> JSVal {
     AsJSVal(((tag as u32 as u64) << 32) | payload)
 }
 
+/// A magic value (`JS_IS_CONSTRUCTING` and the other `JSWhyMagic` codes).
+#[inline(always)]
+pub fn MagicValue(why: u32) -> JSVal {
+    BuildJSVal(ValueTag::MAGIC, why as u64)
+}
+
 #[inline(always)]
 pub fn NullValue() -> JSVal {
     BuildJSVal(ValueTag::NULL, 0)

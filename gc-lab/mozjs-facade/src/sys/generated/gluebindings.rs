@@ -826,7 +826,7 @@ pub mod root {
             crate::sys::unimplemented_entry("InvokeHasOwn")
         }
         pub unsafe extern "C" fn RUST_FUNCTION_VALUE_TO_JITINFO(v: root::JS::Value) -> *const root::JSJitInfo {
-            crate::sys::unimplemented_entry("RUST_FUNCTION_VALUE_TO_JITINFO")
+            crate::sys::imp::RUST_FUNCTION_VALUE_TO_JITINFO(v)
         }
         pub unsafe extern "C" fn CallJitGetterOp(
             info: *const root::JSJitInfo,
@@ -953,7 +953,7 @@ pub mod root {
             crate::sys::unimplemented_entry("RUST_JSID_TO_STRING")
         }
         pub unsafe extern "C" fn RUST_SYMBOL_TO_JSID(sym: *mut root::JS::Symbol, id: root::JS::MutableHandleId) {
-            crate::sys::unimplemented_entry("RUST_SYMBOL_TO_JSID")
+            crate::sys::imp::RUST_SYMBOL_TO_JSID(sym, id)
         }
         pub unsafe extern "C" fn RUST_JSID_IS_VOID(id: root::JS::HandleId) -> bool {
             crate::sys::unimplemented_entry("RUST_JSID_IS_VOID")
@@ -1000,7 +1000,7 @@ pub mod root {
             crate::sys::unimplemented_entry("ReportErrorUTF8")
         }
         pub unsafe extern "C" fn IsWrapper(obj: *mut root::JSObject) -> bool {
-            crate::sys::unimplemented_entry("IsWrapper")
+            crate::sys::imp::IsWrapper(obj)
         }
         pub unsafe extern "C" fn UnwrapObjectStatic(obj: *mut root::JSObject) -> *mut root::JSObject {
             crate::sys::unimplemented_entry("UnwrapObjectStatic")
@@ -1016,7 +1016,7 @@ pub mod root {
             obj: *mut root::JSObject,
             stopAtWindowProxy: bool,
         ) -> *mut root::JSObject {
-            crate::sys::unimplemented_entry("UncheckedUnwrapObject")
+            crate::sys::imp::UncheckedUnwrapObject(obj, stopAtWindowProxy)
         }
         pub unsafe extern "C" fn CreateRootedIdVector(
             cx: *mut root::JSContext,

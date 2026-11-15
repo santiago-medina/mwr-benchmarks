@@ -259,6 +259,31 @@ impl Engine<'_> {
     pub fn function_prototype(&self) -> Option<ObjectId> {
         self.intrinsics.as_ref().map(|i| ObjectId(i.function))
     }
+    /// %Error.prototype% of the current realm.
+    pub fn error_prototype(&self) -> Option<ObjectId> {
+        self.intrinsics
+            .as_ref()
+            .and_then(|i| i.errors.get("Error"))
+            .map(|&id| ObjectId(id))
+    }
+    /// %Array.prototype% of the current realm.
+    pub fn array_prototype(&self) -> Option<ObjectId> {
+        self.intrinsics.as_ref().map(|i| ObjectId(i.array))
+    }
+    /// %IteratorPrototype% (§27.1.3) of the current realm: the [[Prototype]] of
+    /// %ArrayIteratorPrototype%.
+    pub fn iterator_prototype(&self) -> Option<ObjectId> {
+        let i = self.intrinsics.as_ref()?;
+        self.data(i.array_iterator).ok()?.prototype.map(ObjectId)
+    }
+    /// The symbol value id of the well-known symbol `@@name` (§6.1.5.1), e.g.
+    /// `well_known_symbol("iterator")`.
+    pub fn well_known_symbol(&self, name: &str) -> Option<u64> {
+        super::symbols::WELL_KNOWN
+            .iter()
+            .position(|n| *n == name)
+            .map(|i| i as u64)
+    }
     /// ScriptEvaluation (§16.1.6) of a classic script against the current realm's global
     /// environment; returns the completion value. A parse error is a thrown SyntaxError.
     pub fn evaluate_script(&mut self, source: &str) -> Result<JsValue> {
@@ -526,6 +551,31 @@ impl Engine<'_> {
                 Key::Symbol(s) => PropertyKey::Symbol(s),
             })
             .collect())
+    }
+    /// [[SetPrototypeOf]] (§10.1.2); false when the object refused it.
+    pub fn set_object_prototype(
+        &mut self,
+        object: ObjectId,
+        prototype: Option<ObjectId>,
+    ) -> Result<bool> {
+        self.frame(|e| e.set_prototype(object.0, prototype.map(|p| p.0)))
+    }
+    /// Make `object` an immutable prototype exotic object (§10.4.7): later
+    /// [[SetPrototypeOf]] calls only accept its current [[Prototype]]. Used for
+    /// WebIDL global objects. False for proxies.
+    pub fn set_immutable_prototype(&mut self, object: ObjectId) -> Result<bool> {
+        if self.is_proxy(object.0) {
+            return Ok(false);
+        }
+        let mut data = self.data(object.0)?.clone();
+        data.immutable_prototype = true;
+        self.replace_data(object.0, data)?;
+        Ok(true)
+    }
+    /// HasProperty (§7.3.12).
+    pub fn has_property(&mut self, object: ObjectId, key: impl Into<PropertyKey>) -> Result<bool> {
+        let key: Key = key.into().into();
+        self.frame(|e| e.has(object.0, key))
     }
     pub fn prototype_of(&self, object: ObjectId) -> Result<Option<ObjectId>> {
         Ok(self.data(object.0)?.prototype.map(ObjectId))

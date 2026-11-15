@@ -372,6 +372,15 @@ impl<'host> Engine<'host> {
     pub fn suspend(self) -> SuspendedEngine {
         SuspendedEngine(self.rebind(None))
     }
+    /// Change the host lifetime of an engine that holds no DOM adapter, so an
+    /// embedder can park it (e.g. in its context) while one of its host
+    /// functions runs. Returns the engine unchanged when an adapter is attached.
+    pub fn detach<'next>(self) -> std::result::Result<Engine<'next>, Self> {
+        if self.adapter.is_some() {
+            return Err(self);
+        }
+        Ok(self.rebind(None))
+    }
     pub fn enable_test_harness(&mut self) {
         self.test_harness = true;
     }

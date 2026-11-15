@@ -42,9 +42,18 @@ use crate::sys::jsval::{JSVal, UndefinedValue};
 /// What a context owns besides its callbacks.
 #[derive(Default)]
 pub struct Heap {
-    /// Created on the first global (`JS_NewGlobalObject`).
-    engine: RefCell<Option<Engine<'static>>>,
-    shared: Rc<Shared>,
+    /// Created on the first global (`JS_NewGlobalObject`). Empty while an
+    /// entry point runs it ([`Heap::with_engine`] takes it out); a JSNative
+    /// call parks it back here while the native runs (natives.rs).
+    pub(super) engine: RefCell<Option<Engine<'static>>>,
+    engine_created: Cell<bool>,
+    /// Hostless engines swapped into the caller's `&mut Engine` while the real
+    /// one is parked; one per JSNative nesting depth, reused.
+    pub(super) spares: RefCell<Vec<Engine<'static>>>,
+    pub(super) shared: Rc<Shared>,
+    pub(super) atoms: super::natives::Atoms,
+    /// AddAssociatedMemory/RemoveAssociatedMemory balance, in bytes.
+    pub(super) associated_bytes: Cell<usize>,
     shapes: RefCell<HashMap<(usize, usize), &'static ShapeCell>>,
     realms: RefCell<HashMap<RealmId, &'static RealmCell>>,
     compartments: RefCell<Vec<&'static CompartmentCell>>,
@@ -53,7 +62,14 @@ pub struct Heap {
 
 /// State the engine's [`Host`] reads during a collection.
 #[derive(Default)]
-struct Shared {
+pub(super) struct Shared {
+    /// The owning `Context` (set by JS_NewContext): JSNative dispatch needs the
+    /// `JSContext*` and the heap.
+    pub(super) context: Cell<usize>,
+    /// Host functions (JS_NewFunction, spec methods and accessors), indexed by
+    /// the engine's host function word.
+    pub(super) natives: RefCell<Vec<super::natives::Native>>,
+    pub(super) native_of: RefCell<HashMap<ObjectId, usize>>,
     cells: RefCell<HashMap<ObjectId, &'static ObjectCell>>,
     /// Reserved slots, bit-exact (`PrivateValue` doubles and int32 values keep
     /// their tags), keyed by object.
@@ -65,7 +81,7 @@ pub struct ObjectCell {
     /// Must stay first: this is what `JSObject*` points to.
     shadow: JS::shadow::Object,
     context: *const Context,
-    id: ObjectId,
+    pub(super) id: ObjectId,
 }
 
 #[repr(C)]
@@ -87,23 +103,20 @@ pub struct CompartmentCell {
     system: bool,
 }
 
-/// The engine's view of the embedder: no JSNative calls yet (E2 comes with
-/// JS_NewFunction), roots and reserved-slot edges for the collector.
+/// The engine's view of the embedder: JSNative dispatch (natives.rs), roots
+/// and reserved-slot edges for the collector.
 struct FacadeHost(Rc<Shared>);
 
 impl Host for FacadeHost {
     fn call(
         &self,
         engine: &mut Engine<'_>,
-        _function: u64,
-        _this: JsValue,
-        _args: &[JsValue],
-        _new_target: Option<ObjectId>,
+        function: u64,
+        this: JsValue,
+        args: &[JsValue],
+        new_target: Option<ObjectId>,
     ) -> Result<JsValue, ScriptError> {
-        Err(engine.throw_new_error(
-            "InternalError",
-            "mozjs facade: JSNative calls are not implemented yet",
-        ))
+        super::natives::call_native(&self.0, engine, function, this, args, new_target)
     }
 
     fn trace_roots(&self, out: &mut Vec<ObjectId>) {
@@ -157,7 +170,7 @@ unsafe fn realm_cell<'a>(realm: *mut JS::Realm) -> &'a RealmCell {
 }
 
 impl ObjectCell {
-    fn context(&self) -> &Context {
+    pub(super) fn context(&self) -> &Context {
         // SAFETY: a context outlives the objects it created; Servo destroys
         // its contexts last.
         unsafe { &*self.context }
@@ -170,16 +183,35 @@ impl ObjectCell {
 }
 
 impl Heap {
-    /// Run `f` on the engine, creating it first if needed.
-    fn with_engine<R>(&self, f: impl FnOnce(&mut Engine<'static>) -> R) -> R {
-        let mut slot = self.engine.borrow_mut();
-        if slot.is_none() {
-            let mut engine = Engine::new(Model::Indirect, Model::Indirect)
-                .expect("mozjs facade: engine creation");
-            engine.set_host(Rc::new(FacadeHost(self.shared.clone())));
-            *slot = Some(engine);
-        }
-        f(slot.as_mut().unwrap())
+    /// Run `f` on the engine, creating it first if needed. The engine is
+    /// taken out of its slot while `f` runs, so a JSNative that `f` reaches
+    /// can park it back (natives.rs) and reenter through another entry point.
+    pub(super) fn with_engine<R>(&self, f: impl FnOnce(&mut Engine<'static>) -> R) -> R {
+        let parked = self.engine.borrow_mut().take();
+        let mut engine = match parked {
+            Some(engine) => engine,
+            None => {
+                assert!(
+                    !self.engine_created.get(),
+                    "mozjs facade: engine reentered outside a JSNative call"
+                );
+                self.engine_created.set(true);
+                let mut engine = Engine::new(Model::Indirect, Model::Indirect)
+                    .expect("mozjs facade: engine creation");
+                engine.set_host(Rc::new(FacadeHost(self.shared.clone())));
+                engine
+            }
+        };
+        let result = f(&mut engine);
+        *self.engine.borrow_mut() = Some(engine);
+        result
+    }
+
+    /// A hostless engine to stand in for the running one during a JSNative.
+    pub(super) fn take_spare(&self) -> Engine<'static> {
+        self.spares.borrow_mut().pop().unwrap_or_else(|| {
+            Engine::new(Model::Indirect, Model::Indirect).expect("mozjs facade: engine creation")
+        })
     }
 
     fn shape(&self, clasp: *const root::JSClass, realm: *mut JS::Realm) -> &'static ShapeCell {
@@ -207,10 +239,10 @@ impl Heap {
 
     /// The `JSObject*` of `id`, made on first use with class `clasp` (null:
     /// the host class recorded in the engine, else a plain object class).
-    fn object(
+    pub(super) fn object(
         &self,
         cx: &Context,
-        engine: &Engine<'static>,
+        engine: &Engine<'_>,
         id: ObjectId,
         clasp: *const root::JSClass,
     ) -> *mut root::JSObject {
@@ -243,7 +275,7 @@ impl Heap {
         })
     }
 
-    fn init_slots(&self, id: ObjectId, clasp: *const root::JSClass) {
+    pub(super) fn init_slots(&self, id: ObjectId, clasp: *const root::JSClass) {
         let count = reserved_slot_count(clasp);
         self.shared
             .slots
@@ -252,7 +284,7 @@ impl Heap {
     }
 }
 
-fn engine_result<T>(cx: &Context, result: Result<T, ScriptError>) -> Option<T> {
+pub(super) fn engine_result<T>(cx: &Context, result: Result<T, ScriptError>) -> Option<T> {
     match result {
         Ok(v) => Some(v),
         Err(error) => {
@@ -447,7 +479,7 @@ pub unsafe fn JS_NewObject(
     unsafe { new_object(cx, clasp, proto) }
 }
 
-unsafe fn new_object(
+pub(super) unsafe fn new_object(
     cx: *mut root::JSContext,
     clasp: *const root::JSClass,
     proto: Option<ObjectId>,

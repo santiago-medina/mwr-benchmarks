@@ -150,7 +150,46 @@ Globals cluster (`src/sys/imp/objects.rs` plus five hooks in `context.rs`,
 `JS_GetReservedSlot`, `JS_SetReservedSlot`, `JS_GC`, `GetModuleLoadHook`,
 `GetModuleMetadataHook`, `JS_AddInterruptCallback`, `SetWindowProxyClass`,
 `GetWindowProxyClass`. `tests/globals.rs` covers them, including the inline
-class and realm reads and survival across `JS_GC`. 76 entry points are
+class and realm reads and survival across `JS_GC`.
+
+Natives, strings and interface objects cluster (`src/sys/imp/natives.rs`,
+46 entry points: what `create_interface_prototype_object`,
+`create_interface_object`, `create_namespace_object` and the constant and
+unforgeable setup in script_bindings/interface.rs and constructor.rs call per
+global). Functions: `JS_NewFunction`, `JS_GetFunctionObject`,
+`RUST_FUNCTION_VALUE_TO_JITINFO`. A host function's word indexes the
+context's native table (`JSNative`, `JSJitInfo*`, the function object), so
+the JIT info of a function value is a table lookup. Spec lists:
+`JS_DefineFunctions` (C-string or well-known-symbol names, encoded as
+`SymbolCode + 1`; `JS_SELF_HOSTED_FN` names map to the Array iteration
+methods Servo uses for iterable and maplike interfaces: `$ArrayValues`,
+`ArrayKeys`, `ArrayEntries`, `ArrayForEach`; any other self-hosted name
+fails) and `JS_DefineProperties` (native accessors become "get x" / "set x"
+functions, ECMA-262 §10.2.9; string, int32 and double values; self-hosted
+accessors fail). Properties: `JS_DefineProperty` and its overloads 1-7,
+`JS_DefinePropertyById2/4/5`, `JS_DefineElement`, `JS_GetProperty`,
+`JS_HasProperty`; `JSPROP_READONLY`, `JSPROP_ENUMERATE` and
+`JSPROP_PERMANENT` map to writable, enumerable and configurable.
+Prototypes: `JS_LinkConstructorAndPrototype`, `JS_GetPrototype`,
+`JS_SetPrototype`, `JS_SetImmutablePrototype` (ECMA-262 §10.4.7; the engine
+gained an immutable-prototype flag, and Object.prototype already behaves so).
+Realm intrinsics: `GetRealm{Object,Function,Error,Iterator}Prototype`,
+`JS_NewPlainObject`. Strings are interned, leaked `StringCell`s holding the
+text, its UTF-16 form and its Latin-1 form when every unit fits
+(`JS_AtomizeAndPinString`, `JS_NewStringCopy{N,Z,UTF8N}`,
+`JS_Get{Latin1,TwoByte}StringCharsAndLength`,
+`JS_DeprecatedStringHasLatin1Chars`, `JS_GetStringLength`); invalid UTF-8
+returns null. Symbols are `SymbolCell`s over the engine's symbol number
+(`GetWellKnownSymbol`, `RUST_SYMBOL_TO_JSID`). `AddAssociatedMemory` and
+`RemoveAssociatedMemory` only count bytes; the collector does not use the
+count yet. There are no cross-compartment wrappers (every compartment shares
+one engine heap), so `UncheckedUnwrapObject` and `CheckedUnwrapStatic` are
+identities, `IsWrapper` is false and `JS_WrapObject` / `JS_WrapValue`
+succeed unchanged. There is no Debugger API: `JS_DefineDebuggerObject`
+succeeds without defining `Debugger`, so Servo's devtools debugger scripts
+fail where they use it. A JSNative that returns false fails the engine call
+with a runtime error; pending exceptions come with E5. `tests/interfaces.rs`
+covers the cluster, including a reentrant native getter. 122 entry points are
 implemented in total.
 
 ## C1 result (servoshell links)
@@ -180,7 +219,10 @@ Decisions, following SERVO_BINDINGS.md option A:
   the slot. When the engine calls a host function (`Host::call(&mut Engine)`),
   the facade swaps that engine with a spare one (`mem::replace`), puts the
   real one back in the slot for the duration of the JSNative, then swaps it
-  back. Each host call costs two moves of the `Engine` struct; the overhead
+  back. `Engine::detach` rebinds the engine's lifetime to `'static` for the
+  slot; it refuses (and the call fails) if a DOM adapter borrows into the
+  engine, so a parked engine never holds a borrow. Spares are hostless
+  engines kept in a pool, one per nesting level. Each host call costs two moves of the `Engine` struct; the overhead
   micro-benchmark (Next, item 5) measures it. The alternative, a thread-local
   raw `*mut Engine` set during host calls, would add a fourth `unsafe` site
   that the design note does not allow.

@@ -109,6 +109,9 @@ pub(super) struct Data {
     pub raw_json: bool,
     pub arguments: bool,
     pub array: bool,
+    /// Immutable prototype exotic object (§10.4.7), set by an embedder for
+    /// WebIDL global objects (WebIDL §3.7.1 "[[SetPrototypeOf]]").
+    pub immutable_prototype: bool,
     /// §20.2.3.5 [[SourceText]] of a script-defined or dynamic function.
     pub source: Option<super::parser::SourceText>,
     ext: Option<Box<Ext>>,
@@ -210,6 +213,7 @@ impl Data {
             properties: Default::default(),
             extensible: true,
             raw_json: false,
+            immutable_prototype: false,
             arguments: false,
             array: false,
             source: None,
@@ -903,7 +907,9 @@ impl Engine<'_> {
         }
         // %Object.prototype% is an immutable prototype exotic object (§10.4.7.1
         // SetImmutablePrototype): only its current [[Prototype]] is accepted.
-        if self.intrinsics.as_ref().is_some_and(|i| i.object == id) {
+        if self.intrinsics.as_ref().is_some_and(|i| i.object == id)
+            || self.data(id)?.immutable_prototype
+        {
             return Ok(false);
         }
         if !self.data(id)?.extensible {

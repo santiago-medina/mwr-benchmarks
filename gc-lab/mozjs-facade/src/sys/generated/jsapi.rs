@@ -5356,7 +5356,7 @@ pub mod root {
                 crate::sys::unimplemented_entry("UncheckedUnwrap")
             }
             pub unsafe extern "C" fn CheckedUnwrapStatic(obj: *mut root::JSObject) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("CheckedUnwrapStatic")
+                crate::sys::imp::CheckedUnwrapStatic(obj)
             }
             pub unsafe extern "C" fn UnwrapOneCheckedStatic(obj: *mut root::JSObject) -> *mut root::JSObject {
                 crate::sys::unimplemented_entry("UnwrapOneCheckedStatic")
@@ -7407,7 +7407,7 @@ pub mod root {
                 crate::sys::unimplemented_entry("MaybeFreezeCtorAndPrototype")
             }
             pub unsafe extern "C" fn GetRealmObjectPrototype(cx: *mut root::JSContext) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("GetRealmObjectPrototype")
+                crate::sys::imp::GetRealmObjectPrototype(cx)
             }
             pub unsafe extern "C" fn GetRealmObjectPrototypeHandle(
                 cx: *mut root::JSContext,
@@ -7415,7 +7415,7 @@ pub mod root {
                 crate::sys::unimplemented_entry("GetRealmObjectPrototypeHandle")
             }
             pub unsafe extern "C" fn GetRealmFunctionPrototype(cx: *mut root::JSContext) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("GetRealmFunctionPrototype")
+                crate::sys::imp::GetRealmFunctionPrototype(cx)
             }
             pub unsafe extern "C" fn GetRealmFunctionPrototypeHandle(
                 cx: *mut root::JSContext,
@@ -7426,10 +7426,10 @@ pub mod root {
                 crate::sys::unimplemented_entry("GetRealmArrayPrototype")
             }
             pub unsafe extern "C" fn GetRealmErrorPrototype(cx: *mut root::JSContext) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("GetRealmErrorPrototype")
+                crate::sys::imp::GetRealmErrorPrototype(cx)
             }
             pub unsafe extern "C" fn GetRealmIteratorPrototype(cx: *mut root::JSContext) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("GetRealmIteratorPrototype")
+                crate::sys::imp::GetRealmIteratorPrototype(cx)
             }
             pub unsafe extern "C" fn GetRealmAsyncIteratorPrototype(cx: *mut root::JSContext) -> *mut root::JSObject {
                 crate::sys::unimplemented_entry("GetRealmAsyncIteratorPrototype")
@@ -9549,7 +9549,7 @@ pub mod root {
                 nbytes: usize,
                 use_: root::JS::MemoryUse,
             ) {
-                crate::sys::unimplemented_entry("AddAssociatedMemory")
+                crate::sys::imp::AddAssociatedMemory(obj, nbytes, use_)
             }
             #[doc = " Advise the GC that external memory reported by JS::AddAssociatedMemory() is\n no longer owned by a JSObject. Calls must match those to\n AddAssociatedMemory()."]
             pub unsafe extern "C" fn RemoveAssociatedMemory(
@@ -9557,7 +9557,7 @@ pub mod root {
                 nbytes: usize,
                 use_: root::JS::MemoryUse,
             ) {
-                crate::sys::unimplemented_entry("RemoveAssociatedMemory")
+                crate::sys::imp::RemoveAssociatedMemory(obj, nbytes, use_)
             }
         #[repr(i32)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -10081,7 +10081,7 @@ pub mod root {
                 cx: *mut root::JSContext,
                 which: root::JS::SymbolCode,
             ) -> *mut root::JS::Symbol {
-                crate::sys::unimplemented_entry("GetWellKnownSymbol")
+                crate::sys::imp::GetWellKnownSymbol(cx, which)
             }
         pub type IterateRealmCallback = ::std::option::Option<
             unsafe extern "C" fn(
@@ -15404,7 +15404,7 @@ pub mod root {
             cx: *mut root::JSContext,
             obj: root::JS::HandleObject,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefineDebuggerObject")
+            crate::sys::imp::JS_DefineDebuggerObject(cx, obj)
         }
         pub unsafe extern "C" fn JS_GetLastOOMStackTrace(cx: *mut root::JSContext) -> *const ::std::os::raw::c_char {
             crate::sys::unimplemented_entry("JS_GetLastOOMStackTrace")
@@ -16144,7 +16144,7 @@ pub mod root {
             value: root::JS::Handle<root::JS::Value>,
             attrs: ::std::os::raw::c_uint,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefinePropertyById2")
+            crate::sys::imp::JS_DefinePropertyById2(cx, obj, id, value, attrs)
         }
         pub unsafe extern "C" fn JS_DefinePropertyById3(
             cx: *mut root::JSContext,
@@ -16164,7 +16164,7 @@ pub mod root {
             setter: root::JS::Handle<*mut root::JSObject>,
             attrs: ::std::os::raw::c_uint,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefinePropertyById4")
+            crate::sys::imp::JS_DefinePropertyById4(cx, obj, id, getter, setter, attrs)
         }
         pub unsafe extern "C" fn JS_DefinePropertyById5(
             cx: *mut root::JSContext,
@@ -16173,7 +16173,7 @@ pub mod root {
             value: root::JS::Handle<*mut root::JSObject>,
             attrs: ::std::os::raw::c_uint,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefinePropertyById5")
+            crate::sys::imp::JS_DefinePropertyById5(cx, obj, id, value, attrs)
         }
         pub unsafe extern "C" fn JS_DefinePropertyById6(
             cx: *mut root::JSContext,
@@ -16218,7 +16218,7 @@ pub mod root {
             value: root::JS::Handle<root::JS::Value>,
             attrs: ::std::os::raw::c_uint,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefineProperty")
+            crate::sys::imp::JS_DefineProperty(cx, obj, name, value, attrs)
         }
         pub unsafe extern "C" fn JS_DefineProperty1(
             cx: *mut root::JSContext,
@@ -16228,7 +16228,7 @@ pub mod root {
             setter: root::JSNative,
             attrs: ::std::os::raw::c_uint,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefineProperty1")
+            crate::sys::imp::JS_DefineProperty1(cx, obj, name, getter, setter, attrs)
         }
         pub unsafe extern "C" fn JS_DefineProperty2(
             cx: *mut root::JSContext,
@@ -16238,7 +16238,7 @@ pub mod root {
             setter: root::JS::Handle<*mut root::JSObject>,
             attrs: ::std::os::raw::c_uint,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefineProperty2")
+            crate::sys::imp::JS_DefineProperty2(cx, obj, name, getter, setter, attrs)
         }
         pub unsafe extern "C" fn JS_DefineProperty3(
             cx: *mut root::JSContext,
@@ -16247,7 +16247,7 @@ pub mod root {
             value: root::JS::Handle<*mut root::JSObject>,
             attrs: ::std::os::raw::c_uint,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefineProperty3")
+            crate::sys::imp::JS_DefineProperty3(cx, obj, name, value, attrs)
         }
         pub unsafe extern "C" fn JS_DefineProperty4(
             cx: *mut root::JSContext,
@@ -16256,7 +16256,7 @@ pub mod root {
             value: root::JS::Handle<*mut root::JSString>,
             attrs: ::std::os::raw::c_uint,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefineProperty4")
+            crate::sys::imp::JS_DefineProperty4(cx, obj, name, value, attrs)
         }
         pub unsafe extern "C" fn JS_DefineProperty5(
             cx: *mut root::JSContext,
@@ -16265,7 +16265,7 @@ pub mod root {
             value: i32,
             attrs: ::std::os::raw::c_uint,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefineProperty5")
+            crate::sys::imp::JS_DefineProperty5(cx, obj, name, value, attrs)
         }
         pub unsafe extern "C" fn JS_DefineProperty6(
             cx: *mut root::JSContext,
@@ -16274,7 +16274,7 @@ pub mod root {
             value: u32,
             attrs: ::std::os::raw::c_uint,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefineProperty6")
+            crate::sys::imp::JS_DefineProperty6(cx, obj, name, value, attrs)
         }
         pub unsafe extern "C" fn JS_DefineProperty7(
             cx: *mut root::JSContext,
@@ -16283,7 +16283,7 @@ pub mod root {
             value: f64,
             attrs: ::std::os::raw::c_uint,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefineProperty7")
+            crate::sys::imp::JS_DefineProperty7(cx, obj, name, value, attrs)
         }
         pub unsafe extern "C" fn JS_DefineUCProperty(
             cx: *mut root::JSContext,
@@ -16382,7 +16382,7 @@ pub mod root {
             value: root::JS::Handle<root::JS::Value>,
             attrs: ::std::os::raw::c_uint,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefineElement")
+            crate::sys::imp::JS_DefineElement(cx, obj, index, value, attrs)
         }
         pub unsafe extern "C" fn JS_DefineElement1(
             cx: *mut root::JSContext,
@@ -16454,7 +16454,7 @@ pub mod root {
             name: *const ::std::os::raw::c_char,
             foundp: *mut bool,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_HasProperty")
+            crate::sys::imp::JS_HasProperty(cx, obj, name, foundp)
         }
         pub unsafe extern "C" fn JS_HasUCProperty(
             cx: *mut root::JSContext,
@@ -16524,7 +16524,7 @@ pub mod root {
             name: *const ::std::os::raw::c_char,
             vp: root::JS::MutableHandleValue,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_GetProperty")
+            crate::sys::imp::JS_GetProperty(cx, obj, name, vp)
         }
         pub unsafe extern "C" fn JS_GetUCProperty(
             cx: *mut root::JSContext,
@@ -16707,7 +16707,7 @@ pub mod root {
             obj: root::JS::Handle<*mut root::JSObject>,
             ps: *const root::JSPropertySpec,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefineProperties")
+            crate::sys::imp::JS_DefineProperties(cx, obj, ps)
         }
         pub unsafe extern "C" fn JS_AlreadyHasOwnPropertyById(
             cx: *mut root::JSContext,
@@ -16747,7 +16747,7 @@ pub mod root {
             obj: root::JS::Handle<*mut root::JSObject>,
             fs: *const root::JSFunctionSpec,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_DefineFunctions")
+            crate::sys::imp::JS_DefineFunctions(cx, obj, fs)
         }
         pub unsafe extern "C" fn JS_DefineFunction(
             cx: *mut root::JSContext,
@@ -17025,13 +17025,13 @@ pub mod root {
             s: *const ::std::os::raw::c_char,
             n: usize,
         ) -> *mut root::JSString {
-            crate::sys::unimplemented_entry("JS_NewStringCopyN")
+            crate::sys::imp::JS_NewStringCopyN(cx, s, n)
         }
         pub unsafe extern "C" fn JS_NewStringCopyZ(
             cx: *mut root::JSContext,
             s: *const ::std::os::raw::c_char,
         ) -> *mut root::JSString {
-            crate::sys::unimplemented_entry("JS_NewStringCopyZ")
+            crate::sys::imp::JS_NewStringCopyZ(cx, s)
         }
         pub unsafe extern "C" fn JS_NewStringCopyUTF8Z(
             cx: *mut root::JSContext,
@@ -17043,7 +17043,7 @@ pub mod root {
             cx: *mut root::JSContext,
             s: *const root::JS::UTF8Chars,
         ) -> *mut root::JSString {
-            crate::sys::unimplemented_entry("JS_NewStringCopyUTF8N")
+            crate::sys::imp::JS_NewStringCopyUTF8N(cx, s)
         }
         pub unsafe extern "C" fn JS_AtomizeStringN(
             cx: *mut root::JSContext,
@@ -17069,7 +17069,7 @@ pub mod root {
             cx: *mut root::JSContext,
             s: *const ::std::os::raw::c_char,
         ) -> *mut root::JSString {
-            crate::sys::unimplemented_entry("JS_AtomizeAndPinString")
+            crate::sys::imp::JS_AtomizeAndPinString(cx, s)
         }
         pub unsafe extern "C" fn JS_NewUCStringCopyN(
             cx: *mut root::JSContext,
@@ -17126,7 +17126,7 @@ pub mod root {
             crate::sys::unimplemented_entry("JS_PutEscapedString")
         }
         pub unsafe extern "C" fn JS_GetStringLength(str_: *mut root::JSString) -> usize {
-            crate::sys::unimplemented_entry("JS_GetStringLength")
+            crate::sys::imp::JS_GetStringLength(str_)
         }
         pub unsafe extern "C" fn JS_StringIsLinear(str_: *mut root::JSString) -> bool {
             crate::sys::unimplemented_entry("JS_StringIsLinear")
@@ -17137,7 +17137,7 @@ pub mod root {
             str_: *mut root::JSString,
             length: *mut usize,
         ) -> *const root::JS::Latin1Char {
-            crate::sys::unimplemented_entry("JS_GetLatin1StringCharsAndLength")
+            crate::sys::imp::JS_GetLatin1StringCharsAndLength(cx, nogc, str_, length)
         }
         pub unsafe extern "C" fn JS_GetTwoByteStringCharsAndLength(
             cx: *mut root::JSContext,
@@ -17145,7 +17145,7 @@ pub mod root {
             str_: *mut root::JSString,
             length: *mut usize,
         ) -> *const u16 {
-            crate::sys::unimplemented_entry("JS_GetTwoByteStringCharsAndLength")
+            crate::sys::imp::JS_GetTwoByteStringCharsAndLength(cx, nogc, str_, length)
         }
         pub unsafe extern "C" fn JS_GetStringCharAt(
             cx: *mut root::JSContext,
@@ -17244,7 +17244,7 @@ pub mod root {
         }
         #[doc = " DO NOT USE, only present for Rust bindings as a temporary hack"]
         pub unsafe extern "C" fn JS_DeprecatedStringHasLatin1Chars(str_: *mut root::JSString) -> bool {
-            crate::sys::unimplemented_entry("JS_DeprecatedStringHasLatin1Chars")
+            crate::sys::imp::JS_DeprecatedStringHasLatin1Chars(str_)
         }
     #[doc = " Callback used to ask the embedding for the cross compartment wrapper handler\n that implements the desired prolicy for this kind of object in the\n destination compartment. |obj| is the object to be wrapped. If |existing| is\n non-nullptr, it will point to an existing wrapper object that should be\n re-used if possible. |existing| is guaranteed to be a cross-compartment\n wrapper with a lazily-defined prototype and the correct global. It is\n guaranteed not to wrap a function."]
     pub type JSWrapObjectCallback = ::std::option::Option<
@@ -17402,10 +17402,10 @@ pub mod root {
         }
         pub unsafe extern "C" fn JS_WrapObject(cx: *mut root::JSContext, objp: root::JS::MutableHandleObject)
             -> bool {
-            crate::sys::unimplemented_entry("JS_WrapObject")
+            crate::sys::imp::JS_WrapObject(cx, objp)
         }
         pub unsafe extern "C" fn JS_WrapValue(cx: *mut root::JSContext, vp: root::JS::MutableHandleValue) -> bool {
-            crate::sys::unimplemented_entry("JS_WrapValue")
+            crate::sys::imp::JS_WrapValue(cx, vp)
         }
         pub unsafe extern "C" fn JS_TransplantObject(
             cx: *mut root::JSContext,
@@ -17540,7 +17540,7 @@ pub mod root {
             ctor: root::JS::Handle<*mut root::JSObject>,
             proto: root::JS::Handle<*mut root::JSObject>,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_LinkConstructorAndPrototype")
+            crate::sys::imp::JS_LinkConstructorAndPrototype(cx, ctor, proto)
         }
         pub unsafe extern "C" fn JS_InstanceOf(
             cx: *mut root::JSContext,
@@ -17583,7 +17583,7 @@ pub mod root {
         }
         #[doc = " Creates a new plain object, like `new Object()`, with Object.prototype as\n [[Prototype]]."]
         pub unsafe extern "C" fn JS_NewPlainObject(cx: *mut root::JSContext) -> *mut root::JSObject {
-            crate::sys::unimplemented_entry("JS_NewPlainObject")
+            crate::sys::imp::JS_NewPlainObject(cx)
         }
         #[doc = " Freeze obj, and all objects it refers to, recursively. This will not recurse\n through non-extensible objects, on the assumption that those are already\n deep-frozen."]
         pub unsafe extern "C" fn JS_DeepFreezeObject(
@@ -17605,7 +17605,7 @@ pub mod root {
             obj: root::JS::HandleObject,
             result: root::JS::MutableHandleObject,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_GetPrototype")
+            crate::sys::imp::JS_GetPrototype(cx, obj, result)
         }
         #[doc = " If |obj| (underneath any functionally-transparent wrapper proxies) has as\n its [[GetPrototypeOf]] trap the ordinary [[GetPrototypeOf]] behavior defined\n for ordinary objects, set |*isOrdinary = true| and store |obj|'s prototype\n in |result|.  Otherwise set |*isOrdinary = false|.  In case of error, both\n outparams have unspecified value."]
         pub unsafe extern "C" fn JS_GetPrototypeIfOrdinary(
@@ -17622,7 +17622,7 @@ pub mod root {
             obj: root::JS::HandleObject,
             proto: root::JS::HandleObject,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_SetPrototype")
+            crate::sys::imp::JS_SetPrototype(cx, obj, proto)
         }
         #[doc = " Determine whether obj is extensible. Extensible objects can have new\n properties defined on them. Inextensible objects can't, and their\n [[Prototype]] slot is fixed as well.\n\n Implements: ES6 [[IsExtensible]] internal method."]
         pub unsafe extern "C" fn JS_IsExtensible(
@@ -17646,7 +17646,7 @@ pub mod root {
             obj: root::JS::HandleObject,
             succeeded: *mut bool,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_SetImmutablePrototype")
+            crate::sys::imp::JS_SetImmutablePrototype(cx, obj, succeeded)
         }
         #[doc = " Equivalent to `Object.assign(target, src)`: Copies the properties from the\n `src` object (which must not be null) to `target` (which also must not be\n null)."]
         pub unsafe extern "C" fn JS_AssignObject(
@@ -17681,10 +17681,10 @@ pub mod root {
             flags: ::std::os::raw::c_uint,
             name: *const ::std::os::raw::c_char,
         ) -> *mut root::JSFunction {
-            crate::sys::unimplemented_entry("JS_NewFunction")
+            crate::sys::imp::JS_NewFunction(cx, call, nargs, flags, name)
         }
         pub unsafe extern "C" fn JS_GetFunctionObject(fun: *mut root::JSFunction) -> *mut root::JSObject {
-            crate::sys::unimplemented_entry("JS_GetFunctionObject")
+            crate::sys::imp::JS_GetFunctionObject(fun)
         }
         #[doc = " Return the function's identifier as a JSString, or null if fun is unnamed.\n\n The returned string lives as long as fun, so you don't need to root a saved\n reference to it if fun is well-connected or rooted, and provided you bound\n the use of the saved reference by fun's lifetime.\n\n This function returns false if any error happens while generating the\n function name string for a function with lazy name."]
         pub unsafe extern "C" fn JS_GetFunctionId(
