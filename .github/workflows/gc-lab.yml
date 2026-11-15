@@ -218,7 +218,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[servo]')
     runs-on: ubuntu-24.04
     needs: contracts
-    timeout-minutes: 120
+    timeout-minutes: 200
     env:
       CARGO_INCREMENTAL: '0'
     steps:
@@ -239,15 +239,23 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: gc-lab/.servo-facade/target
-          key: servo-facade-check-v1-0.7.0-rust-1.97.1-${{ hashFiles('gc-lab/.servo-facade/Cargo.lock') }}
-          restore-keys: servo-facade-check-v1-0.7.0-rust-1.97.1-
+          key: servo-facade-build-v1-0.7.0-rust-1.97.1-${{ hashFiles('gc-lab/.servo-facade/Cargo.lock') }}
+          restore-keys: |
+            servo-facade-build-v1-0.7.0-rust-1.97.1-
+            servo-facade-check-v1-0.7.0-rust-1.97.1-
       - name: C0 metric - check script_bindings and script against the facade
         run: >-
           python3 gc-lab/servo-native/c0_metric.py --source gc-lab/.servo-facade --output gc-lab/c0-results
           | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Preserve C0 evidence
+      - name: C1 metric - build servoshell on the facade and probe its startup
+        run: >-
+          python3 gc-lab/servo-native/c1_build.py --source gc-lab/.servo-facade --output gc-lab/c1-results
+          | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Preserve C0 and C1 evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: servo-facade-c0
-          path: gc-lab/c0-results/
+          path: |
+            gc-lab/c0-results/
+            gc-lab/c1-results/

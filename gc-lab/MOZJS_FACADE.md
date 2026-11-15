@@ -96,6 +96,22 @@ upstream and gets a `// SAFETY:` comment when it changes.
   falling count can therefore uncover errors it was hiding. Compare the error
   codes, not only the total.
 
+## C0 result
+
+0 errors at 4cd42d1 (CI run 43723401105): `cargo check -p servo-script-bindings
+-p servo-script` exits 0 against the facade.
+
+## C1 metric
+
+The `servo-facade` job runs `servo-native/c1_build.py` after the C0 check. It
+builds `servoshell --no-default-features --features bundled` in the facade
+tree and records compile errors, undefined link symbols, build time and binary
+size. If the binary links, it loads a script-free page headless with a
+120 s timeout. Every stub panics with "mozjs facade: <name> is not implemented
+yet", so the stubs the probe hits, in order, are the next entry points to
+implement. Both results go in the `servo-facade-c0` artifact
+(`c0-results/`, `c1-results/`).
+
 ## Next (C1)
 
 1. Drive the C0 count to 0. Expected sources of errors: items the 0.26.4 Rust
