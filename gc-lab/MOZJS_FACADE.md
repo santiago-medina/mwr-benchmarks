@@ -38,7 +38,12 @@ loop.
   `sys::unimplemented_entry(name)`, which panics. A panic cannot unwind out of
   an `extern "C"` function, so the process aborts with the entry point's name.
   This is deliberate in C0: a stub must never return a made-up value.
-- Each extern static (115 + 3) becomes a zeroed `static mut`.
+- Each extern static (115 + 3) becomes a zeroed static that keeps bindgen's
+  mutability. `extern const` statics stay immutable, because Servo borrows
+  `&ProxyClassOps` and the other proxy hooks inside a `static JSClass`
+  (`tests/servo_statics.rs`). The exceptions are the const statics whose types
+  hold raw pointers: they are not `Sync`, so they stay `static mut`
+  (`tools/nonsync_statics.txt`, 27 names).
 - It drops the C variadic tails (`...`), because Rust cannot define variadic
   functions. The affected functions are JS_ReportError{ASCII,Latin1,UTF8},
   JS_ReportErrorNumber{ASCII,Latin1,UTF8,UC}, Warn{ASCII,Latin1,UTF8} and

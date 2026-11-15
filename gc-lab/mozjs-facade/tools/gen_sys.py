@@ -6,7 +6,8 @@ archive (libmozjs-x86_64-unknown-linux-gnu.tar.gz). Type definitions are kept
 byte for byte, so Servo's generated code sees the same structs and layouts.
 Each `extern "C"` declaration becomes a Rust definition whose body reports
 the entry point as unimplemented; each extern static becomes a zeroed
-`static mut`. Variadic tails are dropped (listed in the summary).
+static with bindgen's mutability (`extern const` stays immutable, so Servo can
+take `&ProxyClassOps` in a static initializer). Variadic tails are dropped (listed in the summary).
 
 Usage: gen_sys.py <bindings dir> <output dir>
 """
@@ -23,6 +24,9 @@ HEADER = (
 )
 
 FN = re.compile(r"^(\s*)pub fn ([A-Za-z0-9_]+)\s*\(", re.S)
+# `extern const` statics whose types hold raw pointers are not Sync, so they
+# must stay `static mut` (list produced by compiling; one name per line).
+NONSYNC = set((Path(__file__).resolve().parent / "nonsync_statics.txt").read_text().split())
 STATIC = re.compile(r"^(\s*)pub static (mut )?([A-Za-z0-9_]+)\s*:\s*(.*);\s*$", re.S)
 
 
@@ -74,7 +78,8 @@ def emit(item, stats):
     if m:
         stats["static"] += 1
         return keep + [
-            "%spub static mut %s: %s = unsafe { ::core::mem::zeroed() };" % (m.group(1), m.group(3), m.group(4))
+            "%spub static %s%s: %s = unsafe { ::core::mem::zeroed() };"
+            % (m.group(1), "mut " if m.group(2) or m.group(3) in NONSYNC else "", m.group(3), m.group(4))
         ]
     raise SystemExit("unknown extern item: %r" % decl)
 

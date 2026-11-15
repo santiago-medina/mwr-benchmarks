@@ -906,7 +906,7 @@ pub mod root {
         ) -> *mut root::JSObject {
             crate::sys::unimplemented_entry("WrapperNew")
         }
-        pub static mut WindowProxyClass: root::JSClass = unsafe { ::core::mem::zeroed() };
+        pub static WindowProxyClass: root::JSClass = unsafe { ::core::mem::zeroed() };
         pub unsafe extern "C" fn GetWindowProxyClass() -> *const root::JSClass {
             crate::sys::unimplemented_entry("GetWindowProxyClass")
         }

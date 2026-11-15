@@ -1532,7 +1532,7 @@ pub mod root {
             pub _address: u8,
         }
         pub type VariantType_Type<T> = T;
-            pub static mut VariantIndex_index: usize = unsafe { ::core::mem::zeroed() };
+            pub static VariantIndex_index: usize = unsafe { ::core::mem::zeroed() };
         #[doc = " # mozilla::Variant\n\n A variant / tagged union / heterogenous disjoint union / sum-type template\n class. Similar in concept to (but not derived from) `boost::variant`.\n\n Sometimes, you may wish to use a C union with non-POD types. However, this is\n forbidden in C++ because it is not clear which type in the union should have\n its constructor and destructor run on creation and deletion\n respectively. This is the problem that `mozilla::Variant` solves.\n\n Since C++17, std::variant exists. `mozilla::Variant` differs conceptually\n from it by (a.) having a richer `.match` API (compared to `std::visit`) and\n (b.) having a different assignment semantic. Assigning to an `std::variant`\n assigns to the underlying value, while assigning to a `mozilla::Variant`\n deletes the previous value then move-constructs a new value. This makes it\n possible to store *and* update const values.\n\n ## Usage\n\n A `mozilla::Variant` instance is constructed (via move or copy) from one of\n its variant types (ignoring const and references). It does *not* support\n construction from subclasses of variant types or types that coerce to one of\n the variant types.\n\n     Variant<char, uint32_t> v1('a');\n     Variant<UniquePtr<A>, B, C> v2(MakeUnique<A>());\n     Variant<bool, char> v3(VariantType<char>, 0); // disambiguation needed\n     Variant<int, int> v4(VariantIndex<1>, 0); // 2nd int\n\n Because specifying the full type of a Variant value is often verbose,\n there are two easier ways to construct values:\n\n A. AsVariant() can be used to construct a Variant value using type inference\n in contexts such as expressions or when returning values from functions.\n Because AsVariant() must copy or move the value into a temporary and this\n cannot necessarily be elided by the compiler, it's mostly appropriate only\n for use with primitive or very small types.\n\n     Variant<char, uint32_t> Foo() { return AsVariant('x'); }\n     // ...\n     Variant<char, uint32_t> v1 = Foo();  // v1 holds char('x').\n\n B. Brace-construction with VariantType or VariantIndex; this also allows\n in-place construction with any number of arguments.\n\n     struct AB { AB(int, int){...} };\n     static Variant<AB, bool> foo()\n     {\n       return {VariantIndex<0>{}, 1, 2};\n     }\n     // ...\n     Variant<AB, bool> v0 = Foo();  // v0 holds AB(1,2).\n\n All access to the contained value goes through type-safe accessors.\n Either the stored type, or the type index may be provided.\n\n     void\n     Foo(Variant<A, B, C> v)\n     {\n       if (v.is<A>()) {\n         A& ref = v.as<A>();\n         ...\n       } else (v.is<1>()) { // Instead of v.is<B>.\n         ...\n       } else {\n         ...\n       }\n     }\n\n In some situation, a Variant may be constructed from templated types, in\n which case it is possible that the same type could be given multiple times by\n an external developer. Or seemingly-different types could be aliases.\n In this case, repeated types can only be accessed through their index, to\n prevent ambiguous access by type.\n\n    // Bad!\n    template <typename T>\n    struct ResultOrError\n    {\n      Variant<T, int> m;\n      ResultOrError() : m(int(0)) {} // Error '0' by default\n      ResultOrError(const T& r) : m(r) {}\n      bool IsResult() const { return m.is<T>(); }\n      bool IsError() const { return m.is<int>(); }\n    };\n    // Now instantiante with the result being an int too:\n    ResultOrError<int> myResult(123); // Fail!\n    // In Variant<int, int>, which 'int' are we refering to, from inside\n    // ResultOrError functions?\n\n    // Good!\n    template <typename T>\n    struct ResultOrError\n    {\n      Variant<T, int> m;\n      ResultOrError() : m(VariantIndex<1>{}, 0) {} // Error '0' by default\n      ResultOrError(const T& r) : m(VariantIndex<0>{}, r) {}\n      bool IsResult() const { return m.is<0>(); } // 0 -> T\n      bool IsError() const { return m.is<1>(); } // 1 -> int\n    };\n    // Now instantiante with the result being an int too:\n    ResultOrError<int> myResult(123); // It now works!\n\n Attempting to use the contained value as type `T1` when the `Variant`\n instance contains a value of type `T2` causes an assertion failure.\n\n     A a;\n     Variant<A, B, C> v(a);\n     v.as<B>(); // <--- Assertion failure!\n\n Trying to use a `Variant<Ts...>` instance as some type `U` that is not a\n member of the set of `Ts...` is a compiler error.\n\n     A a;\n     Variant<A, B, C> v(a);\n     v.as<SomeRandomType>(); // <--- Compiler error!\n\n Additionally, you can turn a `Variant` that `is<T>` into a `T` by moving it\n out of the containing `Variant` instance with the `extract<T>` method:\n\n     Variant<UniquePtr<A>, B, C> v(MakeUnique<A>());\n     auto ptr = v.extract<UniquePtr<A>>();\n\n Finally, you can exhaustively match on the contained variant and branch into\n different code paths depending on which type is contained. This is preferred\n to manually checking every variant type T with is<T>() because it provides\n compile-time checking that you handled every type, rather than runtime\n assertion failures.\n\n     // Bad!\n     char* foo(Variant<A, B, C, D>& v) {\n       if (v.is<A>()) {\n         return ...;\n       } else if (v.is<B>()) {\n         return ...;\n       } else {\n         return doSomething(v.as<C>()); // Forgot about case D!\n       }\n     }\n\n     // Instead, a single function object (that can deal with all possible\n     // options) may be provided:\n     struct FooMatcher\n     {\n       // The return type of all matchers must be identical.\n       char* operator()(A& a) { ... }\n       char* operator()(B& b) { ... }\n       char* operator()(C& c) { ... }\n       char* operator()(D& d) { ... } // Compile-time error to forget D!\n     }\n     char* foo(Variant<A, B, C, D>& v) {\n       return v.match(FooMatcher());\n     }\n\n     // In some situations, a single generic lambda may also be appropriate:\n     char* foo(Variant<A, B, C, D>& v) {\n       return v.match([](auto&) {...});\n     }\n\n     // Alternatively, multiple function objects may be provided, each one\n     // corresponding to an option, in the same order:\n     char* foo(Variant<A, B, C, D>& v) {\n       return v.match([](A&) { ... },\n                      [](B&) { ... },\n                      [](C&) { ... },\n                      [](D&) { ... });\n     }\n\n     // In rare cases, the index of the currently-active alternative is\n     // needed, it may be obtained by adding a first parameter in the matcner\n     // callback, which will receive the index in its most compact type (just\n     // use `size_t` if the exact type is not important), e.g.:\n     char* foo(Variant<A, B, C, D>& v) {\n       return v.match([](auto aIndex, auto& aAlternative) {...});\n       // --OR--\n       return v.match([](size_t aIndex, auto& aAlternative) {...});\n     }\n\n ## Examples\n\n A tree is either an empty leaf, or a node with a value and two children:\n\n     struct Leaf { };\n\n     template<typename T>\n     struct Node\n     {\n       T value;\n       Tree<T>* left;\n       Tree<T>* right;\n     };\n\n     template<typename T>\n     using Tree = Variant<Leaf, Node<T>>;\n\n A copy-on-write string is either a non-owning reference to some existing\n string, or an owning reference to our copy:\n\n     class CopyOnWriteString\n     {\n       Variant<const char*, UniquePtr<char[]>> string;\n\n       ...\n     };\n\n Because Variant must be aligned suitable to hold any value stored within it,\n and because |alignas| requirements don't affect platform ABI with respect to\n how parameters are laid out in memory, Variant can't be used as the type of a\n function parameter.  Pass Variant to functions by pointer or reference\n instead."]
         #[repr(C)]
         #[derive(Debug, Copy, Clone, PartialEq)]
@@ -2074,22 +2074,22 @@ pub mod root {
             MultiLineStyle = 0,
             SingleLineStyle = 1,
         }
-            pub static mut JSONWriter_scArrayBeginString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scArrayEndString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scCommaString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scEmptyString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scFalseString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scNewLineString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scNullString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scObjectBeginString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scObjectEndString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scPropertyBeginString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scPropertyEndString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scQuoteString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scSpaceString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scTopObjectBeginString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scTopObjectEndString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
-            pub static mut JSONWriter_scTrueString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scArrayBeginString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scArrayEndString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scCommaString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scEmptyString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scFalseString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scNewLineString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scNullString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scObjectBeginString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scObjectEndString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scPropertyBeginString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scPropertyEndString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scQuoteString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scSpaceString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scTopObjectBeginString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scTopObjectEndString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
+            pub static JSONWriter_scTrueString: root::__BindgenOpaqueArray<u64, 2usize> = unsafe { ::core::mem::zeroed() };
         #[allow(clippy::unnecessary_operation, clippy::identity_op)]
         const _: () = {
             ["Size of JSONWriter"][::std::mem::size_of::<JSONWriter>() - 88usize];
@@ -2837,7 +2837,7 @@ pub mod root {
                 ["Alignment of BaseProfilerProcessId"]
                     [::std::mem::align_of::<BaseProfilerProcessId>() - 4usize];
             };
-                pub static mut BaseProfilerProcessId_scUnspecified: root::mozilla::baseprofiler::BaseProfilerProcessId_NumberType = unsafe { ::core::mem::zeroed() };
+                pub static BaseProfilerProcessId_scUnspecified: root::mozilla::baseprofiler::BaseProfilerProcessId_NumberType = unsafe { ::core::mem::zeroed() };
             #[repr(C)]
             #[repr(align(8))]
             #[derive(Debug, Copy, Clone, PartialEq)]
@@ -2854,7 +2854,7 @@ pub mod root {
                 ["Alignment of BaseProfilerThreadId"]
                     [::std::mem::align_of::<BaseProfilerThreadId>() - 8usize];
             };
-                pub static mut BaseProfilerThreadId_scUnspecified: root::mozilla::baseprofiler::BaseProfilerThreadId_NumberType = unsafe { ::core::mem::zeroed() };
+                pub static BaseProfilerThreadId_scUnspecified: root::mozilla::baseprofiler::BaseProfilerThreadId_NumberType = unsafe { ::core::mem::zeroed() };
             pub mod category {
                 #[allow(unused_imports)]
                 use self::super::super::super::super::root;
@@ -3907,11 +3907,11 @@ pub mod root {
             };
             #[doc = " Atomic<T> implementation for integral types.\n\n In addition to atomic store and load operations, compound assignment and\n increment/decrement operators are implemented which perform the\n corresponding read-modify-write operation atomically.  Finally, an atomic\n swap method is provided."]
             pub type AtomicBitmapWord = u64;
-                pub static mut AtomicBitmap_BitCount: usize = unsafe { ::core::mem::zeroed() };
+                pub static AtomicBitmap_BitCount: usize = unsafe { ::core::mem::zeroed() };
             #[doc = " Atomic<T> implementation for integral types.\n\n In addition to atomic store and load operations, compound assignment and\n increment/decrement operators are implemented which perform the\n corresponding read-modify-write operation atomically.  Finally, an atomic\n swap method is provided."]
             pub type AtomicBitmap_Word = root::js::gc::AtomicBitmapWord;
             pub const AtomicBitmap_BitsPerWord: usize = 64;
-                pub static mut AtomicBitmap_WordCount: usize = unsafe { ::core::mem::zeroed() };
+                pub static AtomicBitmap_WordCount: usize = unsafe { ::core::mem::zeroed() };
             #[repr(C)]
             #[derive(Debug, Copy, Clone)]
             pub struct AtomicBitmap_Iter {
@@ -5146,7 +5146,7 @@ pub mod root {
             ["Alignment of NurseryAllocableProxyHandler"]
                 [::std::mem::align_of::<NurseryAllocableProxyHandler>() - 1usize];
         };
-            pub static mut ProxyClass: root::JSClass = unsafe { ::core::mem::zeroed() };
+            pub static ProxyClass: root::JSClass = unsafe { ::core::mem::zeroed() };
         #[repr(C)]
         #[derive(Debug, Copy, Clone, PartialEq)]
         pub struct ProxyOptions {
@@ -5208,9 +5208,9 @@ pub mod root {
             ["Size of AutoWaivePolicy"][::std::mem::size_of::<AutoWaivePolicy>() - 1usize];
             ["Alignment of AutoWaivePolicy"][::std::mem::align_of::<AutoWaivePolicy>() - 1usize];
         };
-            pub static mut ProxyClassOps: root::JSClassOps = unsafe { ::core::mem::zeroed() };
-            pub static mut ProxyClassExtension: root::js::ClassExtension = unsafe { ::core::mem::zeroed() };
-            pub static mut ProxyObjectOps: root::js::ObjectOps = unsafe { ::core::mem::zeroed() };
+            pub static ProxyClassOps: root::JSClassOps = unsafe { ::core::mem::zeroed() };
+            pub static ProxyClassExtension: root::js::ClassExtension = unsafe { ::core::mem::zeroed() };
+            pub static ProxyObjectOps: root::js::ObjectOps = unsafe { ::core::mem::zeroed() };
             pub unsafe extern "C" fn NukeNonCCWProxy(cx: *mut root::JSContext, proxy: root::JS::HandleObject) {
                 crate::sys::unimplemented_entry("NukeNonCCWProxy")
             }
@@ -5291,7 +5291,7 @@ pub mod root {
         pub enum Wrapper_Flags {
             CROSS_COMPARTMENT = 1,
         }
-            pub static mut Wrapper_family: ::std::os::raw::c_char = unsafe { ::core::mem::zeroed() };
+            pub static Wrapper_family: ::std::os::raw::c_char = unsafe { ::core::mem::zeroed() };
             pub static mut Wrapper_singleton: root::js::Wrapper = unsafe { ::core::mem::zeroed() };
             pub static mut Wrapper_singletonWithPrototype: root::js::Wrapper = unsafe { ::core::mem::zeroed() };
             pub static mut Wrapper_defaultProto: *mut root::JSObject = unsafe { ::core::mem::zeroed() };
@@ -6846,7 +6846,7 @@ pub mod root {
             ["Alignment of TracingContext_Functor"]
                 [::std::mem::align_of::<TracingContext_Functor>() - 8usize];
         };
-            pub static mut TracingContext_InvalidIndex: usize = unsafe { ::core::mem::zeroed() };
+            pub static TracingContext_InvalidIndex: usize = unsafe { ::core::mem::zeroed() };
         #[allow(clippy::unnecessary_operation, clippy::identity_op)]
         const _: () = {
             ["Size of TracingContext"][::std::mem::size_of::<TracingContext>() - 16usize];
@@ -14087,7 +14087,7 @@ pub mod root {
             ["Alignment of TypedArray_base"][::std::mem::align_of::<TypedArray_base>() - 8usize];
         };
         pub type TypedArray_DataType = root::JS::detail::ExternalTypeOf_t;
-            pub static mut TypedArray_Scalar: root::JS::Scalar::Type = unsafe { ::core::mem::zeroed() };
+            pub static TypedArray_Scalar: root::JS::Scalar::Type = unsafe { ::core::mem::zeroed() };
         pub type Int8Array = u64;
         pub type Uint8Array = u64;
         pub type Int16Array = u64;
