@@ -12,6 +12,7 @@
 
 mod barriers;
 mod context;
+mod jobs;
 mod natives;
 mod objects;
 mod props;
@@ -19,6 +20,7 @@ mod proxy;
 
 pub use barriers::*;
 pub use context::*;
+pub use jobs::*;
 pub use natives::*;
 pub use objects::*;
 pub use props::*;

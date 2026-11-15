@@ -74,6 +74,10 @@ pub(super) struct Shared {
     /// Reserved slots, bit-exact (`PrivateValue` doubles and int32 values keep
     /// their tags), keyed by object.
     slots: RefCell<HashMap<ObjectId, Vec<JSVal>>>,
+    /// The host-owned microtask queue (jobs.rs).
+    pub(super) microtasks: RefCell<std::collections::VecDeque<super::jobs::Microtask>>,
+    /// Engine job serial of each dequeued `JSMicroTask*` not yet run.
+    pub(super) job_tasks: RefCell<HashMap<ObjectId, u64>>,
 }
 
 #[repr(C)]
@@ -117,6 +121,13 @@ impl Host for FacadeHost {
         new_target: Option<ObjectId>,
     ) -> Result<JsValue, ScriptError> {
         super::natives::call_native(&self.0, engine, function, this, args, new_target)
+    }
+
+    fn enqueue_job(&self, serial: u64) {
+        self.0
+            .microtasks
+            .borrow_mut()
+            .push_back(super::jobs::Microtask::Js(serial));
     }
 
     fn trace_roots(&self, out: &mut Vec<ObjectId>) {
@@ -267,6 +278,20 @@ impl Heap {
         }));
         self.shared.cells.borrow_mut().insert(id, cell);
         cell as *const ObjectCell as *mut root::JSObject
+    }
+
+    /// Stop reporting `id`'s cell as a root. The cell memory stays leaked
+    /// (C1 lifetime policy), so a stale `JSObject*` still reads a valid shape.
+    pub(super) fn forget_cell(&self, id: ObjectId) {
+        self.shared.cells.borrow_mut().remove(&id);
+    }
+
+    /// The global `JSObject*` of `id`, null if the realm has no global cell.
+    pub(super) fn realm_global_ptr(&self, id: RealmId) -> *mut root::JSObject {
+        self.realms
+            .borrow()
+            .get(&id)
+            .map_or(ptr::null_mut(), |r| r.global.get())
     }
 
     pub(super) fn realm_ptr(&self, id: RealmId) -> *mut JS::Realm {

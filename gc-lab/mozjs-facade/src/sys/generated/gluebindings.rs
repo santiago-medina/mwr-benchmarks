@@ -1254,7 +1254,7 @@ pub mod root {
             cx: *mut root::JSContext,
             task: root::JS::MutableHandle<root::JS::GenericMicroTask>,
         ) {
-            crate::sys::unimplemented_entry("JS_DequeueNextMicroTask")
+            crate::sys::imp::JS_DequeueNextMicroTask(cx, task)
         }
         pub unsafe extern "C" fn JS_GetPromiseResult(
             promise: root::JS::HandleObject,

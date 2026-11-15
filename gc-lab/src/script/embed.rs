@@ -166,6 +166,10 @@ pub trait Host {
     fn trace(&self, _object: ObjectId, _class: u64, _payload: u64, _out: &mut Vec<ObjectId>) {}
     /// A host object was swept. Called after the collection, outside any script.
     fn finalize(&self, _class: u64, _payload: u64) {}
+    /// HostEnqueuePromiseJob (ECMA-262 §9.5.5): job `serial` joined the engine
+    /// queue. A notification only: it must not call into the engine. The host
+    /// runs the job later with [`Engine::run_host_job`].
+    fn enqueue_job(&self, _serial: u64) {}
 }
 
 /// Adapts `Host` to the runtime's id-level tracer.

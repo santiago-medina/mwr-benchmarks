@@ -131,6 +131,17 @@ fn spec_string(s: &'static std::ffi::CStr) -> JSPropertySpec_Name {
 }
 
 fn accessor(name: &'static std::ffi::CStr, getter: mozjs::jsapi::JSNative) -> JSPropertySpec {
+    accessor_pair(name, getter, None)
+}
+
+/// A getter/setter pair, like a WebIDL `attribute` (`AbortSignal.onabort`):
+/// the facade engine runs under the Stress GC policy, so creating the setter
+/// collects anything the getter left unrooted.
+fn accessor_pair(
+    name: &'static std::ffi::CStr,
+    getter: mozjs::jsapi::JSNative,
+    setter: mozjs::jsapi::JSNative,
+) -> JSPropertySpec {
     JSPropertySpec {
         name: spec_string(name),
         attributes_: JSPROP_ENUMERATE,
@@ -144,7 +155,14 @@ fn accessor(name: &'static std::ffi::CStr, getter: mozjs::jsapi::JSNative) -> JS
                     },
                 },
                 setter: JSPropertySpec_Accessor {
-                    native: JSNativeWrapper::ZERO,
+                    native: JSNativeWrapper {
+                        op: setter,
+                        info: if setter.is_some() {
+                            info()
+                        } else {
+                            ptr::null()
+                        },
+                    },
                 },
             },
         },
@@ -226,6 +244,7 @@ fn interface_objects_specs_and_natives() {
             accessor(c"answer", Some(answer_getter)),
             accessor(c"broken", Some(failing_getter)),
             accessor(c"throwing", Some(throwing_getter)),
+            accessor_pair(c"pair", Some(frob), Some(frob)),
             int_constant(c"CONST", 42),
             JSPropertySpec::ZERO,
         ];
@@ -270,6 +289,7 @@ fn interface_objects_specs_and_natives() {
         ));
         assert!(!resolved);
         assert_eq!(get(cx, proto, c"CONST").to_int32(), 42);
+        assert_eq!(get(cx, proto, c"pair").to_int32(), 1);
         // Non-configurable: redefining fails.
         assert!(!JS_DefineProperty5(
             cx,

@@ -1,4 +1,5 @@
 //! Promise state and jobs are ordinary traced records; queue entries are explicit roots.
+use super::embed::{ObjectId, RealmId};
 use super::{
     objects::{Data, Descriptor, Key},
     vm::{Engine, Object, ScriptError, Value},
@@ -276,12 +277,47 @@ impl Engine<'_> {
         if serial.is_some_and(|s| s != front.serial) {
             return Ok(false);
         }
-        let root = front.root;
+        self.run_queued_job(0)
+    }
+    /// HostEnqueuePromiseJob hosts that own the queue order (ECMA-262 §9.5.5,
+    /// mozjs `RunJSMicroTask`): run the job `serial` wherever it sits in the
+    /// engine queue. False if it already ran or was cancelled.
+    pub fn run_host_job(&mut self, serial: u64) -> Result<bool> {
+        if self.call_depth != 0 || self.native_depth != 0 {
+            return Err(ScriptError::Runtime("microtask execution during script"));
+        }
+        match self.jobs.iter().position(|job| job.serial == serial) {
+            Some(index) => self.run_queued_job(index),
+            None => Ok(false),
+        }
+    }
+    /// The object holding pending job `serial`'s record (rooted by the queue).
+    pub fn job_object(&self, serial: u64) -> Option<ObjectId> {
+        let job = self.jobs.iter().find(|job| job.serial == serial)?;
+        self.runtime.resolve(job.root).ok().map(ObjectId)
+    }
+    /// The realm job `serial` runs in: the handler's realm (NewPromiseReactionJob
+    /// step 3, NewPromiseResolveThenableJob step 3, §27.2.2), else None.
+    pub fn job_realm(&self, serial: u64) -> Option<RealmId> {
+        let id = self.job_object(serial)?;
+        let job = self.data(id.0).ok()?.job.clone()?;
+        let function = match job {
+            Job::Reaction { handler, .. } => handler,
+            Job::Thenable { then, .. } => Some(then),
+            Job::Callback(f) => Some(f),
+        };
+        function
+            .as_ref()
+            .and_then(Value::id)
+            .map(|f| self.object_realm(ObjectId(f)))
+    }
+    fn run_queued_job(&mut self, index: usize) -> Result<bool> {
+        let root = self.jobs[index].root;
         let id = self.runtime.resolve(root)?;
         self.steps_for_external_event();
         let result = self.frame(|e| {
             e.protect(&Value::Object(id))?;
-            let queued = e.jobs.pop_front().unwrap();
+            let queued = e.jobs.remove(index).unwrap();
             e.runtime.unroot(queued.root)?;
             let job = e
                 .data(id)?
@@ -326,6 +362,9 @@ impl Engine<'_> {
                 self.adapter_error = Some(error);
                 return Err(ScriptError::Runtime("host microtask scheduling failed"));
             }
+        }
+        if let Some(host) = self.host.clone() {
+            host.enqueue_job(serial);
         }
         Ok(())
     }

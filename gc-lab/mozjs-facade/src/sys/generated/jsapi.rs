@@ -13140,7 +13140,7 @@ pub mod root {
                 crate::sys::imp::SetJobQueue(cx, queue)
             }
             pub unsafe extern "C" fn GetJobQueue(cx: *mut root::JSContext) -> *mut root::JS::JobQueue {
-                crate::sys::unimplemented_entry("GetJobQueue")
+                crate::sys::imp::GetJobQueue(cx)
             }
         #[doc = " [SMDOC] Protecting the debuggee's job/microtask queue from debugger activity.\n\n When the JavaScript debugger interrupts the execution of some debuggee code\n (for a breakpoint, for example), the debuggee's execution must be paused\n while the developer takes time to look at it. During this interruption, other\n tabs should remain active and usable. If the debuggee shares a main thread\n with non-debuggee tabs, that means that the thread will have to process\n non-debuggee HTML tasks and microtasks as usual, even as the debuggee's are\n on hold until the debugger lets it continue execution. (Letting debuggee\n microtasks run during the interruption would mean that, from the debuggee's\n point of view, their side effects would take place wherever the breakpoint\n was set - in general, not a place other code should ever run, and a violation\n of the run-to-completion rule.)\n\n This means that, even though the timing and ordering of microtasks is\n carefully specified by the standard - and important to preserve for\n compatibility and predictability - debugger use may, correctly, have the\n effect of reordering microtasks. During the interruption, microtasks enqueued\n by non-debuggee tabs must run immediately alongside their HTML tasks as\n usual, whereas any debuggee microtasks that were in the queue when the\n interruption began must wait for the debuggee to be continued - and thus run\n after microtasks enqueued after they were.\n\n Fortunately, this reordering is visible only at the global level: when\n implemented correctly, it is not detectable by an individual debuggee. Note\n that a debuggee should generally be a complete unit of similar-origin related\n browsing contexts. Since non-debuggee activity falls outside that unit, it\n should never be visible to the debuggee (except via mechanisms that are\n already asynchronous, like events), so the debuggee should be unable to\n detect non-debuggee microtasks running when they normally would not. As long\n as behavior *visible to the debuggee* is unaffected by the interruption, we\n have respected the spirit of the rule.\n\n Of course, even as we accept the general principle that interrupting the\n debuggee should have as little detectable effect as possible, we still permit\n the developer to do things like evaluate expressions at the console that have\n arbitrary effects on the debuggee's state—effects that could never occur\n naturally at that point in the program. But since these are explicitly\n requested by the developer, who presumably knows what they're doing, we\n support this as best we can. If the developer evaluates an expression in the\n console that resolves a promise, it seems most natural for the promise's\n reaction microtasks to run immediately, within the interruption. This is an\n 'unnatural' time for the microtasks to run, but no more unnatural than the\n evaluation that triggered them.\n\n So the overall behavior we need is as follows:\n\n - When the debugger interrupts a debuggee, the debuggee's microtask queue\n   must be saved.\n\n - When debuggee execution resumes, the debuggee's microtask queue must be\n   restored exactly as it was when the interruption occurred.\n\n - Non-debuggee task and microtask execution must take place normally during\n   the interruption.\n\n Since each HTML task begins with an empty microtask queue, and it should not\n be possible for a task to mix debuggee and non-debuggee code, interrupting a\n debuggee should always find a microtask queue containing exclusively debuggee\n microtasks, if any. So saving and restoring the microtask queue should affect\n only the debuggee, not any non-debuggee content.\n\n AutoDebuggerJobQueueInterruption\n --------------------------------\n\n AutoDebuggerJobQueueInterruption is an RAII class, meant for use by the\n Debugger API implementation, that takes care of saving and restoring the\n queue.\n\n Constructing and initializing an instance of AutoDebuggerJobQueueInterruption\n sets aside the given JSContext's job queue, leaving the JSContext's queue\n empty. When the AutoDebuggerJobQueueInterruption instance is destroyed, it\n asserts that the JSContext's current job queue (holding jobs enqueued while\n the AutoDebuggerJobQueueInterruption was alive) is empty, and restores the\n saved queue to the JSContext.\n\n Since the Debugger API's behavior is up to us, we can specify that Debugger\n hooks begin execution with an empty job queue, and that we drain the queue\n after each hook function has run. This drain will be visible to debugger\n hooks, and makes hook calls resemble HTML tasks, with their own automatic\n microtask checkpoint. But, the drain will be invisible to the debuggee, as\n its queue is preserved across the hook invocation.\n\n To protect the debuggee's job queue, Debugger takes care to invoke callback\n functions only within the scope of an AutoDebuggerJobQueueInterruption\n instance.\n\n Why not let the hook functions themselves take care of this?\n ------------------------------------------------------------\n\n Certainly, we could leave responsibility for saving and restoring the job\n queue to the Debugger hook functions themselves.\n\n In fact, early versions of this change tried making the devtools server save\n and restore the queue explicitly, but because hooks are set and changed in\n numerous places, it was hard to be confident that every case had been\n covered, and it seemed that future changes could easily introduce new holes.\n\n Later versions of this change modified the accessor properties on the\n Debugger objects' prototypes to automatically protect the job queue when\n calling hooks, but the effect was essentially a monkeypatch applied to an API\n we defined and control, which doesn't make sense.\n\n In the end, since promises have become such a pervasive part of JavaScript\n programming, almost any imaginable use of Debugger would need to provide some\n kind of protection for the debuggee's job queue, so it makes sense to simply\n handle it once, carefully, in the implementation of Debugger itself."]
         #[repr(C)]
@@ -13185,11 +13185,11 @@ pub mod root {
             }
             #[doc = " Inform the runtime that the job queue is empty and the embedding is going to\n execute its last promise job. The runtime may now choose to skip creating\n promise jobs for asynchronous execution and instead continue execution\n synchronously. More specifically, this optimization is used to skip the\n standard job queuing behavior for `await` operations in async functions.\n\n This function may be called before executing the last job in the job queue.\n When it was called, JobQueueMayNotBeEmpty must be called in order to restore\n the default job queuing behavior before the embedding enqueues its next job\n into the job queue."]
             pub unsafe extern "C" fn JobQueueIsEmpty(cx: *mut root::JSContext) {
-                crate::sys::unimplemented_entry("JobQueueIsEmpty")
+                crate::sys::imp::JobQueueIsEmpty(cx)
             }
             #[doc = " Inform the runtime that job queue is no longer empty. The runtime can now no\n longer skip creating promise jobs for asynchronous execution, because\n pending jobs in the job queue must be executed first to preserve the FIFO\n (first in - first out) property of the queue. This effectively undoes\n JobQueueIsEmpty and re-enables the standard job queuing behavior.\n\n This function must be called whenever enqueuing a job to the job queue when\n JobQueueIsEmpty was called previously."]
             pub unsafe extern "C" fn JobQueueMayNotBeEmpty(cx: *mut root::JSContext) {
-                crate::sys::unimplemented_entry("JobQueueMayNotBeEmpty")
+                crate::sys::imp::JobQueueMayNotBeEmpty(cx)
             }
             #[doc = " Returns a new instance of the Promise builtin class in the current\n compartment, with the right slot layout.\n\n The `executor` can be a `nullptr`. In that case, the only way to resolve or\n reject the returned promise is via the `JS::ResolvePromise` and\n `JS::RejectPromise` JSAPI functions."]
             pub unsafe extern "C" fn NewPromiseObject(
@@ -13324,7 +13324,7 @@ pub mod root {
             pub unsafe extern "C" fn GetPromiseUserInputEventHandlingState(
                 promise: *mut root::JSObject,
             ) -> root::JS::PromiseUserInputEventHandlingState {
-                crate::sys::unimplemented_entry("GetPromiseUserInputEventHandlingState")
+                crate::sys::imp::GetPromiseUserInputEventHandlingState(promise)
             }
             #[doc = " Sets the given Promise's activation behavior state flag per above as a\n JS::PromiseUserInputEventHandlingState value.\n\n Returns false if the given object is a wrapper that can't safely be\n unwrapped."]
             pub unsafe extern "C" fn SetPromiseUserInputEventHandlingState(
@@ -14128,71 +14128,71 @@ pub mod root {
         pub type GenericMicroTask = root::JS::Value;
         pub type JSMicroTask = root::JSObject;
             pub unsafe extern "C" fn IsJSMicroTask(hv: *const root::JS::GenericMicroTask) -> bool {
-                crate::sys::unimplemented_entry("IsJSMicroTask")
+                crate::sys::imp::IsJSMicroTask(hv)
             }
             pub unsafe extern "C" fn ToUnwrappedJSMicroTask(
                 genericMicroTask: *const root::JS::GenericMicroTask,
             ) -> *mut root::JS::JSMicroTask {
-                crate::sys::unimplemented_entry("ToUnwrappedJSMicroTask")
+                crate::sys::imp::ToUnwrappedJSMicroTask(genericMicroTask)
             }
             pub unsafe extern "C" fn ToMaybeWrappedJSMicroTask(
                 genericMicroTask: *const root::JS::GenericMicroTask,
             ) -> *mut root::JS::JSMicroTask {
-                crate::sys::unimplemented_entry("ToMaybeWrappedJSMicroTask")
+                crate::sys::imp::ToMaybeWrappedJSMicroTask(genericMicroTask)
             }
             pub unsafe extern "C" fn RunJSMicroTask(
                 cx: *mut root::JSContext,
                 entry: root::JS::Handle<*mut root::JS::JSMicroTask>,
             ) -> bool {
-                crate::sys::unimplemented_entry("RunJSMicroTask")
+                crate::sys::imp::RunJSMicroTask(cx, entry)
             }
             pub unsafe extern "C" fn EnqueueMicroTask(
                 cx: *mut root::JSContext,
                 entry: *const root::JS::GenericMicroTask,
             ) -> bool {
-                crate::sys::unimplemented_entry("EnqueueMicroTask")
+                crate::sys::imp::EnqueueMicroTask(cx, entry)
             }
             pub unsafe extern "C" fn EnqueueDebugMicroTask(
                 cx: *mut root::JSContext,
                 entry: *const root::JS::GenericMicroTask,
             ) -> bool {
-                crate::sys::unimplemented_entry("EnqueueDebugMicroTask")
+                crate::sys::imp::EnqueueDebugMicroTask(cx, entry)
             }
             pub unsafe extern "C" fn PrependMicroTask(
                 cx: *mut root::JSContext,
                 entry: *const root::JS::GenericMicroTask,
             ) -> bool {
-                crate::sys::unimplemented_entry("PrependMicroTask")
+                crate::sys::imp::PrependMicroTask(cx, entry)
             }
             pub unsafe extern "C" fn DequeueNextDebuggerMicroTask(
                 cx: *mut root::JSContext,
             ) -> root::JS::GenericMicroTask {
-                crate::sys::unimplemented_entry("DequeueNextDebuggerMicroTask")
+                crate::sys::imp::DequeueNextDebuggerMicroTask(cx)
             }
             pub unsafe extern "C" fn DequeueNextRegularMicroTask(
                 cx: *mut root::JSContext,
             ) -> root::JS::GenericMicroTask {
-                crate::sys::unimplemented_entry("DequeueNextRegularMicroTask")
+                crate::sys::imp::DequeueNextRegularMicroTask(cx)
             }
             pub unsafe extern "C" fn PeekNextMicroTask(cx: *mut root::JSContext) -> root::JS::GenericMicroTask {
-                crate::sys::unimplemented_entry("PeekNextMicroTask")
+                crate::sys::imp::PeekNextMicroTask(cx)
             }
             pub unsafe extern "C" fn HasAnyMicroTasks(cx: *mut root::JSContext) -> bool {
-                crate::sys::unimplemented_entry("HasAnyMicroTasks")
+                crate::sys::imp::HasAnyMicroTasks(cx)
             }
             pub unsafe extern "C" fn HasDebuggerMicroTasks(cx: *mut root::JSContext) -> bool {
-                crate::sys::unimplemented_entry("HasDebuggerMicroTasks")
+                crate::sys::imp::HasDebuggerMicroTasks(cx)
             }
             pub unsafe extern "C" fn HasRegularMicroTasks(cx: *mut root::JSContext) -> bool {
-                crate::sys::unimplemented_entry("HasRegularMicroTasks")
+                crate::sys::imp::HasRegularMicroTasks(cx)
             }
             pub unsafe extern "C" fn GetRegularMicroTaskCount(cx: *mut root::JSContext) -> usize {
-                crate::sys::unimplemented_entry("GetRegularMicroTaskCount")
+                crate::sys::imp::GetRegularMicroTaskCount(cx)
             }
             pub unsafe extern "C" fn GetExecutionGlobalFromJSMicroTask(
                 entry: *mut root::JS::JSMicroTask,
             ) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("GetExecutionGlobalFromJSMicroTask")
+                crate::sys::imp::GetExecutionGlobalFromJSMicroTask(entry)
             }
         #[repr(C)]
         pub struct SavedMicroTaskQueue__bindgen_vtable(::std::os::raw::c_void);
@@ -14218,24 +14218,24 @@ pub mod root {
                 incumbentGlobal: root::JS::MutableHandleObject,
                 optionalHostDefinedData: root::JS::MutableHandleObject,
             ) -> bool {
-                crate::sys::unimplemented_entry("MaybeGetHostDefinedDataFromJSMicroTask")
+                crate::sys::imp::MaybeGetHostDefinedDataFromJSMicroTask(entry, incumbentGlobal, optionalHostDefinedData)
             }
             pub unsafe extern "C" fn MaybeGetAllocationSiteFromJSMicroTask(
                 entry: *mut root::JS::JSMicroTask,
                 out: root::JS::MutableHandleObject,
             ) -> bool {
-                crate::sys::unimplemented_entry("MaybeGetAllocationSiteFromJSMicroTask")
+                crate::sys::imp::MaybeGetAllocationSiteFromJSMicroTask(entry, out)
             }
             pub unsafe extern "C" fn MaybeGetPromiseFromJSMicroTask(
                 entry: *mut root::JS::JSMicroTask,
             ) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("MaybeGetPromiseFromJSMicroTask")
+                crate::sys::imp::MaybeGetPromiseFromJSMicroTask(entry)
             }
             pub unsafe extern "C" fn GetFlowIdFromJSMicroTask(
                 entry: *mut root::JS::JSMicroTask,
                 uid: *mut u64,
             ) -> bool {
-                crate::sys::unimplemented_entry("GetFlowIdFromJSMicroTask")
+                crate::sys::imp::GetFlowIdFromJSMicroTask(entry, uid)
             }
             #[doc = " Set all of the uninitialized lexicals on an object to undefined. Return\n true if any lexicals were initialized and false otherwise."]
             pub unsafe extern "C" fn ForceLexicalInitialization(

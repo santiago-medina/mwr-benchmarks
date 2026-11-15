@@ -441,8 +441,14 @@ pub(super) fn define_native_accessor(
             )?),
             None => None,
         };
+        // The getter is reachable from nothing until define_accessor: root
+        // it while the setter allocates (a collection there would free it).
+        let held = match getter {
+            Some(id) => Some(engine.root(id)?),
+            None => None,
+        };
         let setter = match setter.op {
-            Some(_) => Some(new_native(
+            Some(_) => new_native(
                 cx,
                 engine,
                 &format!("set {name}"),
@@ -450,10 +456,14 @@ pub(super) fn define_native_accessor(
                 setter.op,
                 setter.info,
                 false,
-            )?),
-            None => None,
+            )
+            .map(Some),
+            None => Ok(None),
         };
-        engine.define_accessor(object, key, getter, setter, e, c)
+        if let Some(root) = held {
+            engine.unroot(root)?;
+        }
+        engine.define_accessor(object, key, getter, setter?, e, c)
     });
     engine_result(cx, defined).unwrap_or(false)
 }

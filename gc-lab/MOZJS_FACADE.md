@@ -252,7 +252,58 @@ handlers run on every object once interfaces exist.
 
 Test: `tests/properties.rs`.
 
-206 entry points are implemented in total.
+### Microtasks (js/public/Promise.h)
+
+SpiderMonkey leaves the microtask queue to the embedder, and so does the
+facade (`src/sys/imp/jobs.rs`). A `GenericMicroTask` is a `JS::Value`: an
+object is a `JSMicroTask*` (an engine promise job), anything else is the
+embedder's own task (Servo enqueues a `PrivateValue` boxing a Rust runnable).
+
+- The engine reports each promise job through `Host::enqueue_job`
+  (HostEnqueuePromiseJob, ECMA-262 §9.5.5). That is a notification only. The
+  facade appends `Js(serial)` to its queue, which `EnqueueMicroTask` and
+  `PrependMicroTask` also feed, so one queue holds both kinds in order.
+- Dequeuing a job hands out the cell of the engine object that holds the job
+  record. `RunJSMicroTask` runs that serial with `Engine::run_host_job`
+  wherever it sits in the engine's queue, so the facade's queue, not the
+  engine's, decides the order. After the run the cell stops being a root.
+- `GetExecutionGlobalFromJSMicroTask` returns the global of the handler's
+  realm (NewPromiseReactionJob and NewPromiseResolveThenableJob step 3,
+  §27.2.2.1-2). If the job has no handler, it falls back to the job's
+  realm and then the current realm. It never returns null for a pending
+  job, because Servo skips a task whose global is null.
+- Not modelled yet: incumbent globals and host-defined data
+  (`MaybeGetHostDefinedDataFromJSMicroTask` returns null for both, which
+  Servo reads as "no incumbent"), the promise behind a job, the user-input
+  flag (always `DontCare`), and the debugger queue (always empty).
+  `JobQueueIsEmpty` and `JobQueueMayNotBeEmpty` are hints, and the engine
+  always queues. `GetJobQueue` returns the pointer `SetJobQueue` stored.
+- Jobs cancelled after an engine fault are pruned before any `Has*`, count,
+  peek or dequeue call, so Servo never dequeues a job that cannot run.
+
+Test: `tests/microtasks.rs` (an embedder task prepended, a promise job, and
+an embedder task appended, drained in order; a collection runs between the
+dequeue and the run).
+
+### GC policy
+
+The facade creates its engine with the engine's default policy,
+`GcPolicy::Stress`, which collects at every allocation safepoint. Under
+Stress, every facade entry point that holds a fresh, unrooted object across
+another allocation fails at once with `Memory(InvalidHandle)`. At 7ec6a3d,
+`define_native_accessor` built the getter and then the setter, and the
+collection during the setter's allocation freed the getter. The probe stopped in `define_guarded_properties`
+(AbortSignal's `onabort`, the first accessor with both a getter and a setter).
+Its run.log named `HasAnyMicroTasks`, because that stub ran during the unwind
+(`Runtime::drop`). The getter is now rooted across the setter's allocation,
+and `tests/interfaces.rs` covers a getter+setter pair.
+
+Stress stays the policy while C1 brings up startup paths, because it turns
+rooting bugs into immediate, reproducible failures. It is far too slow for
+pages: switch the facade to `GcPolicy::Threshold` before C2 or any
+performance measurement (see "Next (C1)").
+
+230 entry points are implemented in total.
 
 ## C1 result (servoshell links)
 
@@ -324,6 +375,7 @@ Decisions, following SERVO_BINDINGS.md option A:
    and JSNative calls (E2), tracing (E4), property and call API (E5), script
    evaluation.
 4. Lift the Servo-path interpreter guards (call depth 32, step limit 10,000)
-   and the C1 keep-alive policy (cells never freed) before C2.
+   and the C1 keep-alive policy (cells never freed) before C2, and switch
+   the facade's engine from `GcPolicy::Stress` to `Threshold` ("GC policy").
 5. Facade overhead micro-benchmark (literature check), before and after
    numbers in the commit.
