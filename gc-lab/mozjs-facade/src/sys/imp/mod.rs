@@ -17,6 +17,7 @@ mod natives;
 mod objects;
 mod props;
 mod proxy;
+mod scripts;
 
 pub use barriers::*;
 pub use context::*;
@@ -25,3 +26,4 @@ pub use natives::*;
 pub use objects::*;
 pub use props::*;
 pub use proxy::*;
+pub use scripts::*;

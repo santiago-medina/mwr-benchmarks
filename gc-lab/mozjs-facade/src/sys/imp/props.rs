@@ -1214,3 +1214,51 @@ pub unsafe fn ToBooleanSlow(v: JS::HandleValue) -> bool {
 pub unsafe fn GetCurrentRealmOrNull(cx: *mut root::JSContext) -> *mut JS::Realm {
     unsafe { context(cx) }.realm()
 }
+
+// --- Unforgeable holders (dom/bindings: CreateInterfaceObjects, wrap.rs) ---
+
+/// The engine attaches no allocation metadata, so this is
+/// `JS_NewObjectWithGivenProto`.
+pub unsafe fn JS_NewObjectWithoutMetadata(
+    cx: *mut root::JSContext,
+    clasp: *const root::JSClass,
+    proto: JS::Handle<*mut root::JSObject>,
+) -> *mut root::JSObject {
+    unsafe { super::objects::JS_NewObjectWithGivenProto(cx, clasp, proto) }
+}
+
+/// Copy every own property of `src` (an unforgeable holder) onto `dst` with
+/// its full descriptor, in [[OwnPropertyKeys]] order. SpiderMonkey copies
+/// the shape wholesale; defining each property is the same result for the
+/// fresh, property-less `dst` this entry point requires.
+pub unsafe fn JS_InitializePropertiesFromCompatibleNativeObject(
+    cx: *mut root::JSContext,
+    dst: JS::HandleObject,
+    src: JS::HandleObject,
+) -> bool {
+    let context = unsafe { context(cx) };
+    let (dst, src) = unsafe { (handle_object(dst), handle_object(src)) };
+    let copied = context
+        .heap
+        .with_engine(|engine| -> Result<bool, gc_lab::script::ScriptError> {
+            for key in engine.own_property_keys(src)? {
+                let Some(d) = engine.own_property(src, key.clone())? else {
+                    continue;
+                };
+                let accessor = d.value.is_none();
+                let desc = PartialDescriptor {
+                    writable: (!accessor).then_some(d.writable),
+                    value: d.value,
+                    get: accessor.then_some(d.getter),
+                    set: accessor.then_some(d.setter),
+                    enumerable: Some(d.enumerable),
+                    configurable: Some(d.configurable),
+                };
+                if !engine.define_own_property(dst, key, desc)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        });
+    engine_result(context, copied) == Some(true)
+}

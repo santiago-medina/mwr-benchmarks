@@ -1,0 +1,193 @@
+//! Classic scripts as Servo's `evaluate_js_on_global` runs them: compile
+//! options, compile, execute, script privates, the hidden scripted caller and
+//! the error report of an uncaught exception, plus the unforgeable-holder copy
+//! of dom/bindings (`src/sys/imp/scripts.rs`, `src/sys/imp/props.rs`).
+use mozjs::glue::{DeleteCompileOptions, JS_GetScriptPrivate, NewCompileOptions};
+use mozjs::jsapi::mozilla::Utf8Unit;
+use mozjs::jsapi::{
+    CompartmentSpecifier, EnterRealm, JSClass, JSContext, JSErrorReport, JSExnType, JSObject,
+    JSScript, JS_ClearPendingException, JS_ErrorFromException, JS_ExecuteScript,
+    JS_GetPendingException, JS_GetPropertyById, JS_InitializePropertiesFromCompatibleNativeObject,
+    JS_NewContext, JS_NewGlobalObject, JS_NewObjectWithoutMetadata, OnNewGlobalHookOption, JS,
+    JSCLASS_GLOBAL_SLOT_COUNT, JSCLASS_IS_GLOBAL, JSCLASS_RESERVED_SLOTS_MASK,
+    JSCLASS_RESERVED_SLOTS_SHIFT,
+};
+use mozjs::jsid::VoidId;
+use mozjs::jsval::{Int32Value, JSVal, UndefinedValue};
+use mozjs::rust::RealmOptions;
+use std::ffi::CStr;
+use std::marker::PhantomData;
+use std::ptr;
+
+static GLOBAL_CLASS: JSClass = JSClass {
+    name: c"TestGlobal".as_ptr(),
+    flags: JSCLASS_IS_GLOBAL
+        | ((JSCLASS_GLOBAL_SLOT_COUNT & JSCLASS_RESERVED_SLOTS_MASK)
+            << JSCLASS_RESERVED_SLOTS_SHIFT),
+    cOps: ptr::null(),
+    spec: ptr::null(),
+    ext: ptr::null(),
+    oOps: ptr::null(),
+};
+
+static PLAIN_CLASS: JSClass = JSClass {
+    name: c"Holder".as_ptr(),
+    flags: 0,
+    cOps: ptr::null(),
+    spec: ptr::null(),
+    ext: ptr::null(),
+    oOps: ptr::null(),
+};
+
+fn handle<T>(v: &T) -> JS::Handle<T> {
+    JS::Handle {
+        _phantom_0: PhantomData,
+        ptr: v,
+    }
+}
+
+fn handle_mut<T>(v: &mut T) -> JS::MutableHandle<T> {
+    JS::MutableHandle {
+        _phantom_0: PhantomData,
+        ptr: v,
+    }
+}
+
+fn source(text: &str) -> JS::SourceText<Utf8Unit> {
+    JS::SourceText {
+        _phantom_0: PhantomData,
+        units_: text.as_ptr() as *const Utf8Unit,
+        length_: text.len() as u32,
+        ownsUnits_: false,
+    }
+}
+
+unsafe fn compile(cx: *mut JSContext, text: &str) -> *mut JSScript {
+    let options = unsafe { NewCompileOptions(cx, c"test.js".as_ptr(), 1) };
+    let mut src = source(text);
+    let script = unsafe { JS::Compile1(cx, options, &mut src) };
+    unsafe { DeleteCompileOptions(options) };
+    script
+}
+
+unsafe fn evaluate(cx: *mut JSContext, text: &str) -> Option<JSVal> {
+    let options = unsafe { NewCompileOptions(cx, c"test.js".as_ptr(), 1) };
+    let mut src = source(text);
+    let mut rval = UndefinedValue();
+    let ok = unsafe { JS::Evaluate2(cx, options, &mut src, handle_mut(&mut rval)) };
+    unsafe { DeleteCompileOptions(options) };
+    ok.then_some(rval)
+}
+
+unsafe fn take_exception(cx: *mut JSContext) -> *mut JSObject {
+    let mut exc = UndefinedValue();
+    assert!(unsafe { JS_GetPendingException(cx, handle_mut(&mut exc)) });
+    unsafe { JS_ClearPendingException(cx) };
+    assert!(exc.is_object());
+    exc.to_object()
+}
+
+/// (message, filename, exnType) of an error object's report.
+unsafe fn report(cx: *mut JSContext, obj: *mut JSObject) -> Option<(String, String, i16)> {
+    let mut borrowed = JS::BorrowedErrorReport {
+        owner_: JS::Rooted::new_unrooted(ptr::null_mut()),
+        report_: ptr::null_mut(),
+    };
+    if !unsafe { JS_ErrorFromException(cx, handle(&obj), &mut borrowed) } {
+        return None;
+    }
+    assert_eq!(borrowed.owner_.data, obj);
+    let r: &JSErrorReport = unsafe { &*borrowed.report_ };
+    let text = |p| unsafe { CStr::from_ptr(p) }.to_str().unwrap().to_owned();
+    Some((
+        text(r._base.message_.data_),
+        text(r._base.filename.data_),
+        r.exnType,
+    ))
+}
+
+unsafe fn get(cx: *mut JSContext, obj: *mut JSObject, name: &str) -> JSVal {
+    let mut key = VoidId();
+    let s = unsafe { mozjs::jsapi::JS_AtomizeStringN(cx, name.as_ptr() as *const _, name.len()) };
+    unsafe { mozjs::glue::RUST_INTERNED_STRING_TO_JSID(cx, s, handle_mut(&mut key)) };
+    let mut v = UndefinedValue();
+    assert!(unsafe { JS_GetPropertyById(cx, handle(&obj), handle(&key), handle_mut(&mut v)) });
+    v
+}
+
+#[test]
+fn compile_execute_and_error_reports() {
+    unsafe {
+        let cx = JS_NewContext(32 << 20, ptr::null_mut());
+        let mut options = RealmOptions::default();
+        options.creationOptions_.compSpec_ = CompartmentSpecifier::NewCompartmentAndZone;
+        let global = JS_NewGlobalObject(
+            cx,
+            &GLOBAL_CLASS,
+            ptr::null_mut(),
+            OnNewGlobalHookOption::DontFireOnNewGlobalHook,
+            &*options,
+        );
+        EnterRealm(cx, global);
+
+        // Compile, then execute: the completion value comes back and global
+        // declarations persist for later scripts.
+        let script = compile(cx, "var a = 40; a + 2");
+        assert!(!script.is_null());
+        let mut rval = UndefinedValue();
+        assert!(JS_ExecuteScript(cx, handle(&script), handle_mut(&mut rval)));
+        assert_eq!(rval.to_int32(), 42);
+        assert_eq!(evaluate(cx, "a").unwrap().to_int32(), 40);
+
+        // Script privates round-trip.
+        JS::SetScriptPrivate(script, &Int32Value(7));
+        let mut private = UndefinedValue();
+        JS_GetScriptPrivate(script, handle_mut(&mut private));
+        assert_eq!(private.to_int32(), 7);
+
+        JS::HideScriptedCaller(cx);
+        JS::UnhideScriptedCaller(cx);
+
+        // An early error fails Compile with a pending SyntaxError.
+        assert!(compile(cx, "var = ;").is_null());
+        let exc = take_exception(cx);
+        let (_, filename, kind) = report(cx, exc).unwrap();
+        assert_eq!(filename, "");
+        assert_eq!(kind, JSExnType::JSEXN_SYNTAXERR as i16);
+
+        // A runtime throw fails execution; its report carries the message.
+        let script = compile(cx, "notDefinedAnywhere");
+        assert!(!script.is_null());
+        assert!(!JS_ExecuteScript(
+            cx,
+            handle(&script),
+            handle_mut(&mut rval)
+        ));
+        let exc = take_exception(cx);
+        let (message, _, kind) = report(cx, exc).unwrap();
+        assert_eq!(message, "notDefinedAnywhere is not defined");
+        assert_eq!(kind, JSExnType::JSEXN_REFERENCEERR as i16);
+        // The same object gives the same report.
+        assert_eq!(report(cx, exc).unwrap().0, message);
+
+        // Thrown non-errors have no report.
+        assert!(evaluate(cx, "throw {}").is_none());
+        let exc = take_exception(cx);
+        assert!(report(cx, exc).is_none());
+
+        // Unforgeable holders: every own property, accessors included,
+        // lands on the fresh object.
+        let holder = evaluate(cx, "({ x: 9, get y() { return this.x + 1; } })")
+            .unwrap()
+            .to_object();
+        let dst = JS_NewObjectWithoutMetadata(cx, &PLAIN_CLASS, handle(&ptr::null_mut()));
+        assert!(!dst.is_null());
+        assert!(JS_InitializePropertiesFromCompatibleNativeObject(
+            cx,
+            handle(&dst),
+            handle(&holder)
+        ));
+        assert_eq!(get(cx, dst, "x").to_int32(), 9);
+        assert_eq!(get(cx, dst, "y").to_int32(), 10);
+    }
+}

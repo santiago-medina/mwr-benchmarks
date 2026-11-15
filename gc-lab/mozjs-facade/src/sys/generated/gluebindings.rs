@@ -879,14 +879,14 @@ pub mod root {
             crate::sys::imp::GetSecurityWrapper()
         }
         pub unsafe extern "C" fn DeleteCompileOptions(aOpts: *mut root::JS::ReadOnlyCompileOptions) {
-            crate::sys::unimplemented_entry("DeleteCompileOptions")
+            crate::sys::imp::DeleteCompileOptions(aOpts)
         }
         pub unsafe extern "C" fn NewCompileOptions(
             aCx: *mut root::JSContext,
             aFile: *const ::std::os::raw::c_char,
             aLine: ::std::os::raw::c_uint,
         ) -> *mut root::JS::ReadOnlyCompileOptions {
-            crate::sys::unimplemented_entry("NewCompileOptions")
+            crate::sys::imp::NewCompileOptions(aCx, aFile, aLine)
         }
         pub unsafe extern "C" fn NewProxyObject(
             aCx: *mut root::JSContext,
@@ -1263,7 +1263,7 @@ pub mod root {
             crate::sys::unimplemented_entry("JS_GetPromiseResult")
         }
         pub unsafe extern "C" fn JS_GetScriptPrivate(script: *mut root::JSScript, dest: root::JS::MutableHandleValue) {
-            crate::sys::unimplemented_entry("JS_GetScriptPrivate")
+            crate::sys::imp::JS_GetScriptPrivate(script, dest)
         }
         pub unsafe extern "C" fn JS_GetModulePrivate(module: *mut root::JSObject, dest: root::JS::MutableHandleValue) {
             crate::sys::unimplemented_entry("JS_GetModulePrivate")

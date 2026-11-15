@@ -285,6 +285,47 @@ Test: `tests/microtasks.rs` (an embedder task prepended, a promise job, and
 an embedder task appended, drained in order; a collection runs between the
 dequeue and the run).
 
+### Classic scripts and error reports
+
+`imp/scripts.rs`, 13 entry points: what Servo's `evaluate_js_on_global`
+(components/script/dom/globalscope.rs) and `ErrorInfo::from_native_error`
+(dom/bindings/error.rs) call.
+
+- `NewCompileOptions` boxes a zeroed `ReadOnlyCompileOptions` (SpiderMonkey's
+  defaults) with an owned filename. Servo writes the remaining fields inline.
+- A `JSScript*` is a leaked `ScriptCell` that holds the source text, the
+  filename, the line and the private value. `Compile`/`Compile1` run the
+  parser for early errors (ParseScript, ECMA-262 §16.1.6), and
+  `JS_ExecuteScript` runs ScriptEvaluation on the same text, so a script is
+  parsed twice until the engine has a compiled-script object. A parse error
+  leaves a pending SyntaxError. Unimplemented syntax stays uncatchable
+  Unsupported, never a SyntaxError. Malformed UTF-8 is a SyntaxError. UTF-16
+  source with a lone surrogate is refused as Unsupported: the engine takes
+  `str` source, and the facade does not change the text.
+- `SetScriptPrivate` calls the runtime's reference hooks
+  (`SetScriptPrivateReferenceHooks`) on the new and the old value, as
+  ScriptSourceObject::setPrivate does.
+- `Hide`/`UnhideScriptedCaller` only count nesting. `GetScriptedCallerGlobal`
+  and `DescribeScriptedCaller`, which read that count, are not implemented
+  yet.
+- `JS_ErrorFromException` returns false for objects without [[ErrorData]].
+  For errors, it builds one cached report per object: the message is the
+  own `message` property with no "Name: " prefix, as in
+  ErrorObject::getOrCreateErrorReport, and `exnType` comes from the error
+  class. The engine does not record where an error was created, so the
+  filename is empty, the line is 0 and the column is 1.
+- There is no `Debugger`. `JS_DefineDebuggerObject` is a no-op, so Servo's
+  debugger.js (`new Debugger`) throws a ReferenceError at startup. That
+  exercises the error-report path; nothing pretends a Debugger exists.
+
+Unforgeable holders (`imp/props.rs`): `JS_NewObjectWithoutMetadata` is
+`JS_NewObjectWithGivenProto`, because the engine attaches no allocation
+metadata. `JS_InitializePropertiesFromCompatibleNativeObject` defines each
+own property of the holder on the fresh object with its full descriptor, in
+[[OwnPropertyKeys]] order.
+
+Test: `tests/scripts.rs`.
+
 ### GC policy
 
 The facade creates its engine with the engine's default policy,
@@ -303,7 +344,7 @@ rooting bugs into immediate, reproducible failures. It is far too slow for
 pages: switch the facade to `GcPolicy::Threshold` before C2 or any
 performance measurement (see "Next (C1)").
 
-230 entry points are implemented in total.
+245 entry points are implemented in total.
 
 ## C1 result (servoshell links)
 

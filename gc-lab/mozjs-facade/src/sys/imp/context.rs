@@ -77,6 +77,11 @@ pub struct State {
     /// (JS_SetPendingException); cells are never freed, so a raw JSVal
     /// stays valid.
     pub pending_exception: Option<crate::sys::jsval::JSVal>,
+    /// HideScriptedCaller nesting depth.
+    pub hidden_scripted_caller: usize,
+    /// JS_ErrorFromException reports, one per error object. Like cells they
+    /// are never freed, so a BorrowedErrorReport stays valid.
+    pub error_reports: HashMap<gc_lab::script::ObjectId, Box<super::scripts::ErrorReportCell>>,
 }
 
 pub struct EventLoopDispatch {

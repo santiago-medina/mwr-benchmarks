@@ -319,6 +319,23 @@ impl Engine<'_> {
         self.eval_script(Value::String(source.into())).map(JsValue)
     }
 
+    /// ParseScript (§16.1.5) only: `Ok` if `source` has no early errors, else the thrown
+    /// SyntaxError (or Unsupported). Embeddings that compile before they run
+    /// (`JS::Compile`) report early errors here, before any evaluation.
+    pub fn check_script(&mut self, source: &str) -> Result<()> {
+        self.parse_script(source).map(|_| ())
+    }
+
+    /// The [[ErrorData]] class of `object` ("Error", "TypeError", ...), or
+    /// None when it has no [[ErrorData]] slot (proxies have none, as in
+    /// Error.isError, §20.5.2.1).
+    pub fn error_class(&self, object: ObjectId) -> Option<String> {
+        if self.is_proxy(object.0) {
+            return None;
+        }
+        self.data(object.0).ok().and_then(|d| d.error_class.clone())
+    }
+
     // ----- rooting -----
 
     pub fn root(&mut self, object: ObjectId) -> Result<ExternalRoot> {

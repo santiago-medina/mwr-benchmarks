@@ -10325,7 +10325,7 @@ pub mod root {
             }
             #[doc = " Set a private value associated with a script. Note that this value is shared\n by all nested scripts compiled from a single source file."]
             pub unsafe extern "C" fn SetScriptPrivate(script: *mut root::JSScript, value: *const root::JS::Value) {
-                crate::sys::unimplemented_entry("SetScriptPrivate")
+                crate::sys::imp::SetScriptPrivate(script, value)
             }
         #[doc = " Hooks called when references to a script private value are created or\n destroyed. This allows use of a reference counted object as the\n script private."]
         pub type ScriptPrivateReferenceHook =
@@ -10767,10 +10767,10 @@ pub mod root {
             }
             #[doc = " Informs the JS engine that the scripted caller should be hidden. This can be\n used by the embedding to maintain an override of the scripted caller in its\n calculations, by hiding the scripted caller in the JS engine and pushing data\n onto a separate stack, which it inspects when DescribeScriptedCaller returns\n null.\n\n We maintain a counter on each activation record. Add() increments the counter\n of the topmost activation, and Remove() decrements it. The count may never\n drop below zero, and must always be exactly zero when the activation is\n popped from the stack."]
             pub unsafe extern "C" fn HideScriptedCaller(cx: *mut root::JSContext) {
-                crate::sys::unimplemented_entry("HideScriptedCaller")
+                crate::sys::imp::HideScriptedCaller(cx)
             }
             pub unsafe extern "C" fn UnhideScriptedCaller(cx: *mut root::JSContext) {
-                crate::sys::unimplemented_entry("UnhideScriptedCaller")
+                crate::sys::imp::UnhideScriptedCaller(cx)
             }
         #[repr(C)]
         #[derive(Debug, PartialEq)]
@@ -11070,7 +11070,7 @@ pub mod root {
                 srcBuf: *mut root::JS::SourceText<u16>,
                 rval: root::JS::MutableHandle<root::JS::Value>,
             ) -> bool {
-                crate::sys::unimplemented_entry("Evaluate")
+                crate::sys::imp::Evaluate(cx, options, srcBuf, rval)
             }
             #[doc = " As above, but providing an explicit scope chain.  envChain must not include\n the global object on it; that's implicit.  It needs to contain the other\n objects that should end up on the script's scope chain."]
             pub unsafe extern "C" fn Evaluate1(
@@ -11089,7 +11089,7 @@ pub mod root {
                 srcBuf: *mut root::JS::SourceText<root::mozilla::Utf8Unit>,
                 rval: root::JS::MutableHandle<root::JS::Value>,
             ) -> bool {
-                crate::sys::unimplemented_entry("Evaluate2")
+                crate::sys::imp::Evaluate2(cx, options, srcBuf, rval)
             }
             #[doc = " Evaluate the UTF-8 contents of the file at the given path, and return the\n completion value in |rval|.  (The path itself is UTF-8 encoded, too.)  If\n the contents contain any malformed UTF-8, an error is reported."]
             pub unsafe extern "C" fn EvaluateUtf8Path(
@@ -11106,7 +11106,7 @@ pub mod root {
                 options: *const root::JS::ReadOnlyCompileOptions,
                 srcBuf: *mut root::JS::SourceText<u16>,
             ) -> *mut root::JSScript {
-                crate::sys::unimplemented_entry("Compile")
+                crate::sys::imp::Compile(cx, options, srcBuf)
             }
             #[doc = " Compile the provided script using the given options.  Return the script on\n success, or return null on failure (usually with an error reported)."]
             pub unsafe extern "C" fn Compile1(
@@ -11114,7 +11114,7 @@ pub mod root {
                 options: *const root::JS::ReadOnlyCompileOptions,
                 srcBuf: *mut root::JS::SourceText<root::mozilla::Utf8Unit>,
             ) -> *mut root::JSScript {
-                crate::sys::unimplemented_entry("Compile1")
+                crate::sys::imp::Compile1(cx, options, srcBuf)
             }
             #[doc = " Compile the UTF-8 contents of the given file into a script.  It is an error\n if the file contains invalid UTF-8.  Return the script on success, or return\n null on failure (usually with an error reported)."]
             pub unsafe extern "C" fn CompileUtf8File(
@@ -15482,7 +15482,7 @@ pub mod root {
             obj: root::JS::HandleObject,
             errorReport: *mut root::JS::BorrowedErrorReport,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_ErrorFromException")
+            crate::sys::imp::JS_ErrorFromException(cx, obj, errorReport)
         }
     impl root::JSExnType {
         pub const JSEXN_FIRST: root::JSExnType = JSExnType::JSEXN_ERR;
@@ -17883,13 +17883,13 @@ pub mod root {
             script: root::JS::Handle<*mut root::JSScript>,
             rval: root::JS::MutableHandle<root::JS::Value>,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_ExecuteScript")
+            crate::sys::imp::JS_ExecuteScript(cx, script, rval)
         }
         pub unsafe extern "C" fn JS_ExecuteScript1(
             cx: *mut root::JSContext,
             script: root::JS::Handle<*mut root::JSScript>,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_ExecuteScript1")
+            crate::sys::imp::JS_ExecuteScript1(cx, script)
         }
         #[doc = " As above, but providing an explicit scope chain.  envChain must not include\n the global object on it; that's implicit.  It needs to contain the other\n objects that should end up on the script's scope chain."]
         pub unsafe extern "C" fn JS_ExecuteScript2(
@@ -20218,7 +20218,7 @@ pub mod root {
             clasp: *const root::JSClass,
             proto: root::JS::Handle<*mut root::JSObject>,
         ) -> *mut root::JSObject {
-            crate::sys::unimplemented_entry("JS_NewObjectWithoutMetadata")
+            crate::sys::imp::JS_NewObjectWithoutMetadata(cx, clasp, proto)
         }
         pub unsafe extern "C" fn JS_NondeterministicGetWeakMapKeys(
             cx: *mut root::JSContext,
@@ -20257,7 +20257,7 @@ pub mod root {
             dst: root::JS::HandleObject,
             src: root::JS::HandleObject,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_InitializePropertiesFromCompatibleNativeObject")
+            crate::sys::imp::JS_InitializePropertiesFromCompatibleNativeObject(cx, dst, src)
         }
         pub unsafe extern "C" fn JS_WrapPropertyDescriptor(
             cx: *mut root::JSContext,

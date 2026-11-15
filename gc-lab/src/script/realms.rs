@@ -191,6 +191,19 @@ impl Engine<'_> {
         self.enter_realm(previous);
         result.map(|_| k)
     }
+    /// ParseScript (§16.1.5): an early error is a thrown SyntaxError in the running
+    /// realm; unimplemented syntax stays Unsupported, never a SyntaxError pass.
+    pub(super) fn parse_script(&mut self, text: &str) -> Result<Vec<Stmt>> {
+        match super::parser::parse(text) {
+            Ok(program) => Ok(program),
+            Err(error)
+                if error.message.contains("unsupported") || error.message.ends_with("limit") =>
+            {
+                Err(ScriptError::Syntax(error))
+            }
+            Err(error) => self.throw_error("SyntaxError", error.message),
+        }
+    }
     /// test262 `$262.evalScript(source)`: ParseScript + ScriptEvaluation (§16.1.6) in the
     /// running realm (the call switched to the `$262`'s realm).
     pub(super) fn eval_script(&mut self, source: Value) -> Result<Value> {
@@ -198,16 +211,7 @@ impl Engine<'_> {
             return self.throw_error("TypeError", "evalScript source is not a string");
         };
         let text = text.text()?.to_owned();
-        let program = match super::parser::parse(&text) {
-            Ok(program) => program,
-            // Unimplemented syntax stays Unsupported, never a SyntaxError pass.
-            Err(error)
-                if error.message.contains("unsupported") || error.message.ends_with("limit") =>
-            {
-                return Err(ScriptError::Syntax(error))
-            }
-            Err(error) => return self.throw_error("SyntaxError", error.message),
-        };
+        let program = self.parse_script(&text)?;
         let global = self
             .global
             .ok_or(ScriptError::Runtime("no global environment"))?;
