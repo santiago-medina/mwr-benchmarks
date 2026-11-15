@@ -1021,45 +1021,6 @@ impl<'host> Engine<'host> {
         if let Some(v) = self.global_hint_get(name, hint) {
             return Ok((v, None));
         }
-        if matches!(
-            name,
-            "Array"
-                | "Symbol"
-                | "BigInt"
-                | "Proxy"
-                | "Date"
-                | "Promise"
-                | "Map"
-                | "Set"
-                | "WeakMap"
-                | "WeakSet"
-                | "Math"
-                | "JSON"
-                | "eval"
-                | "AggregateError"
-                | "ArrayBuffer"
-                | "SharedArrayBuffer"
-                | "DataView"
-                | "Int8Array"
-                | "Uint8ClampedArray"
-                | "Int16Array"
-                | "Uint16Array"
-                | "Int32Array"
-                | "Uint32Array"
-                | "Float32Array"
-                | "Float64Array"
-                | "BigInt64Array"
-                | "BigUint64Array"
-                | "WeakRef"
-                | "FinalizationRegistry"
-                | "Uint8Array"
-                | "$262"
-        ) && self.global_property(name)?.is_none()
-        {
-            return Err(ScriptError::Unsupported(
-                "standard intrinsic not implemented",
-            ));
-        }
         if let Some(global) = self.global_property(name)? {
             return self
                 .get_member(Value::Object(global), name)
@@ -1238,7 +1199,9 @@ impl<'host> Engine<'host> {
                     }
                     return self.assign_member(Value::Object(id), name.into(), value, false);
                 }
-                return self.set_member(Value::Object(id), name, value);
+                // §9.1.1.2.5 SetMutableBinding step 2 (object record): Set(bindingObject,
+                // N, V, S), so a refused write throws only in strict code.
+                return self.assign_member(Value::Object(id), name.into(), value, strict);
             }
             if let Some(v) = bindings.get(name) {
                 if v.is_none() {

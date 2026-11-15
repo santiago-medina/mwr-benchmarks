@@ -22,6 +22,9 @@ pub(super) enum Reference<'a> {
     Computed(Box<(Value, Value, RefCell<Option<Key>>, bool)>),
     /// `this`, the [[HomeObject]]'s prototype, the key and strictness.
     Super(Value, Option<Id>, Key, bool),
+    /// `super[expr]`: `this`, the home prototype, the unconverted key value (with its
+    /// key once GetValue converted it) and strictness.
+    SuperComputed(Box<(Value, Option<Id>, Value, RefCell<Option<Key>>, bool)>),
 }
 pub(super) fn assignment_skips(op: &str, value: &Value) -> bool {
     match op {
@@ -54,8 +57,13 @@ impl Engine<'_> {
             Expr::Member(base, key) => {
                 let base = self.eval(base, env)?;
                 self.protect(&base)?;
-                let key = self.member_key(&base, Value::String(key.clone().into()))?;
-                Ok(Reference::Property(base, key, self.env_strict(env)))
+                // §13.3.2.1: no RequireObjectCoercible here; GetValue/PutValue's
+                // ToObject throws for a nullish base, after an assignment's RHS.
+                Ok(Reference::Property(
+                    base,
+                    Key::from(key.as_str()),
+                    self.env_strict(env),
+                ))
             }
             Expr::Computed(base, key) => {
                 let base = self.eval(base, env)?;
@@ -69,7 +77,24 @@ impl Engine<'_> {
                     self.env_strict(env),
                 ))))
             }
-            Expr::SuperMember(_) | Expr::SuperComputed(_) => {
+            Expr::SuperComputed(k) => {
+                // §13.3.7.1 + §13.3.7.3 MakeSuperPropertyReference: GetSuperBase after
+                // the expression; ToPropertyKey waits for GetValue/PutValue (§6.2.5.5,
+                // §6.2.5.6), so an assignment's RHS runs first.
+                let this = self.lookup(env, "this")?;
+                self.protect(&this)?;
+                let raw = self.eval(k, env)?;
+                self.protect(&raw)?;
+                let (_, target) = self.super_base(env)?;
+                Ok(Reference::SuperComputed(Box::new((
+                    this,
+                    target,
+                    raw,
+                    RefCell::new(None),
+                    self.env_strict(env),
+                ))))
+            }
+            Expr::SuperMember(_) => {
                 let (this, target, key) = self.super_key(target, env)?;
                 Ok(Reference::Super(this, target, key, self.env_strict(env)))
             }
@@ -107,6 +132,19 @@ impl Engine<'_> {
                 self.get_member(base.clone(), key)
             }
             Reference::Super(this, target, key, _) => self.super_get(this.clone(), *target, key),
+            Reference::SuperComputed(data) => {
+                let (this, target, raw, cached, _) = &**data;
+                let existing = cached.borrow().clone();
+                let key = match existing {
+                    Some(key) => key,
+                    None => {
+                        let key = self.to_key(raw.clone())?;
+                        *cached.borrow_mut() = Some(key.clone());
+                        key
+                    }
+                };
+                self.super_get(this.clone(), *target, &key)
+            }
         }
     }
     pub(super) fn reference_set(&mut self, reference: Reference, value: Value) -> Result<Value> {
@@ -139,6 +177,14 @@ impl Engine<'_> {
                 self.assign_member(base, key, value.clone(), strict)?
             }
             Reference::Super(this, target, key, strict) => {
+                self.super_set(this, target, key, value.clone(), strict)?
+            }
+            Reference::SuperComputed(data) => {
+                let (this, target, raw, cached, strict) = *data;
+                let key = match cached.into_inner() {
+                    Some(key) => key,
+                    None => self.to_key(raw)?,
+                };
                 self.super_set(this, target, key, value.clone(), strict)?
             }
         }

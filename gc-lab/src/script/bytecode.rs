@@ -1466,7 +1466,6 @@ impl Compiler {
             Expr::Member(base, key) if mode == BindMode::Assign => {
                 let obj = self.alloc()?;
                 self.expr(&base, obj)?;
-                self.emit(Insn::CheckCoercible { obj });
                 Leaf::Prop(obj, self.name(&key))
             }
             Expr::Computed(base, key) if mode == BindMode::Assign => {
@@ -1474,13 +1473,9 @@ impl Compiler {
                 self.expr(&base, obj)?;
                 let raw = self.alloc()?;
                 self.expr(&key, raw)?;
-                let key = self.alloc()?;
-                self.emit(Insn::PropKey {
-                    dst: key,
-                    obj,
-                    key: raw,
-                });
-                Leaf::Elem(obj, key)
+                // §6.2.5.6 PutValue: ToObject and ToPropertyKey of the target wait until
+                // the value is stored (after the source GetV / IteratorStep), see put_leaf.
+                Leaf::Elem(obj, raw)
             }
             _ => return Err("vm: assignment target"),
         }))
@@ -1665,9 +1660,16 @@ impl Compiler {
                 });
             }
             Leaf::Prop(obj, name) => {
+                self.emit(Insn::CheckCoercible { obj });
                 self.emit(Insn::SetProp { obj, name, src });
             }
-            Leaf::Elem(obj, key) => {
+            Leaf::Elem(obj, raw) => {
+                let key = self.alloc()?;
+                self.emit(Insn::PropKey {
+                    dst: key,
+                    obj,
+                    key: raw,
+                });
                 self.emit(Insn::SetElem { obj, key, src });
             }
         }
@@ -2596,6 +2598,8 @@ impl Compiler {
         match (op, x) {
             ("delete", Expr::Member(base, key)) => {
                 let obj = self.operand(base, &[])?;
+                // §13.5.1.2 step 5.b: ToObject(ref.[[Base]]).
+                self.emit(Insn::CheckCoercible { obj });
                 let name = self.name(key);
                 self.emit(Insn::DeleteProp { dst, obj, name });
             }
@@ -2703,9 +2707,11 @@ impl Compiler {
                 Ok(())
             }
             Expr::Member(base, key) => {
+                // §13.15.2 step 1.b + §6.2.5.6 PutValue step 3.a: the base's ToObject
+                // (the TypeError for nullish) comes after the RHS is evaluated.
                 let obj = self.operand(base, &[value])?;
-                self.emit(Insn::CheckCoercible { obj });
                 let src = self.operand(value, &[])?;
+                self.emit(Insn::CheckCoercible { obj });
                 let name = self.name(key);
                 self.emit(Insn::SetProp { obj, name, src });
                 if src != dst {

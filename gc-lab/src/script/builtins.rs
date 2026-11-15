@@ -785,12 +785,12 @@ impl Engine<'_> {
             .collect();
         for (n, v) in entries {
             let declared = matches!(self.objects.get(&env),Some(Object::Environment{bindings,..})if bindings.contains_key(&n));
-            if !declared {
-                if matches!(n.as_str(), "undefined" | "NaN" | "Infinity" | "this") {
-                    self.initialize(env, &n, v.clone())?;
-                } else {
-                    self.mutable_binding(env, &n, v.clone())?;
-                }
+            // §9.1.1.4 / §19.1-19.3: the global object's value and function properties
+            // are bindings of the global Environment Record's object record only, so
+            // `delete JSON` removes them and a sloppy `NaN = 1` fails silently
+            // (non-writable property). Only `this` stays declarative here.
+            if !declared && n == "this" {
+                self.initialize(env, &n, v.clone())?;
             }
             if n != "this" {
                 if matches!(n.as_str(), "undefined" | "NaN" | "Infinity") {

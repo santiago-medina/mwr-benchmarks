@@ -417,6 +417,16 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Smoke: built-ins/Atomics 389/389; a 600-case buffer sample has 1 failure that already failed in full52. cargo test passes, including `tests/agents.rs`.
 - Full run t262-full53 (VM): 47458/47708 = 99.5%, +114 (gained 114, lost 0). Unsupported fell 217 -> 108; the largest remaining buckets are "unsupported character" (20 + 3 strict) and "strict unsupported property key" (12).
 
+### Eval scopes and reference evaluation order (checkpoint 49, 2026-11-15)
+
+- Sloppy functions whose parameter list has expressions and mentions `eval` get a separate calleeEnv as the parent of the parameter environment (§10.2.11 step 20). A direct eval in a default declares its `var`s there (§19.2.1.3), not in the enclosing scope (8 eval-code/direct/arrow-fn-*-declare-arguments-assign cases).
+- Global intrinsics are only object-record bindings on the global object (§9.1.1.4, §19.1-19.3); only `this` keeps a declarative binding. Assignment through an object-record binding is PutValue with the code's strictness (§9.1.1.2.5), so sloppy `NaN = 1` / `var undefined = 1` fail silently. The "standard intrinsic not implemented" Unsupported fallback is gone (all 31 names are installed). This fixed S8.5_A10_T2, S8.5_A4_T2, S8.1_A3_T2 and the 3 Object.{entries,values,getOwnPropertyDescriptors} tamper-with-global-object cases.
+- PutValue defers ToObject and ToPropertyKey of the target (§6.2.5.6): `a.b = rhs` and `a[k] = rhs` run the RHS before the null check and the key conversion. Destructuring targets (VM `Leaf::Elem` now holds the raw key, `put_leaf` converts it) wait until after the source GetV / IteratorStep. `super[k]` (new `Reference::SuperComputed`) does the same (§13.3.7). `delete a.b` with a nullish base throws a TypeError (§13.5.1.2 step 5.b).
+- `var` binding patterns (statements and for-in/of heads) are BindingInitialization with environment undefined, i.e. ResolveBinding + PutValue (§14.3.2.1, §14.7.5.7), so a `with` object sees the target name before the source is read.
+- Callgrind (instructions, 8493270 vs this checkpoint): `vm-bench/global_intrinsics.js` (Math/Array/undefined/NaN/Object in a hot loop) 499.7M -> 516.2M (+3.3%), fib_small 34.23M -> 34.02M (-0.6%), closures 1629.4M -> 1631.2M (+0.1%). Intrinsics now resolve through the global object's properties instead of a declarative slot.
+- Smoke: eval/function/arguments directories 1621/1622 (1 pre-existing nesting limit); 1500 neighbouring cases (assignment, destructuring, delete, super, types, global-code, with, for-in/of, class elements) 1494 passed, 6 unsupported (pre-existing), 0 failed.
+- Full run t262-full57 (VM): 47640/47708 = 99.9%, +23 vs full56, lost 0; failed 17, unsupported 51. cargo test passes. This is the recorded baseline.
+
 ### Syntax residue (checkpoint 48, 2026-11-15)
 
 - Eight parser root causes behind 32 "syntax:" unsupported cases:
@@ -429,7 +439,7 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
   7. In sloppy code, where only a Statement is allowed (if, loop and with bodies, labelled items), `let` followed by a line terminator (not `[`) is an identifier expression statement, ended by ASI (§14.7, §14.13).
   8. A duplicate `__proto__` (`Property::CoverDuplicatePrototype`) is allowed when the literal is reparsed as an ObjectAssignmentPattern, and is an early error otherwise (§13.2.5.1).
 - Smoke: 32/32 residue cases; 3738 neighbouring cases with no new non-passes.
-- Full run t262-full56 (VM): 47617/47708 = 99.8%, +32 vs full55, lost 0; failed 40, unsupported 51. cargo test 206/0. This is the recorded baseline.
+- Full run t262-full56 (VM): 47617/47708 = 99.8%, +32 vs full55, lost 0; failed 40, unsupported 51. cargo test 206/0. This was the recorded baseline until checkpoint 49.
 - Left: 11 import-text/import-bytes module cases (separate proposals) and 4 nesting-limit cases (roadmap B).
 
 ### Decorators and auto-accessors (checkpoint 47, 2026-11-15)

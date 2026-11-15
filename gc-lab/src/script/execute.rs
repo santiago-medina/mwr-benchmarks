@@ -404,12 +404,14 @@ impl Engine<'_> {
                         self.eval(init, env)?
                     };
                     self.protect(&value)?;
-                    let target = if kind == "var" {
-                        self.var_environment(env)?
+                    if kind == "var" {
+                        // §14.3.2.1: `var` BindingInitialization runs with environment
+                        // undefined, so each name is ResolveBinding + PutValue (and a
+                        // `with` object can intercept it, before the source is read).
+                        self.assign_pattern(pattern, value.clone(), env)?;
                     } else {
-                        env
-                    };
-                    self.bind_pattern(pattern, value.clone(), env, target)?;
+                        self.bind_pattern(pattern, value.clone(), env, env)?;
+                    }
                     if kind == "using" {
                         // §14.3.1.2: AddDisposableResource(scope, value, sync-dispose).
                         let scope = self.lookup(env, "%dispose")?;
@@ -656,15 +658,12 @@ impl Engine<'_> {
                         e.protect(&Value::Object(id))?;
                         id
                     };
-                    if kind == "assignment" {
+                    if kind == "assignment" || kind == "var" {
+                        // §14.7.5.7 ForIn/OfBodyEvaluation step 6.g: a `var` binding is
+                        // BindingInitialization with environment undefined (PutValue).
                         e.assign_pattern(binding, value.clone(), local)?;
                     } else {
-                        let target = if kind == "var" {
-                            e.var_environment(env)?
-                        } else {
-                            local
-                        };
-                        e.bind_pattern(binding, value.clone(), local, target)?;
+                        e.bind_pattern(binding, value.clone(), local, local)?;
                     }
                     if kind != "using" {
                         return e.statement(body, local, can_return);
@@ -1611,7 +1610,12 @@ impl Engine<'_> {
         }
         if op == "delete" {
             let target = match x {
-                Expr::Member(r, k) => Some((self.eval(r, env)?, Key::from(k))),
+                // §13.5.1.2 step 5.b: ToObject(ref.[[Base]]), a TypeError for nullish.
+                Expr::Member(r, k) => {
+                    let r = self.eval(r, env)?;
+                    let key = self.member_key(&r, Value::String(k.clone().into()))?;
+                    Some((r, key))
+                }
                 Expr::Computed(r, k) => {
                     let r = self.eval(r, env)?;
                     self.protect(&r)?;

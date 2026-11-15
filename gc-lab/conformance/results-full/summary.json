@@ -1,7 +1,7 @@
 {
   "revision": "e4fbf57745c6aae3d1f12f181ecef78b1665d812",
   "archive_sha256": "01b5c93c8960a549375fd9d8085d06aadcc96cd29cf6bc137eff32ac98d592eb",
-  "implementation_sha256": "6b4de4be1e0ea748fa0ac9867d162518df17e2808b728e7e38f6616bff008561",
+  "implementation_sha256": "f17fdae8b12e0d1d91b0698550b23f6651f45b4c39bb2f0aaa54576dbb94d68c",
   "runner_sha256": "0c78213a78a5fc743c6085154da598639acdff8bb6cdfbb2b32d1688939c9965",
   "new_failures": [
     "built-ins/AsyncFunction/AsyncFunction-is-subclass.js",
@@ -9,9 +9,6 @@
     "built-ins/Function/prototype/toString/S15.3.4.2_A11.js",
     "built-ins/Function/prototype/toString/method-computed-property-name.js",
     "built-ins/GeneratorPrototype/constructor.js",
-    "built-ins/Object/entries/tamper-with-global-object.js",
-    "built-ins/Object/getOwnPropertyDescriptors/tamper-with-global-object.js",
-    "built-ins/Object/values/tamper-with-global-object.js",
     "built-ins/Promise/try/avoids-wrap-for-subclass.js",
     "built-ins/Promise/try/avoids-wrap.js",
     "built-ins/RegExp/named-groups/unicode-match.js",
@@ -19,38 +16,18 @@
     "built-ins/TypedArray/prototype/byteLength/resizable-buffer-assorted.js",
     "built-ins/TypedArray/prototype/length/resizable-buffer-assorted.js",
     "built-ins/TypedArrayConstructors/ctors/typedarray-arg/throw-type-error-before-custom-proto-access.js",
-    "language/destructuring/binding/keyed-destructuring-property-reference-target-evaluation-order-with-bindings.js",
-    "language/eval-code/direct/arrow-fn-body-cntns-arguments-func-decl-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
-    "language/eval-code/direct/arrow-fn-body-cntns-arguments-func-decl-arrow-func-declare-arguments-assign.js",
-    "language/eval-code/direct/arrow-fn-body-cntns-arguments-lex-bind-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
-    "language/eval-code/direct/arrow-fn-body-cntns-arguments-lex-bind-arrow-func-declare-arguments-assign.js",
-    "language/eval-code/direct/arrow-fn-body-cntns-arguments-var-bind-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
-    "language/eval-code/direct/arrow-fn-body-cntns-arguments-var-bind-arrow-func-declare-arguments-assign.js",
-    "language/eval-code/direct/arrow-fn-no-pre-existing-arguments-bindings-are-present-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
-    "language/eval-code/direct/arrow-fn-no-pre-existing-arguments-bindings-are-present-arrow-func-declare-arguments-assign.js",
-    "language/expressions/assignment/destructuring/iterator-destructuring-property-reference-target-evaluation-order.js",
-    "language/expressions/assignment/destructuring/keyed-destructuring-property-reference-target-evaluation-order.js",
-    "language/expressions/assignment/target-member-identifier-reference-null.js",
-    "language/expressions/assignment/target-member-identifier-reference-undefined.js",
-    "language/expressions/assignment/target-super-computed-reference.js",
-    "language/expressions/delete/11.4.1-4.a-8.js",
-    "language/expressions/delete/member-identifier-reference-null.js",
-    "language/expressions/delete/member-identifier-reference-undefined.js",
     "language/global-code/decl-lex-restricted-global.js",
     "language/statements/async-generator/return-undefined-implicit-and-explicit.js",
     "language/statements/async-generator/yield-star-return-then-getter-ticks.js",
     "language/statements/try/completion-values.js",
-    "language/statements/with/get-mutable-binding-binding-deleted-in-get-unscopables-strict-mode.js",
-    "language/types/number/S8.5_A10_T2.js",
-    "language/types/number/S8.5_A4_T2.js",
-    "language/types/undefined/S8.1_A3_T2.js"
+    "language/statements/with/get-mutable-binding-binding-deleted-in-get-unscopables-strict-mode.js"
   ],
   "variant": "scripts: strict prefix, or sloppy for noStrict/raw; modules (full profile): includes as scripts, then the module record; original test body",
   "profile": "full",
   "retry_timeouts": {
     "workers": 2,
-    "timeouts": 3,
-    "passed": 3
+    "timeouts": 6,
+    "passed": 6
   },
   "scopes": [
     "built-ins",
@@ -58,11 +35,11 @@
   ],
   "total": 47708,
   "counts": {
-    "passed": 47617,
+    "passed": 47640,
     "unsupported": 51,
-    "failed": 40
+    "failed": 17
   },
-  "assertions": 1259533,
+  "assertions": 1259536,
   "regressions": [],
   "unsupported_reasons": {
     "ordinary reflection on host objects": 11,
@@ -112,30 +89,6 @@
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 943, serial: 1243 })) })); expected None",
       "assertions": 9,
-      "cleanup": true
-    },
-    {
-      "path": "built-ins/Object/entries/tamper-with-global-object.js",
-      "source_sha256": "4f0a9bd02c8733a08a30d313aff90d98a20c78a52c19976b22b0b86892ffdd31",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 902, serial: 1015 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "built-ins/Object/getOwnPropertyDescriptors/tamper-with-global-object.js",
-      "source_sha256": "7f26dd5d6a7e8f58d4be4298f910ff01c8def8d5d295dd5938123486f3ba2b77",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 898, serial: 1004 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "built-ins/Object/values/tamper-with-global-object.js",
-      "source_sha256": "f6ba4fe0aa65d7e7eccd05aa36bbe029e85dc6331387d9dbcf1da425dd146d03",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 902, serial: 1015 })) })); expected None",
-      "assertions": 1,
       "cleanup": true
     },
     {
@@ -195,142 +148,6 @@
       "cleanup": true
     },
     {
-      "path": "language/destructuring/binding/keyed-destructuring-property-reference-target-evaluation-order-with-bindings.js",
-      "source_sha256": "4275cb382a19e0d2042e2e7da02f9e0203b5db4ec7367f77aae7626e8b3c65e4",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 909, serial: 1099 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/eval-code/direct/arrow-fn-body-cntns-arguments-func-decl-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
-      "source_sha256": "0ffff8e2ef3adc4c98d6c8da624872c513636f6acbd49bce4943ba0d01fe0026",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 905, serial: 1027 })) })); expected None",
-      "assertions": 4,
-      "cleanup": true
-    },
-    {
-      "path": "language/eval-code/direct/arrow-fn-body-cntns-arguments-func-decl-arrow-func-declare-arguments-assign.js",
-      "source_sha256": "b4c5fc945ea60524c3e45986a7412bcf298b98eeb01348a8023b3a47f6b4c6a9",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 902, serial: 1016 })) })); expected None",
-      "assertions": 3,
-      "cleanup": true
-    },
-    {
-      "path": "language/eval-code/direct/arrow-fn-body-cntns-arguments-lex-bind-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
-      "source_sha256": "39f28f268b0c69aceb022bef74c2575daedc4781fef447a6702c688ef916e8b2",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 903, serial: 1022 })) })); expected None",
-      "assertions": 4,
-      "cleanup": true
-    },
-    {
-      "path": "language/eval-code/direct/arrow-fn-body-cntns-arguments-lex-bind-arrow-func-declare-arguments-assign.js",
-      "source_sha256": "177cb04c0178b869aff8374c4c1454455740fcffce0eda3ec8a24c8cf4713270",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1011 })) })); expected None",
-      "assertions": 3,
-      "cleanup": true
-    },
-    {
-      "path": "language/eval-code/direct/arrow-fn-body-cntns-arguments-var-bind-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
-      "source_sha256": "53c63ee086de34c0273a5d797aca2ef6749361678a5003524a35c9635f9653e2",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 903, serial: 1022 })) })); expected None",
-      "assertions": 4,
-      "cleanup": true
-    },
-    {
-      "path": "language/eval-code/direct/arrow-fn-body-cntns-arguments-var-bind-arrow-func-declare-arguments-assign.js",
-      "source_sha256": "82ff133b39849ec8664517ebd8ccb6a5d18b709c8885902fba0a1800a2fd4346",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1011 })) })); expected None",
-      "assertions": 3,
-      "cleanup": true
-    },
-    {
-      "path": "language/eval-code/direct/arrow-fn-no-pre-existing-arguments-bindings-are-present-arrow-func-declare-arguments-assign-incl-def-param-arrow-arguments.js",
-      "source_sha256": "808d0ddd24826a5f0071904d40ec3bdb870ecf7f57a265a8e1d689a741c3f007",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 901, serial: 1015 })) })); expected None",
-      "assertions": 3,
-      "cleanup": true
-    },
-    {
-      "path": "language/eval-code/direct/arrow-fn-no-pre-existing-arguments-bindings-are-present-arrow-func-declare-arguments-assign.js",
-      "source_sha256": "122dcbcc4bbca61c77a234d134fdb145259a77fc0d30e9e2d497614b10efb4a2",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 900, serial: 1011 })) })); expected None",
-      "assertions": 3,
-      "cleanup": true
-    },
-    {
-      "path": "language/expressions/assignment/destructuring/iterator-destructuring-property-reference-target-evaluation-order.js",
-      "source_sha256": "7c1c0c18ff337cc30318cb7cb12dbd6d63e8bfb2cddea54ac77aed0cc65c2bbf",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 928, serial: 1123 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/expressions/assignment/destructuring/keyed-destructuring-property-reference-target-evaluation-order.js",
-      "source_sha256": "cce2bf12e70f0ae3e97e97ba27f56c7ea24bdfc0c9a9598b8c63144060e742a3",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 926, serial: 1115 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/expressions/assignment/target-member-identifier-reference-null.js",
-      "source_sha256": "ea88b520fe6948f1ccfb3d29933541519ca81aa24b4eb1ce9f5073f63e3cc84c",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1011 })) })); expected None",
-      "assertions": 2,
-      "cleanup": true
-    },
-    {
-      "path": "language/expressions/assignment/target-member-identifier-reference-undefined.js",
-      "source_sha256": "5c7621a7c334acacf2fa52c7843e666d6076953b07f00f844ecf2d5a44d42810",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 899, serial: 1011 })) })); expected None",
-      "assertions": 2,
-      "cleanup": true
-    },
-    {
-      "path": "language/expressions/assignment/target-super-computed-reference.js",
-      "source_sha256": "f92f21ff24a525cf95b9fb1d4d7ac4876598c5cead666c10e34df7517f4cab93",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 951, serial: 1185 })) })); expected None",
-      "assertions": 2,
-      "cleanup": true
-    },
-    {
-      "path": "language/expressions/delete/11.4.1-4.a-8.js",
-      "source_sha256": "38e999a441859526e51ef51b4e29115e8c74a4ddd0e669bf08d1bbce7b62c5b9",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 896, serial: 996 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/expressions/delete/member-identifier-reference-null.js",
-      "source_sha256": "59759af7ecaa077b415716ee47689e2df02042fc35f801201b1fd36a98cfeebd",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 898, serial: 1005 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/expressions/delete/member-identifier-reference-undefined.js",
-      "source_sha256": "03ff124899a1604c019257a7eeaebbf44d24807c13e75340ba847cdbd565e197",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 898, serial: 1005 })) })); expected None",
-      "assertions": 1,
-      "cleanup": true
-    },
-    {
       "path": "language/global-code/decl-lex-restricted-global.js",
       "source_sha256": "54144224daf116d80361873263516e7376f0d6bb7aec6d144099d725fcae6052",
       "status": "failed",
@@ -368,30 +185,6 @@
       "status": "failed",
       "reason": "Err(Thrown(Exception { name: Some(\"Test262Error\"), message: \"assertion failed\", value: Object(Js(Handle { heap: 2, index: 902, serial: 1027 })) })); expected None",
       "assertions": 1,
-      "cleanup": true
-    },
-    {
-      "path": "language/types/number/S8.5_A10_T2.js",
-      "source_sha256": "3eebe4e2fde43f1398a3818f4073f425b668f9a960429969e94bec4186d038b4",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"assignment refused\", value: Object(Js(Handle { heap: 2, index: 896, serial: 994 })) })); expected None",
-      "assertions": 0,
-      "cleanup": true
-    },
-    {
-      "path": "language/types/number/S8.5_A4_T2.js",
-      "source_sha256": "da3f3da2e08943bd772bcd955e8a37af3cd3cfd35c2bdc9c4a12dc515045695b",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"assignment refused\", value: Object(Js(Handle { heap: 2, index: 896, serial: 994 })) })); expected None",
-      "assertions": 0,
-      "cleanup": true
-    },
-    {
-      "path": "language/types/undefined/S8.1_A3_T2.js",
-      "source_sha256": "4ae4d37ef2473f26a3af2363cb7a6aee9767d8b7cccf9e64de83f381d3870712",
-      "status": "failed",
-      "reason": "Err(Thrown(Exception { name: Some(\"TypeError\"), message: \"assignment refused\", value: Object(Js(Handle { heap: 2, index: 896, serial: 994 })) })); expected None",
-      "assertions": 0,
       "cleanup": true
     }
   ],

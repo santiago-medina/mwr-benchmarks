@@ -34,12 +34,28 @@ impl Engine<'_> {
         if kind == FunctionKind::DerivedConstructor {
             declarations.push(Stmt::Let("this".into(), Expr::Undefined));
         }
-        let parameters = self.new_environment(Some(parent), &declarations, false)?;
-        self.protect(&Value::Object(parameters))?;
         let sloppy = matches!(body.first(), Some(Stmt::Sloppy));
         let simple = params.iter().all(|p| {
             !p.rest && p.default.is_none() && matches!(p.binding, parser::Pattern::Name(_))
         });
+        // §10.2.11 FunctionDeclarationInstantiation step 20: in sloppy code with
+        // parameter expressions, the parameters live in a declarative environment
+        // whose parent (calleeEnv) is the function's VariableEnvironment, so a sloppy
+        // direct eval in the formal parameter list declares its `var`s there
+        // (§19.2.1.3 EvalDeclarationInstantiation), outside the parameter scope and
+        // never in the enclosing (e.g. global) scope.
+        let parent = if sloppy
+            && !simple
+            && super::ast_scan::any(&[&params], |n| super::ast_scan::is_name(n, "eval"))
+        {
+            let callee = self.new_environment(Some(parent), &[], true)?;
+            self.protect(&Value::Object(callee))?;
+            callee
+        } else {
+            parent
+        };
+        let parameters = self.new_environment(Some(parent), &declarations, false)?;
+        self.protect(&Value::Object(parameters))?;
         let mut mapped = None;
         self.set_env_strict(parameters, !sloppy);
         // Sloppy functions coerce `this`: nullish → global object, primitives → wrappers.
