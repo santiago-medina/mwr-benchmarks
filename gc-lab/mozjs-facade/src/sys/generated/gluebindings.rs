@@ -1420,7 +1420,7 @@ pub mod root {
             col: *mut u32,
             dest: root::JS::MutableHandleValue,
         ) -> bool {
-            crate::sys::unimplemented_entry("PendingExceptionStackInfo")
+            crate::sys::imp::PendingExceptionStackInfo(cx, callback, message_target, filename_target, line, col, dest)
         }
         pub unsafe extern "C" fn SetDataPropertyDescriptor(
             desc: root::JS::MutableHandle<root::JS::PropertyDescriptor>,

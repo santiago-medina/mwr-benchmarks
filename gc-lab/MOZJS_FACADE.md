@@ -287,7 +287,7 @@ dequeue and the run).
 
 ### Classic scripts and error reports
 
-`imp/scripts.rs`, 13 entry points: what Servo's `evaluate_js_on_global`
+`imp/scripts.rs`, 14 entry points: what Servo's `evaluate_js_on_global`
 (components/script/dom/globalscope.rs) and `ErrorInfo::from_native_error`
 (dom/bindings/error.rs) call.
 
@@ -324,6 +324,16 @@ metadata. `JS_InitializePropertiesFromCompatibleNativeObject` defines each
 own property of the holder on the fresh object with its full descriptor, in
 [[OwnPropertyKeys]] order.
 
+The glue's `PendingExceptionStackInfo`, which Servo's
+`error_info_from_pending_exception` calls to report an uncaught exception,
+steals the pending exception and describes it as SpiderMonkey's
+`JS::ErrorReportBuilder::init` does: an [[ErrorData]] object gives the
+`JS_ErrorFromException` report (bare message, empty filename, line 0,
+column 1); any other value gives "uncaught exception: " + ToString(value)
+(SymbolDescriptiveString for a Symbol, "unknown (can't convert to string)"
+when ToString throws) with no filename, because the engine records no saved
+frame for it.
+
 Test: `tests/scripts.rs`.
 
 ### GC policy
@@ -344,7 +354,7 @@ rooting bugs into immediate, reproducible failures. It is far too slow for
 pages: switch the facade to `GcPolicy::Threshold` before C2 or any
 performance measurement (see "Next (C1)").
 
-245 entry points are implemented in total.
+246 entry points are implemented in total.
 
 ## C1 result (servoshell links)
 

@@ -16,13 +16,13 @@
 use std::cell::Cell;
 use std::collections::hash_map::Entry;
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_uint};
+use std::os::raw::{c_char, c_uint, c_void};
 use std::ptr;
 
-use gc_lab::script::{JsValue, ScriptError};
+use gc_lab::script::{JsValue, ObjectId, ScriptError};
 
 use super::context::{context, Context};
-use super::natives::{handle_object, to_jsval};
+use super::natives::{from_jsval, handle_object, to_jsval};
 use super::objects::engine_result;
 use crate::sys::jsapi as root;
 use crate::sys::jsapi::JS;
@@ -330,17 +330,27 @@ pub unsafe fn JS_ErrorFromException(
 ) -> bool {
     let context = unsafe { context(cx) };
     let id = unsafe { handle_object(obj) };
-    let found = context.heap.with_engine(|engine| {
+    let Some(report) = cached_error_report(context, id) else {
+        return false;
+    };
+    // SAFETY: the caller's live BorrowedErrorReport.
+    unsafe {
+        (*error_report).owner_.data = *obj.ptr;
+        (*error_report).report_ = report;
+    }
+    true
+}
+
+/// The cached report of an [[ErrorData]] object, or None for any other object.
+fn cached_error_report(context: &Context, id: ObjectId) -> Option<*mut root::JSErrorReport> {
+    let (class, message) = context.heap.with_engine(|engine| {
         let class = engine.error_class(id)?;
         let message = match engine.own_property(id, "message") {
             Ok(Some(d)) => d.value.as_ref().and_then(JsValue::as_string),
             _ => None,
         };
         Some((class, message.unwrap_or_default()))
-    });
-    let Some((class, message)) = found else {
-        return false;
-    };
+    })?;
     let mut state = context.state.borrow_mut();
     let cell = match state.error_reports.entry(id) {
         Entry::Occupied(e) => e.into_mut(),
@@ -361,11 +371,83 @@ pub unsafe fn JS_ErrorFromException(
             }))
         }
     };
-    let report = &mut cell.report as *mut root::JSErrorReport;
-    // SAFETY: the caller's live BorrowedErrorReport.
+    Some(&mut cell.report as *mut root::JSErrorReport)
+}
+
+/// Glue `PendingExceptionStackInfo` (jsglue.cpp): steals the pending
+/// exception and describes it as `JS::ErrorReportBuilder::init`
+/// (js/src/vm/ErrorObject.cpp) does with side effects allowed:
+///
+/// - an [[ErrorData]] object gives its report (`JS_ErrorFromException`);
+/// - any other value gives the JSMSG_UNCAUGHT_EXCEPTION report
+///   "uncaught exception: " + ToString(value), where a Symbol uses
+///   SymbolDescriptiveString (ECMA-262 §20.4.3.3.1) and a ToString that
+///   throws gives "unknown (can't convert to string)" with the exception
+///   dropped. That report's position comes from the saved stack frame,
+///   which the engine does not record, so it has no filename (the callback
+///   is not called for it), line 0 and column 1.
+///
+/// The message and filename go to `callback`; `dest` gets the exception.
+/// Returns false when no exception is pending.
+pub unsafe fn PendingExceptionStackInfo(
+    cx: *mut root::JSContext,
+    callback: crate::glue::StringCallback,
+    message_target: *mut c_void,
+    filename_target: *mut c_void,
+    line: *mut u32,
+    col: *mut u32,
+    dest: JS::MutableHandleValue,
+) -> bool {
+    let context = unsafe { context(cx) };
+    let Some(exception) = context.state.borrow_mut().pending_exception.take() else {
+        return false;
+    };
+    let value = unsafe { from_jsval(exception) };
+    let report = value
+        .as_object()
+        .and_then(|id| cached_error_report(context, id));
+    let (message, filename, lineno, column) = match report {
+        Some(report) => {
+            // SAFETY: a boxed report owned by the context's state, whose
+            // strings live as long as it does.
+            let report = unsafe { &*report };
+            let base = &report._base;
+            let message = unsafe { CStr::from_ptr(base.message_.data_) }.to_owned();
+            let filename = unsafe { CStr::from_ptr(base.filename.data_) }.to_owned();
+            (message, Some(filename), base.lineno, base.column._base)
+        }
+        None => {
+            let text = context.heap.with_engine(|engine| match value.as_symbol() {
+                Some(symbol) => Ok(engine.symbol_descriptive_string(symbol)),
+                None => engine.to_string_value(&value),
+            });
+            // A throwing ToString leaves its exception pending in
+            // SpiderMonkey's init until clearPendingException; here the
+            // engine's error is simply dropped.
+            let text = text.unwrap_or_else(|_| "unknown (can't convert to string)".to_owned());
+            (c_text(&format!("uncaught exception: {text}")), None, 0, 1)
+        }
+    };
+    if let Some(callback) = callback {
+        let bytes = message.as_bytes();
+        // SAFETY: the glue's StringCallback contract: a pointer and length.
+        unsafe { callback(bytes.as_ptr().cast(), bytes.len(), message_target) };
+        if let Some(filename) = filename {
+            let bytes = filename.as_bytes();
+            unsafe { callback(bytes.as_ptr().cast(), bytes.len(), filename_target) };
+        }
+    }
+    // SAFETY: the caller's out-parameters.
     unsafe {
-        (*error_report).owner_.data = *obj.ptr;
-        (*error_report).report_ = report;
+        *line = lineno;
+        *col = column;
+        *dest.ptr = exception;
     }
     true
+}
+
+/// UTF-8 text as a C string, cut at the first NUL as `strlen` would.
+fn c_text(text: &str) -> CString {
+    let end = text.find('\0').unwrap_or(text.len());
+    CString::new(&text[..end]).unwrap_or_default()
 }

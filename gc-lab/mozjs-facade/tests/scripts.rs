@@ -2,20 +2,22 @@
 //! options, compile, execute, script privates, the hidden scripted caller and
 //! the error report of an uncaught exception, plus the unforgeable-holder copy
 //! of dom/bindings (`src/sys/imp/scripts.rs`, `src/sys/imp/props.rs`).
-use mozjs::glue::{DeleteCompileOptions, JS_GetScriptPrivate, NewCompileOptions};
+use mozjs::glue::{
+    DeleteCompileOptions, JS_GetScriptPrivate, NewCompileOptions, PendingExceptionStackInfo,
+};
 use mozjs::jsapi::mozilla::Utf8Unit;
 use mozjs::jsapi::{
     CompartmentSpecifier, EnterRealm, JSClass, JSContext, JSErrorReport, JSExnType, JSObject,
     JSScript, JS_ClearPendingException, JS_ErrorFromException, JS_ExecuteScript,
     JS_GetPendingException, JS_GetPropertyById, JS_InitializePropertiesFromCompatibleNativeObject,
-    JS_NewContext, JS_NewGlobalObject, JS_NewObjectWithoutMetadata, OnNewGlobalHookOption, JS,
-    JSCLASS_GLOBAL_SLOT_COUNT, JSCLASS_IS_GLOBAL, JSCLASS_RESERVED_SLOTS_MASK,
-    JSCLASS_RESERVED_SLOTS_SHIFT,
+    JS_IsExceptionPending, JS_NewContext, JS_NewGlobalObject, JS_NewObjectWithoutMetadata,
+    OnNewGlobalHookOption, JS, JSCLASS_GLOBAL_SLOT_COUNT, JSCLASS_IS_GLOBAL,
+    JSCLASS_RESERVED_SLOTS_MASK, JSCLASS_RESERVED_SLOTS_SHIFT,
 };
 use mozjs::jsid::VoidId;
 use mozjs::jsval::{Int32Value, JSVal, UndefinedValue};
 use mozjs::rust::RealmOptions;
-use std::ffi::CStr;
+use std::ffi::{c_char, c_void, CStr};
 use std::marker::PhantomData;
 use std::ptr;
 
@@ -85,6 +87,31 @@ unsafe fn take_exception(cx: *mut JSContext) -> *mut JSObject {
     unsafe { JS_ClearPendingException(cx) };
     assert!(exc.is_object());
     exc.to_object()
+}
+
+unsafe extern "C" fn store(ptr: *const c_char, len: usize, target: *mut c_void) {
+    let bytes = unsafe { std::slice::from_raw_parts(ptr.cast::<u8>(), len) };
+    let target = unsafe { &mut *target.cast::<Option<String>>() };
+    *target = Some(String::from_utf8(bytes.to_vec()).unwrap());
+}
+
+/// PendingExceptionStackInfo's (message, filename, line, column, exception).
+unsafe fn stack_info(cx: *mut JSContext) -> Option<(String, Option<String>, u32, u32, JSVal)> {
+    let (mut message, mut filename) = (None::<String>, None::<String>);
+    let (mut line, mut col) = (u32::MAX, u32::MAX);
+    let mut exc = UndefinedValue();
+    let ok = unsafe {
+        PendingExceptionStackInfo(
+            cx,
+            Some(store),
+            (&mut message as *mut Option<String>).cast(),
+            (&mut filename as *mut Option<String>).cast(),
+            &mut line,
+            &mut col,
+            handle_mut(&mut exc),
+        )
+    };
+    ok.then(|| (message.unwrap(), filename, line, col, exc))
 }
 
 /// (message, filename, exnType) of an error object's report.
@@ -174,6 +201,32 @@ fn compile_execute_and_error_reports() {
         assert!(evaluate(cx, "throw {}").is_none());
         let exc = take_exception(cx);
         assert!(report(cx, exc).is_none());
+
+        // Servo's error_info_from_exception_stack: an error object gives its
+        // report and stays the exception; the pending exception is stolen.
+        assert!(stack_info(cx).is_none());
+        assert!(evaluate(cx, "throw new TypeError('bad thing')").is_none());
+        let (message, filename, line, col, exc) = stack_info(cx).unwrap();
+        assert_eq!(message, "bad thing");
+        assert_eq!(filename.as_deref(), Some(""));
+        assert_eq!((line, col), (0, 1));
+        assert!(exc.is_object());
+        assert_eq!(report(cx, exc.to_object()).unwrap().0, "bad thing");
+        assert!(!JS_IsExceptionPending(cx));
+        // Non-errors: "uncaught exception: " + ToString, with no filename.
+        assert!(evaluate(cx, "throw 'oops'").is_none());
+        let (message, filename, _, _, exc) = stack_info(cx).unwrap();
+        assert_eq!(message, "uncaught exception: oops");
+        assert!(filename.is_none());
+        assert!(exc.is_string());
+        assert!(evaluate(cx, "throw Symbol('s')").is_none());
+        assert_eq!(stack_info(cx).unwrap().0, "uncaught exception: Symbol(s)");
+        assert!(evaluate(cx, "throw { toString() { throw 1; } }").is_none());
+        assert_eq!(
+            stack_info(cx).unwrap().0,
+            "uncaught exception: unknown (can't convert to string)"
+        );
+        assert!(!JS_IsExceptionPending(cx));
 
         // Unforgeable holders: every own property, accessors included,
         // lands on the fresh object.

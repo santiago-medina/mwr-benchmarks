@@ -336,6 +336,12 @@ impl Engine<'_> {
         self.data(object.0).ok().and_then(|d| d.error_class.clone())
     }
 
+    /// SymbolDescriptiveString (§20.4.3.3.1) of the symbol value `id`:
+    /// "Symbol(" + description + ")".
+    pub fn symbol_descriptive_string(&self, id: u64) -> String {
+        self.symbol_string(id)
+    }
+
     // ----- rooting -----
 
     pub fn root(&mut self, object: ObjectId) -> Result<ExternalRoot> {

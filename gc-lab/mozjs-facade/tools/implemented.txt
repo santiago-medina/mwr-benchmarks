@@ -243,3 +243,4 @@ JS_GetScriptPrivate
 HideScriptedCaller
 UnhideScriptedCaller
 JS_ErrorFromException
+PendingExceptionStackInfo
