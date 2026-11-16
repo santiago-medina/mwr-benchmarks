@@ -117,6 +117,22 @@ yet", so the stubs the probe hits, in order, are the next entry points to
 implement. Both results go in the `servo-facade-c0` artifact
 (`c0-results/`, `c1-results/`).
 
+At ff34561 the startup probe passed: exit 0, a rendered screenshot, no stub
+hit. The only error is "Debugger is not defined": Servo's devtools debugger
+global evaluates a script that needs SpiderMonkey's `Debugger` API, which the
+engine doesn't have. This doesn't block loading (known gap, devtools only).
+
+The script probe then loads a page whose ordinary `<script>` runs a fixed step
+list: language basics, closures, DOM read and write, JSON, `queueMicrotask`,
+`Promise.prototype.then` and `setTimeout(0)`. Each step logs
+`C1-STEP <name> ok|fail: <message>` (one string argument, so the console
+needs no value-to-source conversion). `summary.json` records each step as
+ok, fail or missing (its job or task never ran), plus the stubs hit, in
+`script.log`. Missing steps after a stub are expected: the panic ends the
+script thread. The interpreter guards (step limit, call depth; "Next (C1)",
+item 4) still apply on this path, so a step that fails with a budget error
+points at them, not at the feature.
+
 ## Implemented entry points
 
 `tools/implemented.txt` lists the extern entry points that have a real body.
