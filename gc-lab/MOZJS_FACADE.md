@@ -582,6 +582,38 @@ Decisions, following SERVO_BINDINGS.md option A:
   a test-harness guard. It is listed with the call depth and step limits to
   lift before C2.
 
+### Inspection and JSON (console arguments)
+
+Servo's console previews object arguments
+(components/script/dom/console.rs `console_object_from_handle_value`,
+`console_map_object_from_handle_value`, `stringify_handle_value`). The
+entry points it reaches are in `src/sys/imp/inspect.rs`:
+
+- `GetBuiltinClass` maps the engine's `Engine::builtin_class` (read from
+  internal slots: array, arguments, error, boxed primitive, RegExp, Date,
+  buffer, promise, Map/Set and their iterators, callable) to `js::ESClass`.
+  Proxies, host objects and weak collections answer `Other`.
+- `MapSize`, `MapEntries` (the iterator of `Map.prototype.entries`) and
+  `GetArrayLength` (LengthOfArrayLike, ECMA-262 §7.3.19; a RangeError above
+  u32 as in SpiderMonkey).
+- `JS_ValueToFunction` (TypeError "X is not a function"),
+  `JS_GetFunctionId`/`JS_GetFunctionDisplayId` (the function's own "name"
+  data property, null when empty: the engine keeps no separate inferred
+  atom), `JS_GetFunctionArity` (the own "length").
+- `JS_ValueToSource` in SpiderMonkey's shape for primitives (`(void 0)`,
+  `-0`, quoted strings, `Symbol("d")`); objects print as array or object
+  literals two levels deep and functions as their source. It is a
+  diagnostic string, not a round trip.
+- `JS_Stringify` (§25.5.2, one UTF-16 chunk to the callback, nothing for an
+  undefined result) and `JS_ParseJSON` over UTF-16, a JSString and Latin-1.
+
+The engine no longer adds the lab's built-in `document` binding to the
+top-level scope when an embedder `Host` is set: under Servo it shadowed the
+WebIDL `document` on the global (C1 step dom-read failed with
+`Unsupported("primitive prototype")` at cbda35c).
+
+Test: `tests/inspect.rs`.
+
 ## Next (C1)
 
 1. Drive the C0 count to 0. Expected sources of errors: items the 0.26.4 Rust

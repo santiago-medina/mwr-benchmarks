@@ -716,9 +716,15 @@ impl<'host> Engine<'host> {
                     object_bindings.insert(n.clone());
                 }
             }
-            bindings
-                .entry("document".into())
-                .or_insert(Some(Value::Document));
+            // The lab's built-in `document` (the gc-lab DOM model) exists
+            // only without an embedder: a Host embedding (the mozjs facade
+            // under Servo) defines its own `document` on its global object,
+            // which this lexical binding would shadow.
+            if self.host.is_none() {
+                bindings
+                    .entry("document".into())
+                    .or_insert(Some(Value::Document));
+            }
         }
         let strict = if function_scope {
             !matches!(body.first(), Some(Stmt::Sloppy))
@@ -777,7 +783,7 @@ impl<'host> Engine<'host> {
             names.iter().map(|n| (n.clone(), None)).collect();
         let mutable: NameSet = names.iter().cloned().collect();
         let lexical = mutable.clone();
-        if parent.is_none() {
+        if parent.is_none() && self.host.is_none() {
             bindings
                 .entry("document".into())
                 .or_insert(Some(Value::Document));

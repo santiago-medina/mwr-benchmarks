@@ -69,6 +69,35 @@ pub enum PromiseStatus {
     Rejected,
 }
 
+/// The builtin class an embedder inspects an object as: SpiderMonkey's
+/// `js::ESClass` (js/public/Class.h, `JS::GetBuiltinClass`), named by the
+/// ECMA-262 internal slot that defines each kind ([[ArrayBufferData]],
+/// [[DateValue]], [[MapData]], ...). Proxies, bound functions, host objects
+/// and every other exotic or slot-holding kind are `Other`, as in
+/// SpiderMonkey's unwrapped-object branch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BuiltinClass {
+    Object,
+    Array,
+    Number,
+    String,
+    Boolean,
+    RegExp,
+    ArrayBuffer,
+    SharedArrayBuffer,
+    Date,
+    Set,
+    Map,
+    Promise,
+    MapIterator,
+    SetIterator,
+    Arguments,
+    Error,
+    BigInt,
+    Function,
+    Other,
+}
+
 /// A property key: a string or a symbol (by its engine-wide number).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PropertyKey {
@@ -1109,6 +1138,155 @@ impl Engine<'_> {
     /// GetFunctionRealm (§7.3.24).
     pub fn function_realm_id(&mut self, function: &JsValue) -> Result<RealmId> {
         self.function_realm(&function.0).map(RealmId)
+    }
+
+    // ----- inspection (embedder introspection APIs) -----
+
+    /// The [`BuiltinClass`] of `object` (see the enum). Ordinary objects that
+    /// hold none of the listed slots and no other exotic slot are `Object`.
+    pub fn builtin_class(&self, object: ObjectId) -> BuiltinClass {
+        use super::vm::Object;
+        let data = match self.objects.get(&object.0) {
+            Some(Object::Ordinary(data)) | Some(Object::Builtin { data, .. }) => data,
+            Some(Object::Closure { .. }) => return BuiltinClass::Function,
+            _ => return BuiltinClass::Other,
+        };
+        if self.callable(&Value::Object(object.0)) {
+            return BuiltinClass::Function;
+        }
+        if self.runtime.host_tag(object.0).is_some() {
+            return BuiltinClass::Other;
+        }
+        if data.array {
+            return BuiltinClass::Array;
+        }
+        if data.arguments {
+            return BuiltinClass::Arguments;
+        }
+        if data.error_class.is_some() {
+            return BuiltinClass::Error;
+        }
+        if let Some(boxed) = &data.boxed {
+            return match boxed {
+                Value::Number(_) => BuiltinClass::Number,
+                Value::String(_) => BuiltinClass::String,
+                Value::Bool(_) => BuiltinClass::Boolean,
+                Value::BigInt(_) => BuiltinClass::BigInt,
+                _ => BuiltinClass::Other,
+            };
+        }
+        if data.regexp.is_some() {
+            return BuiltinClass::RegExp;
+        }
+        if data.date.is_some() {
+            return BuiltinClass::Date;
+        }
+        if let Some(buffer) = &data.buffer {
+            return if buffer.borrow().shared {
+                BuiltinClass::SharedArrayBuffer
+            } else {
+                BuiltinClass::ArrayBuffer
+            };
+        }
+        if data.promise.is_some() {
+            return BuiltinClass::Promise;
+        }
+        if let Some(table) = &data.collection {
+            return match (table.weak, table.set) {
+                (true, _) => BuiltinClass::Other,
+                (false, true) => BuiltinClass::Set,
+                (false, false) => BuiltinClass::Map,
+            };
+        }
+        if let Some(cursor) = &data.collection_cursor {
+            return if cursor.set {
+                BuiltinClass::SetIterator
+            } else {
+                BuiltinClass::MapIterator
+            };
+        }
+        let exotic = data.view.is_some()
+            || data.typed.is_some()
+            || data.generator.is_some()
+            || data.activation.is_some()
+            || data.iterator.is_some()
+            || data.iter_slot.is_some()
+            || data.string_cursor.is_some()
+            || data.enumeration.is_some()
+            || data.weak.is_some()
+            || data.dispose.is_some()
+            || data.namespace.is_some()
+            || data.shadow_realm.is_some()
+            || data.response.is_some()
+            || data.request.is_some()
+            || data.internal.is_some()
+            || data.cell.is_some()
+            || data.job.is_some()
+            || data.parameter_map.is_some()
+            || data.raw_json;
+        if exotic {
+            BuiltinClass::Other
+        } else {
+            BuiltinClass::Object
+        }
+    }
+    fn map_table(&self, object: ObjectId) -> Result<&super::collections::Table> {
+        match self.builtin_class(object) {
+            BuiltinClass::Map => Ok(self.data(object.0)?.collection.as_ref().unwrap()),
+            _ => Err(ScriptError::Runtime("not a Map")),
+        }
+    }
+    /// The number of entries of a Map (§24.1.3.10 get Map.prototype.size).
+    pub fn map_size(&self, object: ObjectId) -> Result<usize> {
+        Ok(self.map_table(object)?.len())
+    }
+    /// A new Map iterator over the [key, value] entries of a Map
+    /// (§24.1.3.4 Map.prototype.entries, without the property lookup).
+    pub fn map_entries(&mut self, object: ObjectId) -> Result<JsValue> {
+        self.map_table(object)?;
+        self.frame(|e| {
+            e.collection_builtin("Map.prototype.entries", Value::Object(object.0), vec![])
+                .map(JsValue)
+        })
+    }
+    /// LengthOfArrayLike (§7.3.19): ToLength(? Get(obj, "length")).
+    pub fn length_of_array_like(&mut self, object: ObjectId) -> Result<u64> {
+        self.frame(|e| {
+            let length = e.get_member(Value::Object(object.0), Key::String("length".into()))?;
+            let n = e.to_number(length)?;
+            // §7.1.20 ToLength via §7.1.5 ToIntegerOrInfinity.
+            Ok(if n.is_nan() || n <= 0.0 {
+                0
+            } else {
+                n.trunc().min(9_007_199_254_740_991.0) as u64
+            })
+        })
+    }
+
+    // ----- JSON -----
+
+    /// JSON.stringify(value, replacer, space) (§25.5.2); None when the result
+    /// is undefined (nothing serializable).
+    pub fn json_stringify(
+        &mut self,
+        value: &JsValue,
+        replacer: Option<ObjectId>,
+        space: &JsValue,
+    ) -> Result<Option<String>> {
+        let args = vec![
+            value.0.clone(),
+            replacer.map_or(Value::Undefined, |r| Value::Object(r.0)),
+            space.0.clone(),
+        ];
+        self.frame(|e| match e.json_builtin("JSON.stringify", args)? {
+            Value::Undefined => Ok(None),
+            text => e.to_string(text).map(Some),
+        })
+    }
+    /// JSON.parse(text) with no reviver (§25.5.1).
+    pub fn json_parse(&mut self, text: &str) -> Result<JsValue> {
+        let text = Value::String(text.into());
+        self.frame(|e| e.json_builtin("JSON.parse", vec![text]).map(JsValue))
     }
 
     // ----- conversions and errors -----

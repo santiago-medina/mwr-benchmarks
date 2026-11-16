@@ -294,3 +294,16 @@ GetSavedFrameColumn
 GetSavedFrameFunctionDisplayName
 GetSavedFrameParent
 gluebindings.rs:DescribeScriptedCaller
+GetBuiltinClass
+MapSize
+MapEntries
+GetArrayLength
+JS_ValueToFunction
+JS_GetFunctionId
+JS_GetFunctionDisplayId
+JS_GetFunctionArity
+JS_ValueToSource
+JS_Stringify
+JS_ParseJSON
+JS_ParseJSON1
+JS_ParseJSON2

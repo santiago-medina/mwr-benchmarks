@@ -9370,7 +9370,7 @@ pub mod root {
                 crate::sys::unimplemented_entry("NewMapObject")
             }
             pub unsafe extern "C" fn MapSize(cx: *mut root::JSContext, obj: root::JS::HandleObject) -> u32 {
-                crate::sys::unimplemented_entry("MapSize")
+                crate::sys::imp::MapSize(cx, obj)
             }
             pub unsafe extern "C" fn MapGet(
                 cx: *mut root::JSContext,
@@ -9435,7 +9435,7 @@ pub mod root {
                 obj: root::JS::HandleObject,
                 rval: root::JS::MutableHandleValue,
             ) -> bool {
-                crate::sys::unimplemented_entry("MapEntries")
+                crate::sys::imp::MapEntries(cx, obj, rval)
             }
             pub unsafe extern "C" fn MapForEach(
                 cx: *mut root::JSContext,
@@ -13052,7 +13052,7 @@ pub mod root {
                 obj: root::JS::Handle<*mut root::JSObject>,
                 lengthp: *mut u32,
             ) -> bool {
-                crate::sys::unimplemented_entry("GetArrayLength")
+                crate::sys::imp::GetArrayLength(cx, obj, lengthp)
             }
             #[doc = " Perform |obj.length = length| as if in strict mode code, with a fast path for\n the case where |obj| is an Array.\n\n This operation is exactly and only assigning to a \"length\" property.  In\n general, it can invoke an existing \"length\" setter, throw if the property is\n non-writable, or do anything else a property-set operation might do."]
             pub unsafe extern "C" fn SetArrayLength(
@@ -13097,7 +13097,7 @@ pub mod root {
                 obj: root::JS::Handle<*mut root::JSObject>,
                 cls: *mut root::js::ESClass,
             ) -> bool {
-                crate::sys::unimplemented_entry("GetBuiltinClass")
+                crate::sys::imp::GetBuiltinClass(cx, obj, cls)
             }
             #[doc = " Returns true if |obj| is a plain object: a standard JS object with no exotic\n behavior, such as one created from a '{}' object literal or 'Object.create'.\n Unlike |GetBuiltinClass|, this does not unwrap proxies and tests |obj|\n directly."]
             pub unsafe extern "C" fn IsPlainObject(obj: *mut root::JSObject) -> bool {
@@ -17360,7 +17360,7 @@ pub mod root {
             cx: *mut root::JSContext,
             v: root::JS::HandleValue,
         ) -> *mut root::JSFunction {
-            crate::sys::unimplemented_entry("JS_ValueToFunction")
+            crate::sys::imp::JS_ValueToFunction(cx, v)
         }
         pub unsafe extern "C" fn JS_ValueToConstructor(
             cx: *mut root::JSContext,
@@ -17372,7 +17372,7 @@ pub mod root {
             cx: *mut root::JSContext,
             v: root::JS::Handle<root::JS::Value>,
         ) -> *mut root::JSString {
-            crate::sys::unimplemented_entry("JS_ValueToSource")
+            crate::sys::imp::JS_ValueToSource(cx, v)
         }
         pub unsafe extern "C" fn JS_DoubleIsInt32(d: f64, ip: *mut i32) -> bool {
             crate::sys::unimplemented_entry("JS_DoubleIsInt32")
@@ -17692,7 +17692,7 @@ pub mod root {
             fun: root::JS::Handle<*mut root::JSFunction>,
             name: root::JS::MutableHandle<*mut root::JSString>,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_GetFunctionId")
+            crate::sys::imp::JS_GetFunctionId(cx, fun, name)
         }
         #[doc = " Almost same as JS_GetFunctionId.\n\n If the function has lazy name, this returns partial name, such as the\n function name without \"get \" or \"set \" prefix."]
         pub unsafe extern "C" fn JS_GetMaybePartialFunctionId(fun: *mut root::JSFunction) -> *mut root::JSString {
@@ -17704,7 +17704,7 @@ pub mod root {
             fun: root::JS::Handle<*mut root::JSFunction>,
             name: root::JS::MutableHandle<*mut root::JSString>,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_GetFunctionDisplayId")
+            crate::sys::imp::JS_GetFunctionDisplayId(cx, fun, name)
         }
         #[doc = " Almost same as JS_GetFunctionDisplayId.\n\n If the function has lazy name, this returns partial name, such as the\n function name without \"get \" or \"set \" prefix."]
         pub unsafe extern "C" fn JS_GetMaybePartialFunctionDisplayId(
@@ -17713,7 +17713,7 @@ pub mod root {
             crate::sys::unimplemented_entry("JS_GetMaybePartialFunctionDisplayId")
         }
         pub unsafe extern "C" fn JS_GetFunctionArity(fun: *mut root::JSFunction) -> u16 {
-            crate::sys::unimplemented_entry("JS_GetFunctionArity")
+            crate::sys::imp::JS_GetFunctionArity(fun)
         }
         pub unsafe extern "C" fn JS_GetFunctionLength(
             cx: *mut root::JSContext,
@@ -17951,7 +17951,7 @@ pub mod root {
             callback: root::JSONWriteCallback,
             data: *mut ::std::os::raw::c_void,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_Stringify")
+            crate::sys::imp::JS_Stringify(cx, value, replacer, space, callback, data)
         }
         pub unsafe extern "C" fn JS_StringifyWithLengthHint(
             cx: *mut root::JSContext,
@@ -17971,7 +17971,7 @@ pub mod root {
             len: u32,
             vp: root::JS::MutableHandle<root::JS::Value>,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_ParseJSON")
+            crate::sys::imp::JS_ParseJSON(cx, chars, len, vp)
         }
         #[doc = " Performs the JSON.parse operation as specified by ECMAScript."]
         pub unsafe extern "C" fn JS_ParseJSON1(
@@ -17979,7 +17979,7 @@ pub mod root {
             str_: root::JS::Handle<*mut root::JSString>,
             vp: root::JS::MutableHandle<root::JS::Value>,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_ParseJSON1")
+            crate::sys::imp::JS_ParseJSON1(cx, str_, vp)
         }
         #[doc = " Performs the JSON.parse operation as specified by ECMAScript."]
         pub unsafe extern "C" fn JS_ParseJSON2(
@@ -17988,7 +17988,7 @@ pub mod root {
             len: u32,
             vp: root::JS::MutableHandle<root::JS::Value>,
         ) -> bool {
-            crate::sys::unimplemented_entry("JS_ParseJSON2")
+            crate::sys::imp::JS_ParseJSON2(cx, chars, len, vp)
         }
         #[doc = " Performs the JSON.parse operation as specified by ECMAScript, using the\n given |reviver| argument as the corresponding optional argument to that\n function."]
         pub unsafe extern "C" fn JS_ParseJSONWithReviver(
