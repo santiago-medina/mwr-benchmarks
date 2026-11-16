@@ -404,9 +404,8 @@ events with a callback that re-enters the engine.
 - `SetScriptPrivate` calls the runtime's reference hooks
   (`SetScriptPrivateReferenceHooks`) on the new and the old value, as
   ScriptSourceObject::setPrivate does.
-- `Hide`/`UnhideScriptedCaller` only count nesting. `GetScriptedCallerGlobal`
-  and `DescribeScriptedCaller`, which read that count, are not implemented
-  yet.
+- `Hide`/`UnhideScriptedCaller` only count nesting; `DescribeScriptedCaller`
+  and `GetScriptedCallerGlobal` read that count.
 - `JS_ErrorFromException` returns false for objects without [[ErrorData]].
   For errors, it builds one cached report per object: the message is the
   own `message` property with no "Name: " prefix, as in
@@ -502,7 +501,13 @@ reports the filename of the innermost classic script the facade is
 evaluating, with line and column 0 for the same reason; it returns false
 when none is running or the caller is hidden.
 
-Test: `tests/stacks.rs`.
+`GetScriptedCallerGlobal` (jsapi.cpp) returns the global of the realm that
+innermost script runs in (recorded when evaluation starts), or null under the
+same two conditions. Servo reads it as the incumbent global for
+`queueMicrotask`, promise callbacks and timers, and falls back to its own
+settings stack on null, which covers callbacks the embedder calls later.
+
+Tests: `tests/stacks.rs`, `tests/scripts.rs`.
 
 ### GC policy
 

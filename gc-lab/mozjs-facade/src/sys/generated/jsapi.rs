@@ -10763,7 +10763,7 @@ pub mod root {
                 [::std::mem::offset_of!(AutoFilename, filename_) - 8usize];
         };
             pub unsafe extern "C" fn GetScriptedCallerGlobal(cx: *mut root::JSContext) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("GetScriptedCallerGlobal")
+                crate::sys::imp::GetScriptedCallerGlobal(cx)
             }
             #[doc = " Informs the JS engine that the scripted caller should be hidden. This can be\n used by the embedding to maintain an override of the scripted caller in its\n calculations, by hiding the scripted caller in the JS engine and pushing data\n onto a separate stack, which it inspects when DescribeScriptedCaller returns\n null.\n\n We maintain a counter on each activation record. Add() increments the counter\n of the topmost activation, and Remove() decrements it. The count may never\n drop below zero, and must always be exactly zero when the activation is\n popped from the stack."]
             pub unsafe extern "C" fn HideScriptedCaller(cx: *mut root::JSContext) {

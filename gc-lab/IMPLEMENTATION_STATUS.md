@@ -543,5 +543,6 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - Promise cluster (MOZJS_FACADE.md "Promises", PROMISES.md "Embedder API", 2026-11-16): NewPromiseObject, Resolve/RejectPromise via the promise's own resolving functions, CallOriginalPromiseResolve/Reject/Then, AddPromiseReactions, state/result/handled reads, the user-input flag, function reserved slots (NewFunctionWithReserved), and HostPromiseRejectionTracker as a `Host` hook calling Servo's tracker synchronously (285 entry points). Not done: GetPromiseID, the IgnoringUnhandledRejection distinction.
 - Console inspection and JSON (MOZJS_FACADE.md "Inspection and JSON", 2026-11-16): GetBuiltinClass, MapSize/MapEntries, GetArrayLength, function id/arity, JS_ValueToFunction, JS_ValueToSource, JS_Stringify, JS_ParseJSON (309 entry points). A Host embedding no longer gets the lab's built-in `document` binding.
 - JIT-info glue (MOZJS_FACADE.md "JIT-info glue", 2026-11-16): CallJitGetterOp, CallJitSetterOp, CallJitMethodOp for WebIDL accessors and methods (312 entry points).
+- Incumbent global (MOZJS_FACADE.md "Stack capture", 2026-11-16): GetScriptedCallerGlobal from the innermost evaluating script's realm (313 entry points).
 - Not done: E6 buffer access.
 - Servo-path limits to lift before C2: call depth 32 and step limit 10,000.

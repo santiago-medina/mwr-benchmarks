@@ -175,7 +175,11 @@ fn evaluate(
     source: Result<String, ScriptError>,
     rval: Option<JS::MutableHandle<JS::Value>>,
 ) -> bool {
-    cx.state.borrow_mut().running_scripts.push(filename);
+    let realm = cx.realm();
+    cx.state
+        .borrow_mut()
+        .running_scripts
+        .push((filename, realm));
     let result = cx.heap.with_engine(|engine| {
         let value = engine.evaluate_script(&source?)?;
         Ok(to_jsval(cx, engine, &value))
@@ -304,8 +308,8 @@ pub unsafe fn JS_GetScriptPrivate(script: *mut root::JSScript, dest: JS::Mutable
 
 // --- Scripted caller ---
 
-/// Only nesting is tracked; DescribeScriptedCaller reads it (the facade has
-/// no GetScriptedCallerGlobal yet).
+/// Only nesting is tracked; DescribeScriptedCaller and GetScriptedCallerGlobal
+/// read it.
 pub unsafe fn HideScriptedCaller(cx: *mut root::JSContext) {
     unsafe { context(cx) }
         .state
@@ -347,7 +351,7 @@ pub unsafe fn DescribeScriptedCaller(
     if state.hidden_scripted_caller > 0 {
         return false;
     }
-    let Some(filename) = state.running_scripts.last() else {
+    let Some((filename, _)) = state.running_scripts.last() else {
         return false;
     };
     let bytes = filename.as_bytes();
@@ -357,6 +361,24 @@ pub unsafe fn DescribeScriptedCaller(
     out[..n].copy_from_slice(&bytes[..n]);
     out[n] = 0;
     true
+}
+
+/// `JS::GetScriptedCallerGlobal` (js/src/jsapi.cpp): the global of the
+/// innermost running script's realm, or null when no script is running or
+/// the caller is hidden. Servo reads it as the incumbent global (HTML
+/// "incumbent settings object") and falls back to its own settings stack on
+/// null. As for DescribeScriptedCaller, only scripts entered through the
+/// facade's evaluate count, so a callback the embedder calls later reports
+/// none and Servo's stack decides.
+pub unsafe fn GetScriptedCallerGlobal(cx: *mut root::JSContext) -> *mut root::JSObject {
+    let state = unsafe { context(cx) }.state.borrow();
+    if state.hidden_scripted_caller > 0 {
+        return ptr::null_mut();
+    }
+    match state.running_scripts.last() {
+        Some(&(_, realm)) => unsafe { super::objects::GetRealmGlobalOrNull(realm) },
+        None => ptr::null_mut(),
+    }
 }
 
 // --- Error reports ---

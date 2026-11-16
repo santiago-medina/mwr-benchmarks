@@ -244,3 +244,61 @@ fn compile_execute_and_error_reports() {
         assert_eq!(get(cx, dst, "y").to_int32(), 10);
     }
 }
+
+static CALLER_GLOBAL: std::sync::atomic::AtomicPtr<JSObject> =
+    std::sync::atomic::AtomicPtr::new(ptr::null_mut());
+
+unsafe extern "C" fn record_caller(cx: *mut JSContext, _argc: u32, vp: *mut JSVal) -> bool {
+    let global = unsafe { JS::GetScriptedCallerGlobal(cx) };
+    CALLER_GLOBAL.store(global, std::sync::atomic::Ordering::SeqCst);
+    unsafe { *vp = UndefinedValue() };
+    true
+}
+
+#[test]
+fn scripted_caller_global_is_the_running_scripts_realm() {
+    use mozjs::jsapi::{JS_GetFunctionObject, JS_NewFunction, JS_SetProperty};
+    use std::sync::atomic::Ordering;
+    unsafe {
+        let cx = JS_NewContext(32 << 20, ptr::null_mut());
+        let mut options = RealmOptions::default();
+        options.creationOptions_.compSpec_ = CompartmentSpecifier::NewCompartmentAndZone;
+        let global = JS_NewGlobalObject(
+            cx,
+            &GLOBAL_CLASS,
+            ptr::null_mut(),
+            OnNewGlobalHookOption::DontFireOnNewGlobalHook,
+            &*options,
+        );
+        EnterRealm(cx, global);
+
+        // No script is running.
+        assert!(JS::GetScriptedCallerGlobal(cx).is_null());
+
+        let fun = JS_GetFunctionObject(JS_NewFunction(
+            cx,
+            Some(record_caller),
+            0,
+            0,
+            c"probe".as_ptr(),
+        ));
+        let fun_value = mozjs::jsval::ObjectValue(fun);
+        assert!(JS_SetProperty(
+            cx,
+            handle(&global),
+            c"probe".as_ptr(),
+            handle(&fun_value)
+        ));
+
+        // A native called from a script sees that script's global.
+        assert!(evaluate(cx, "probe()").is_some());
+        assert_eq!(CALLER_GLOBAL.load(Ordering::SeqCst), global);
+
+        // A hidden caller reports none.
+        JS::HideScriptedCaller(cx);
+        CALLER_GLOBAL.store(global, Ordering::SeqCst);
+        assert!(evaluate(cx, "probe()").is_some());
+        assert!(CALLER_GLOBAL.load(Ordering::SeqCst).is_null());
+        JS::UnhideScriptedCaller(cx);
+    }
+}
