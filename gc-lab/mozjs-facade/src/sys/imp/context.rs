@@ -79,6 +79,9 @@ pub struct State {
     pub pending_exception: Option<crate::sys::jsval::JSVal>,
     /// HideScriptedCaller nesting depth.
     pub hidden_scripted_caller: usize,
+    /// The filenames of the classic scripts being evaluated, innermost last
+    /// (DescribeScriptedCaller).
+    pub running_scripts: Vec<String>,
     /// JS_ErrorFromException reports, one per error object. Like cells they
     /// are never freed, so a BorrowedErrorReport stays valid.
     pub error_reports: HashMap<gc_lab::script::ObjectId, Box<super::scripts::ErrorReportCell>>,

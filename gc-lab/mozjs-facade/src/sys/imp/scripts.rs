@@ -171,13 +171,16 @@ pub unsafe fn Compile1(
 /// completion value goes to `rval` unless the options said noScriptRval.
 fn evaluate(
     cx: &Context,
+    filename: String,
     source: Result<String, ScriptError>,
     rval: Option<JS::MutableHandle<JS::Value>>,
 ) -> bool {
+    cx.state.borrow_mut().running_scripts.push(filename);
     let result = cx.heap.with_engine(|engine| {
         let value = engine.evaluate_script(&source?)?;
         Ok(to_jsval(cx, engine, &value))
     });
+    cx.state.borrow_mut().running_scripts.pop();
     match engine_result(cx, result) {
         Some(value) => {
             if let Some(rval) = rval {
@@ -199,9 +202,19 @@ pub unsafe fn JS_ExecuteScript(
     let context = unsafe { context(cx) };
     if script.no_script_rval {
         unsafe { *rval.ptr = UndefinedValue() };
-        return evaluate(context, Ok(script.source.clone()), None);
+        return evaluate(
+            context,
+            script.filename.clone(),
+            Ok(script.source.clone()),
+            None,
+        );
     }
-    evaluate(context, Ok(script.source.clone()), Some(rval))
+    evaluate(
+        context,
+        script.filename.clone(),
+        Ok(script.source.clone()),
+        Some(rval),
+    )
 }
 
 pub unsafe fn JS_ExecuteScript1(
@@ -209,17 +222,23 @@ pub unsafe fn JS_ExecuteScript1(
     script: JS::Handle<*mut root::JSScript>,
 ) -> bool {
     let script = unsafe { script_cell(*script.ptr) };
-    evaluate(unsafe { context(cx) }, Ok(script.source.clone()), None)
+    evaluate(
+        unsafe { context(cx) },
+        script.filename.clone(),
+        Ok(script.source.clone()),
+        None,
+    )
 }
 
 pub unsafe fn Evaluate(
     cx: *mut root::JSContext,
-    _options: *const JS::ReadOnlyCompileOptions,
+    options: *const JS::ReadOnlyCompileOptions,
     src: *mut JS::SourceText<u16>,
     rval: JS::MutableHandle<JS::Value>,
 ) -> bool {
     evaluate(
         unsafe { context(cx) },
+        unsafe { options_filename(options) },
         unsafe { utf16_source(src) },
         Some(rval),
     )
@@ -227,7 +246,7 @@ pub unsafe fn Evaluate(
 
 pub unsafe fn Evaluate2(
     cx: *mut root::JSContext,
-    _options: *const JS::ReadOnlyCompileOptions,
+    options: *const JS::ReadOnlyCompileOptions,
     src: *mut JS::SourceText<root::mozilla::Utf8Unit>,
     rval: JS::MutableHandle<JS::Value>,
 ) -> bool {
@@ -235,7 +254,19 @@ pub unsafe fn Evaluate2(
     let source = context
         .heap
         .with_engine(|engine| unsafe { utf8_source(engine, src) });
-    evaluate(context, source, Some(rval))
+    let filename = unsafe { options_filename(options) };
+    evaluate(context, filename, source, Some(rval))
+}
+
+/// The filename compile options name (empty when they name none).
+unsafe fn options_filename(options: *const JS::ReadOnlyCompileOptions) -> String {
+    if options.is_null() {
+        return String::new();
+    }
+    // SAFETY: Servo passes options from NewCompileOptions (or its own
+    // CompileOptions, same layout).
+    let filename = unsafe { (*options)._base.filename_.data_ };
+    unsafe { c_string(filename) }.to_string_lossy().into_owned()
 }
 
 // --- Script privates ---
@@ -273,8 +304,8 @@ pub unsafe fn JS_GetScriptPrivate(script: *mut root::JSScript, dest: JS::Mutable
 
 // --- Scripted caller ---
 
-/// Only nesting is tracked: the facade has no GetScriptedCallerGlobal or
-/// DescribeScriptedCaller yet, the readers the hiding affects.
+/// Only nesting is tracked; DescribeScriptedCaller reads it (the facade has
+/// no GetScriptedCallerGlobal yet).
 pub unsafe fn HideScriptedCaller(cx: *mut root::JSContext) {
     unsafe { context(cx) }
         .state
@@ -289,6 +320,43 @@ pub unsafe fn UnhideScriptedCaller(cx: *mut root::JSContext) {
         .hidden_scripted_caller
         .checked_sub(1)
         .expect("mozjs facade: UnhideScriptedCaller without HideScriptedCaller");
+}
+
+/// jsglue.cpp `DescribeScriptedCaller` over JS::DescribeScriptedCaller
+/// (js/src/jsapi.cpp): false when no script is running or the caller is
+/// hidden; otherwise the running script's filename, NUL-terminated and cut to
+/// `buflen`. The engine does not track the current position yet, so line and
+/// column are 0, the "unknown" values (MOZJS_FACADE.md "Stack capture").
+/// Only scripts entered through the facade's evaluate count: a function a
+/// script defined, called later by the embedder, reports no caller.
+pub unsafe fn DescribeScriptedCaller(
+    cx: *mut root::JSContext,
+    buffer: *mut c_char,
+    buflen: usize,
+    line: *mut u32,
+    col: *mut u32,
+) -> bool {
+    unsafe {
+        *line = 0;
+        *col = 0;
+    }
+    if buflen == 0 {
+        return false;
+    }
+    let state = unsafe { context(cx) }.state.borrow();
+    if state.hidden_scripted_caller > 0 {
+        return false;
+    }
+    let Some(filename) = state.running_scripts.last() else {
+        return false;
+    };
+    let bytes = filename.as_bytes();
+    let n = bytes.len().min(buflen - 1);
+    // SAFETY: the caller's buffer holds `buflen` bytes.
+    let out = unsafe { std::slice::from_raw_parts_mut(buffer.cast::<u8>(), buflen) };
+    out[..n].copy_from_slice(&bytes[..n]);
+    out[n] = 0;
+    true
 }
 
 // --- Error reports ---

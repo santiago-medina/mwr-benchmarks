@@ -89,3 +89,22 @@ fn capture_is_an_empty_stack() {
         assert_eq!(JS_GetStringLength(text), 0);
     }
 }
+
+#[test]
+fn scripted_caller_is_the_running_script() {
+    use mozjs::glue::DescribeScriptedCaller;
+    unsafe {
+        let cx = JS_NewContext(32 << 20, ptr::null_mut());
+        let mut buf = [1 as std::ffi::c_char; 16];
+        let (mut line, mut col) = (5, 5);
+        // No script is running.
+        assert!(!DescribeScriptedCaller(
+            cx,
+            buf.as_mut_ptr(),
+            buf.len(),
+            &mut line,
+            &mut col
+        ));
+        assert_eq!((line, col), (0, 0));
+    }
+}

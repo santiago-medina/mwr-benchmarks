@@ -293,3 +293,4 @@ GetSavedFrameLine
 GetSavedFrameColumn
 GetSavedFrameFunctionDisplayName
 GetSavedFrameParent
+gluebindings.rs:DescribeScriptedCaller

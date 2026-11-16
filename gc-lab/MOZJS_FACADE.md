@@ -497,6 +497,11 @@ the empty string. Console messages therefore carry no stack, and
 positions (function name, script URL, line, column), which is also what
 error `stack` and the ":0:1" error location need.
 
+`DescribeScriptedCaller` (jsglue.cpp, used for console message locations)
+reports the filename of the innermost classic script the facade is
+evaluating, with line and column 0 for the same reason; it returns false
+when none is running or the caller is hidden.
+
 Test: `tests/stacks.rs`.
 
 ### GC policy

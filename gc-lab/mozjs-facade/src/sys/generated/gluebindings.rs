@@ -1402,7 +1402,7 @@ pub mod root {
             line: *mut u32,
             col: *mut u32,
         ) -> bool {
-            crate::sys::unimplemented_entry("DescribeScriptedCaller")
+            crate::sys::imp::DescribeScriptedCaller(cx, buffer, buflen, line, col)
         }
     pub type StringCallback = ::std::option::Option<
         unsafe extern "C" fn(
