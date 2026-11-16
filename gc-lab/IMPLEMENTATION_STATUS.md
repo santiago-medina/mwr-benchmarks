@@ -545,4 +545,5 @@ Implemented `Temporal.PlainDate` on `temporal_rs::PlainDate`: the constructor (T
 - JIT-info glue (MOZJS_FACADE.md "JIT-info glue", 2026-11-16): CallJitGetterOp, CallJitSetterOp, CallJitMethodOp for WebIDL accessors and methods (312 entry points).
 - Incumbent global (MOZJS_FACADE.md "Stack capture", 2026-11-16): GetScriptedCallerGlobal from the innermost evaluating script's realm (313 entry points).
 - Not done: E6 buffer access.
-- Servo-path limits to lift before C2: call depth 32 and step limit 10,000.
+- Interpreter guards and GC policy (MOZJS_FACADE.md "Interpreter guards", "GC policy", 2026-11-16): engine `Limits` (harness default: call depth 32, evaluation depth 128; embeddings: a native stack budget that throws a catchable RangeError). The facade runs with no step limit, a 6 MiB (script thread) or 1.5 MiB (worker) stack budget and `GcPolicy::Threshold`; `MOZJS_FACADE_GC=stress` keeps Stress for the facade tests. Measured 94 KB of native stack per JS call in debug and 10 KB in release, so about 65 / 600 calls deep on Servo's script thread.
+- Servo-path gaps left before C2: the interrupt callback (slow-script handling, replaces the step limit), lifting the keep-alive policy (cells never freed, MOZJS_FACADE.md "Cell lifetime"), and a stack guard in the parser.

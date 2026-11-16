@@ -10,7 +10,7 @@ mod objects;
 pub mod parser;
 mod props;
 mod vm;
-pub use vm::{Engine, GcPolicy, ScriptError, SuspendedEngine};
+pub use vm::{Engine, GcPolicy, Limits, ScriptError, SuspendedEngine};
 mod embed;
 pub use embed::{
     BuiltinClass, ExoticOp, ExoticReply, Host, JsValue, ObjectId, PartialDescriptor, PromiseStatus,

@@ -129,9 +129,9 @@ list: language basics, closures, DOM read and write, JSON, `queueMicrotask`,
 needs no value-to-source conversion). `summary.json` records each step as
 ok, fail or missing (its job or task never ran), plus the stubs hit, in
 `script.log`. Missing steps after a stub are expected: the panic ends the
-script thread. The interpreter guards (step limit, call depth; "Next (C1)",
-item 4) still apply on this path, so a step that fails with a budget error
-points at them, not at the feature.
+script thread. The facade engine runs with web limits ("Interpreter
+guards"): no step budget, and a native stack budget instead of the harness's
+fixed depths.
 
 ## Implemented entry points
 
@@ -509,10 +509,73 @@ settings stack on null, which covers callbacks the embedder calls later.
 
 Tests: `tests/stacks.rs`, `tests/scripts.rs`.
 
+### Interpreter guards
+
+The engine is a tree-walking interpreter with three budgets. Before this
+section they were fixed, and the facade inherited them:
+
+| Guard | Default | What it protects |
+|---|---|---|
+| step limit | 10,000 ticks per external event | test runs against infinite loops; reset at every event, so it caps a single task |
+| call depth | 32 nested `invoke_this` | the native Rust stack: every JS call is a Rust recursion |
+| evaluation depth | 128 nested `eval` | the native stack again: nested expressions and calls recurse through `eval` |
+
+None of them is a web value. A page runs for as long as it likes (browsers
+stop slow scripts through an interrupt callback, not a step count), and its
+recursion depth is bounded by the thread's stack, not by a count. The depth
+limits also fail with an uncatchable `ScriptError::Runtime`, while SpiderMonkey
+throws a catchable "too much recursion".
+
+Measured native stack per JS call (`tests/limits.rs`, `f(n) = 1 + f(n - 1)`,
+x86-64, at 2026-11-16): **94 KB in a debug build, 10 KB in release**. A debug
+build overflows a 2 MiB test thread before depth 32. SpiderMonkey's frames are
+much smaller, so the byte quota Servo passes to `JS_SetNativeStackQuota` (1 MiB
+minus buffers, about 0.9 MiB for untrusted script) would allow only about 10
+calls in debug and 90 in release.
+
+Design (engine `Limits`, `Engine::set_limits`):
+
+- `Limits::HARNESS` (the default): call depth 32, evaluation depth 128, no
+  stack budget. `js_check`, `conformance/run.py`, the agents and every cargo
+  test keep it, so test262 results do not move. The step limit keeps its own
+  setter (`js_check` sets 50,000,000).
+- `Limits::native_stack(bytes)`: no fixed depths. The first guarded frame
+  records its stack position (the address of a local: safe Rust), and every
+  call and expression compares the current position against it. Past the
+  budget the engine throws a catchable `RangeError` "Maximum call stack size
+  exceeded" (the V8/JSC message; ECMA-262 leaves the limit to the
+  implementation, so there is no spec text to follow). The base is forgotten
+  when the engine is idle (no call, evaluation or native running), so every
+  task measures from its own entry.
+- The facade (`objects.rs` `configure_web_engine`) sets, for every context: step
+  limit `usize::MAX`, the native stack budget and `GcPolicy::Threshold`. The
+  budget comes from the thread the runtime runs on, not from Servo's quota bytes,
+  because those bytes are sized for SpiderMonkey frames: a parentless context is
+  Servo's script thread (8 MiB stack, script_thread.rs) and gets 6 MiB; a child
+  context is a worker on Rust's default 2 MiB thread and gets 1.5 MiB. The
+  remaining 2 MiB / 0.5 MiB cover Servo's frames above the first engine frame
+  and the natives a deep JS frame calls.
+
+Consequences and open items:
+
+- Recursion depth on the Servo path is about 65 calls in a debug servoshell
+  and about 600 in release on the script thread (6 MiB / 94 KB, 6 MiB / 10 KB);
+  browsers allow about 10,000. Frame size is roadmap B work (the bytecode VM,
+  BYTECODE_VM.md); this budget is the honest bound until then.
+- A runaway loop now hangs the script thread instead of failing after 10,000
+  steps. Servo's slow-script path (`JS_AddInterruptCallback`,
+  `JS_RequestInterruptCallback`) is not wired to the engine yet: that is the
+  replacement for the step limit and is due with C2's long-running fixtures.
+- The parser is still recursive without a guard; a deeply nested source can
+  overflow the stack. Same budget mechanism, later.
+- Test: `tests/limits.rs` (engine), `mozjs-facade/tests/scripts.rs`
+  `web_engine_has_no_step_budget_and_a_native_stack_guard` (8 MiB thread:
+  depth 50, 20,000 steps, runaway recursion caught as RangeError).
+
 ### GC policy
 
-The facade creates its engine with the engine's default policy,
-`GcPolicy::Stress`, which collects at every allocation safepoint. Under
+Until 2026-11-16 the facade created its engine with the engine's default
+policy, `GcPolicy::Stress`, which collects at every allocation safepoint. Under
 Stress, every facade entry point that holds a fresh, unrooted object across
 another allocation fails at once with `Memory(InvalidHandle)`. At 7ec6a3d,
 `define_native_accessor` built the getter and then the setter, and the
@@ -522,10 +585,35 @@ Its run.log named `HasAnyMicroTasks`, because that stub ran during the unwind
 (`Runtime::drop`). The getter is now rooted across the setter's allocation,
 and `tests/interfaces.rs` covers a getter+setter pair.
 
-Stress stays the policy while C1 brings up startup paths, because it turns
-rooting bugs into immediate, reproducible failures. It is far too slow for
-pages: switch the facade to `GcPolicy::Threshold` before C2 or any
-performance measurement (see "Next (C1)").
+The facade now runs `GcPolicy::Threshold` (GC_SCHEDULING.md), which is what pages
+need. Stress stays available as a test mode: `MOZJS_FACADE_GC=stress` selects it,
+and CI runs the facade tests twice, once with each policy (gc-lab.yml "mozjs
+facade tests under GcPolicy::Stress"), so rooting bugs still fail at once.
+
+### Cell lifetime (the C1 keep-alive policy)
+
+Every `ObjectCell` is leaked and every object with a cell is a root
+(`Host::trace_roots`). Nothing Servo can see is ever collected; only engine
+garbage that never got a cell is. Lifting this is a tracing project with its
+own design note (`FACADE_TRACING.md`, with a literature check, since it is the
+GC side of the binding API). What it needs, all on the facade side, because the
+engine `Host` already has `trace_roots`, a per-object `trace` hook and
+`finalize`:
+
+1. Roots from Servo instead of "every cell": the `JS::Rooted` lists in the
+   context's `RootingContext` (stack roots), `PersistentRooted`, and the extra
+   roots tracer Servo registers (`JS_AddExtraGCRootsTracer(trace_traceables)`).
+   That needs a facade `JSTracer` whose edge callback maps a `JSObject*`
+   to its cell's `ObjectId`.
+2. Edges from DOM objects: `Host::trace` of a host object calls its class's
+   `JSClassOps::trace` (Servo's reflector trace hooks trace `Heap<T>` members).
+3. Finalization: `Host::finalize` calls `JSClassOps::finalize` (Servo frees the
+   DOM object there), then the facade drops the cell. Weak edges
+   (`JS_UpdateWeakPointerAfterGC`) and the `JSFinalizeCallback` /
+   `JSGCCallback` notifications come with it.
+4. Migration: the same `MOZJS_FACADE_GC=stress` test mode, plus a debug mode
+   that poisons a dropped cell, so a stale `JSObject*` fails at once. C1
+   probes must stay at 8/8 with cells freed.
 
 258 entry points are implemented in total.
 
@@ -642,8 +730,9 @@ Test: `tests/jit.rs`.
    creation, JS_NewObjectWithGivenProto and reserved slots (E1), JS_NewFunction
    and JSNative calls (E2), tracing (E4), property and call API (E5), script
    evaluation.
-4. Lift the Servo-path interpreter guards (call depth 32, step limit 10,000)
-   and the C1 keep-alive policy (cells never freed) before C2, and switch
-   the facade's engine from `GcPolicy::Stress` to `Threshold` ("GC policy").
+4. Servo-path interpreter guards and GC policy: done ("Interpreter guards",
+   "GC policy"). Left: the interrupt callback that replaces the step limit, and
+   lifting the keep-alive policy ("Cell lifetime"), which gets its own design
+   note (`FACADE_TRACING.md`) before C2.
 5. Facade overhead micro-benchmark (literature check), before and after
    numbers in the commit.

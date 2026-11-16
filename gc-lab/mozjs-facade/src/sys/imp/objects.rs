@@ -32,7 +32,8 @@ use std::ptr;
 use std::rc::Rc;
 
 use gc_lab::script::{
-    Engine, ExoticOp, ExoticReply, Host, JsValue, ObjectId, PropertyKey, RealmId, ScriptError,
+    Engine, ExoticOp, ExoticReply, GcPolicy, Host, JsValue, Limits, ObjectId, PropertyKey, RealmId,
+    ScriptError,
 };
 use gc_lab::Model;
 
@@ -49,6 +50,9 @@ pub struct Heap {
     /// call parks it back here while the native runs (natives.rs).
     pub(super) engine: RefCell<Option<Engine<'static>>>,
     engine_created: Cell<bool>,
+    /// Native stack budget of this context's engine, in bytes
+    /// (MOZJS_FACADE.md "Interpreter guards"); set by JS_NewContext.
+    pub(super) native_stack: Cell<usize>,
     /// Hostless engines swapped into the caller's `&mut Engine` while the real
     /// one is parked; one per JSNative nesting depth, reused.
     pub(super) spares: RefCell<Vec<Engine<'static>>>,
@@ -284,6 +288,30 @@ impl ObjectCell {
     }
 }
 
+/// Native stack budget of a parentless context: Servo's script thread has an
+/// 8 MiB stack (script_thread.rs); 2 MiB stay for Servo's frames above the
+/// first engine frame and for natives called from the deepest JS frame.
+pub const SCRIPT_THREAD_STACK_BUDGET: usize = 6 << 20;
+/// Native stack budget of a child context (a worker): those threads use Rust's
+/// default 2 MiB stack.
+pub const WORKER_STACK_BUDGET: usize = 1536 << 10;
+
+/// The engine settings for web content (MOZJS_FACADE.md "Interpreter guards",
+/// "GC policy"): no step budget, a native stack budget instead of the
+/// harness's fixed call and evaluation depths, and the Threshold GC policy.
+/// `MOZJS_FACADE_GC=stress` selects GcPolicy::Stress, which the facade tests
+/// use to turn rooting bugs into immediate failures.
+pub fn configure_web_engine(engine: &mut Engine<'static>, native_stack: usize) {
+    engine.set_step_limit(usize::MAX);
+    engine.set_limits(Limits::native_stack(native_stack));
+    let stress = std::env::var("MOZJS_FACADE_GC").is_ok_and(|v| v == "stress");
+    engine.set_gc_policy(if stress {
+        GcPolicy::Stress
+    } else {
+        GcPolicy::Threshold
+    });
+}
+
 impl Heap {
     /// Run `f` on the engine, creating it first if needed. The engine is
     /// taken out of its slot while `f` runs, so a JSNative that `f` reaches
@@ -300,6 +328,7 @@ impl Heap {
                 self.engine_created.set(true);
                 let mut engine = Engine::new(Model::Indirect, Model::Indirect)
                     .expect("mozjs facade: engine creation");
+                configure_web_engine(&mut engine, self.native_stack.get());
                 engine.set_host(Rc::new(FacadeHost(self.shared.clone())));
                 engine
             }

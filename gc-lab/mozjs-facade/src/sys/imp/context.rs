@@ -188,7 +188,7 @@ pub unsafe fn SetDOMProxyInformation(
 
 // --- Context and runtime (js/public/Context.h) ---
 
-pub unsafe fn JS_NewContext(_maxbytes: u32, _parent: *mut root::JSRuntime) -> *mut root::JSContext {
+pub unsafe fn JS_NewContext(_maxbytes: u32, parent: *mut root::JSRuntime) -> *mut root::JSContext {
     // A child runtime (a worker) gets its own engine and heap here; values
     // cross between them only by structured clone, so the parent is unused.
     let context = Box::new(Context {
@@ -206,6 +206,11 @@ pub unsafe fn JS_NewContext(_maxbytes: u32, _parent: *mut root::JSRuntime) -> *m
         .shared
         .context
         .set(&*context as *const Context as usize);
+    context.heap.native_stack.set(if parent.is_null() {
+        super::objects::SCRIPT_THREAD_STACK_BUDGET
+    } else {
+        super::objects::WORKER_STACK_BUDGET
+    });
     LIVE_CONTEXTS.fetch_add(1, Ordering::SeqCst);
     Box::into_raw(context) as *mut root::JSContext
 }

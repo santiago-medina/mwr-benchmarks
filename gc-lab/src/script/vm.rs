@@ -181,6 +181,53 @@ pub enum GcPolicy {
     /// Collect when live objects reach max(MIN_GC_THRESHOLD, GC_GROWTH_FACTOR x live after the last GC).
     Threshold,
 }
+/// Recursion guards of the tree-walking interpreter (MOZJS_FACADE.md
+/// "Interpreter guards"). Both depth counters exist to keep the native Rust
+/// stack from overflowing: every JS call and every nested expression is a
+/// Rust recursion. The defaults are the test-harness values; an embedding that
+/// runs web content replaces the two fixed depths with a native stack budget.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Limits {
+    /// Nested JS calls (`invoke_this`). `None`: unlimited.
+    pub call_depth: Option<usize>,
+    /// Nested expression evaluations, across calls. `None`: unlimited.
+    pub evaluation_depth: Option<usize>,
+    /// Bytes of native stack the engine may use below the outermost engine
+    /// frame, like SpiderMonkey's JS_SetNativeStackQuota. Exceeding it throws
+    /// a catchable RangeError instead of the fixed depths' Runtime error.
+    pub native_stack: Option<usize>,
+}
+
+impl Limits {
+    /// The test-harness defaults (js_check, conformance/run.py, cargo tests).
+    pub const HARNESS: Limits = Limits {
+        call_depth: Some(32),
+        evaluation_depth: Some(128),
+        native_stack: None,
+    };
+    /// Only a native stack budget, for embeddings running web content.
+    pub const fn native_stack(bytes: usize) -> Limits {
+        Limits {
+            call_depth: None,
+            evaluation_depth: None,
+            native_stack: Some(bytes),
+        }
+    }
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self::HARNESS
+    }
+}
+
+/// The address of a local in the caller's frame: a safe stack position probe.
+#[inline(always)]
+pub(super) fn stack_position() -> usize {
+    let marker = 0u8;
+    std::ptr::addr_of!(marker) as usize
+}
+
 pub const MIN_GC_THRESHOLD: usize = 4096;
 pub const GC_GROWTH_FACTOR: usize = 2;
 
@@ -227,6 +274,11 @@ pub struct Engine<'host> {
     seen_collections: u64,
     steps: usize,
     step_limit: usize,
+    pub(super) limits: Limits,
+    /// Stack position of the outermost guarded frame; 0 when none is running.
+    pub(super) stack_base: usize,
+    /// Deepest native stack use seen since the last reset, in bytes.
+    pub(super) stack_high_water: usize,
     pub(super) call_depth: usize,
     /// Completion value of the running eval code (None outside eval).
     pub(super) completion: Option<(Value, Option<ExternalRoot>)>,
@@ -300,6 +352,9 @@ impl<'host> Engine<'host> {
             seen_collections: 0,
             steps: 0,
             step_limit: 10_000,
+            limits: Limits::HARNESS,
+            stack_base: 0,
+            stack_high_water: 0,
             call_depth: 0,
             completion: None,
             native_depth: 0,
@@ -360,6 +415,9 @@ impl<'host> Engine<'host> {
             seen_collections: self.seen_collections,
             steps: self.steps,
             step_limit: self.step_limit,
+            limits: self.limits,
+            stack_base: self.stack_base,
+            stack_high_water: self.stack_high_water,
             call_depth: self.call_depth,
             completion: self.completion,
             native_depth: self.native_depth,
@@ -432,6 +490,55 @@ impl<'host> Engine<'host> {
     }
     pub fn set_step_limit(&mut self, steps: usize) {
         self.step_limit = steps;
+    }
+    pub fn step_limit_value(&self) -> usize {
+        self.step_limit
+    }
+    pub fn set_limits(&mut self, limits: Limits) {
+        self.limits = limits;
+    }
+    pub fn limits(&self) -> Limits {
+        self.limits
+    }
+    /// Deepest native stack use in bytes since the last call (measurement aid).
+    pub fn take_stack_high_water(&mut self) -> usize {
+        std::mem::take(&mut self.stack_high_water)
+    }
+    /// Enter a guarded recursion level (a call or an expression). `depth` is
+    /// the counter of that level before the increment, `limit` its fixed cap.
+    #[inline(always)]
+    pub(super) fn enter_guard(
+        &mut self,
+        depth: usize,
+        limit: Option<usize>,
+        what: &'static str,
+    ) -> Result<()> {
+        if limit.is_some_and(|limit| depth >= limit) {
+            return Err(ScriptError::Runtime(what));
+        }
+        if let Some(budget) = self.limits.native_stack {
+            let here = stack_position();
+            if self.stack_base == 0 {
+                self.stack_base = here;
+            }
+            // The stack grows down on every supported target; abs_diff keeps
+            // the probe correct either way.
+            let used = self.stack_base.abs_diff(here);
+            if used > self.stack_high_water {
+                self.stack_high_water = used;
+            }
+            if used > budget {
+                return self.throw_error("RangeError", "Maximum call stack size exceeded");
+            }
+        }
+        Ok(())
+    }
+    /// Leave a guarded level; forget the stack base once nothing is running.
+    #[inline(always)]
+    pub(super) fn leave_guard(&mut self) {
+        if self.call_depth == 0 && self.evaluation_depth == 0 && self.native_depth == 0 {
+            self.stack_base = 0;
+        }
     }
     pub(super) fn step_limit(&self) -> usize {
         self.step_limit

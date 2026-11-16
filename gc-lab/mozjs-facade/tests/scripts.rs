@@ -302,3 +302,39 @@ fn scripted_caller_global_is_the_running_scripts_realm() {
         JS::UnhideScriptedCaller(cx);
     }
 }
+
+/// MOZJS_FACADE.md "Interpreter guards": on a thread with the script thread's
+/// 8 MiB stack, a parentless context runs past the harness guards (call depth
+/// 32, 10,000 steps) and runaway recursion is a catchable RangeError.
+#[test]
+fn web_engine_has_no_step_budget_and_a_native_stack_guard() {
+    let run = || unsafe {
+        let cx = JS_NewContext(32 << 20, ptr::null_mut());
+        let mut options = RealmOptions::default();
+        options.creationOptions_.compSpec_ = CompartmentSpecifier::NewCompartmentAndZone;
+        let global = JS_NewGlobalObject(
+            cx,
+            &GLOBAL_CLASS,
+            ptr::null_mut(),
+            OnNewGlobalHookOption::DontFireOnNewGlobalHook,
+            &*options,
+        );
+        EnterRealm(cx, global);
+        let deep = "function f(n) { return n === 0 ? 0 : 1 + f(n - 1); } f(50)";
+        assert_eq!(evaluate(cx, deep).unwrap().to_int32(), 50);
+        let long = "var s = 0; for (var i = 0; i < 20000; i++) s += 1; s";
+        assert_eq!(evaluate(cx, long).unwrap().to_int32(), 20000);
+        let runaway = "function g() { return g() + 1; }
+            var r = 0;
+            try { g(); } catch (e) { r = e instanceof RangeError ? 1 : 2; }
+            r";
+        assert_eq!(evaluate(cx, runaway).unwrap().to_int32(), 1);
+        assert!(!JS_IsExceptionPending(cx));
+    };
+    std::thread::Builder::new()
+        .stack_size(8 << 20)
+        .spawn(run)
+        .unwrap()
+        .join()
+        .unwrap();
+}

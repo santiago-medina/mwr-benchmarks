@@ -751,12 +751,15 @@ impl Engine<'_> {
     }
     pub(super) fn eval(&mut self, x: &Expr, env: Id) -> Result<Value> {
         self.tick()?;
-        if self.evaluation_depth >= 128 {
-            return Err(ScriptError::Runtime("evaluation depth limit"));
-        }
+        self.enter_guard(
+            self.evaluation_depth,
+            self.limits.evaluation_depth,
+            "evaluation depth limit",
+        )?;
         self.evaluation_depth += 1;
         let r = self.frame(|e| e.eval_inner(x, env));
         self.evaluation_depth -= 1;
+        self.leave_guard();
         r
     }
     fn eval_inner(&mut self, x: &Expr, env: Id) -> Result<Value> {
@@ -1088,9 +1091,7 @@ impl Engine<'_> {
         args: Vec<Value>,
     ) -> Result<Value> {
         self.tick()?;
-        if self.call_depth >= 32 {
-            return Err(ScriptError::Runtime("call depth limit"));
-        }
+        self.enter_guard(self.call_depth, self.limits.call_depth, "call depth limit")?;
         self.call_depth += 1;
         // Function bodies do not contribute to an enclosing eval's completion value.
         let completion = self.completion.take();
@@ -1131,6 +1132,7 @@ impl Engine<'_> {
         };
         (self.tail_ok, self.non_tail) = tail_state;
         self.call_depth -= 1;
+        self.leave_guard();
         self.completion = completion;
         match r {
             Err(ScriptError::Host(message)) if self.adapter_error.is_none() => {
