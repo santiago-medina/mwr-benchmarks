@@ -10391,7 +10391,7 @@ pub mod root {
                 capture: *mut root::JS::StackCapture,
                 startAfter: root::JS::HandleObject,
             ) -> bool {
-                crate::sys::unimplemented_entry("CaptureCurrentStack")
+                crate::sys::imp::CaptureCurrentStack(cx, stackp, capture, startAfter)
             }
             #[doc = " Returns true if capturing stack trace data to associate with an asynchronous\n operation is currently enabled for the current context realm.\n\n Users should check this state before capturing a stack that will be passed\n back to AutoSetAsyncStackForNewCalls later, in order to avoid capturing a\n stack for async use when we don't actually want to capture it."]
             pub unsafe extern "C" fn IsAsyncStackCaptureEnabledForRealm(cx: *mut root::JSContext) -> bool {
@@ -10406,7 +10406,7 @@ pub mod root {
                 indent: usize,
                 stackFormat: root::js::StackFormat,
             ) -> bool {
-                crate::sys::unimplemented_entry("BuildStackString")
+                crate::sys::imp::BuildStackString(cx, principals, stack, stringp, indent, stackFormat)
             }
         #[repr(C)]
         pub struct OptimizedEncodingListener__bindgen_vtable(::std::os::raw::c_void);
@@ -13555,7 +13555,7 @@ pub mod root {
                 sourcep: root::JS::MutableHandle<*mut root::JSString>,
                 selfHosted: root::JS::SavedFrameSelfHosted,
             ) -> root::JS::SavedFrameResult {
-                crate::sys::unimplemented_entry("GetSavedFrameSource")
+                crate::sys::imp::GetSavedFrameSource(cx, principals, savedFrame, sourcep, selfHosted)
             }
             #[doc = " Given a SavedFrame JSObject, get an ID identifying its ScriptSource.\n Defaults to 0."]
             pub unsafe extern "C" fn GetSavedFrameSourceId(
@@ -13575,7 +13575,7 @@ pub mod root {
                 linep: *mut u32,
                 selfHosted: root::JS::SavedFrameSelfHosted,
             ) -> root::JS::SavedFrameResult {
-                crate::sys::unimplemented_entry("GetSavedFrameLine")
+                crate::sys::imp::GetSavedFrameLine(cx, principals, savedFrame, linep, selfHosted)
             }
             #[doc = " Given a SavedFrame JSObject, get its column property. Defaults to 0."]
             pub unsafe extern "C" fn GetSavedFrameColumn(
@@ -13585,7 +13585,7 @@ pub mod root {
                 columnp: *mut root::JS::TaggedColumnNumberOneOrigin,
                 selfHosted: root::JS::SavedFrameSelfHosted,
             ) -> root::JS::SavedFrameResult {
-                crate::sys::unimplemented_entry("GetSavedFrameColumn")
+                crate::sys::imp::GetSavedFrameColumn(cx, principals, savedFrame, columnp, selfHosted)
             }
             #[doc = " Given a SavedFrame JSObject, get its functionDisplayName string, or nullptr\n if SpiderMonkey was unable to infer a name for the captured frame's\n function. Defaults to nullptr."]
             pub unsafe extern "C" fn GetSavedFrameFunctionDisplayName(
@@ -13595,7 +13595,7 @@ pub mod root {
                 namep: root::JS::MutableHandle<*mut root::JSString>,
                 selfHosted: root::JS::SavedFrameSelfHosted,
             ) -> root::JS::SavedFrameResult {
-                crate::sys::unimplemented_entry("GetSavedFrameFunctionDisplayName")
+                crate::sys::imp::GetSavedFrameFunctionDisplayName(cx, principals, savedFrame, namep, selfHosted)
             }
             #[doc = " Given a SavedFrame JSObject, get its asyncCause string. Defaults to nullptr."]
             pub unsafe extern "C" fn GetSavedFrameAsyncCause(
@@ -13625,7 +13625,7 @@ pub mod root {
                 parentp: root::JS::MutableHandle<*mut root::JSObject>,
                 selfHosted: root::JS::SavedFrameSelfHosted,
             ) -> root::JS::SavedFrameResult {
-                crate::sys::unimplemented_entry("GetSavedFrameParent")
+                crate::sys::imp::GetSavedFrameParent(cx, principals, savedFrame, parentp, selfHosted)
             }
             #[doc = " Given a SavedFrame object, convert it and its transitive parents to plain\n objects. Because SavedFrame objects store their properties on the prototype,\n they cannot be usefully stringified to JSON. Assigning their properties to\n plain objects allow those objects to be stringified and the saved frame stack\n can be encoded as a string."]
             pub unsafe extern "C" fn ConvertSavedFrameToPlainObject(
@@ -20337,17 +20337,17 @@ pub mod root {
                 crate::sys::unimplemented_entry("JS_CallArgsFromVp")
             }
             pub unsafe extern "C" fn JS_StackCapture_AllFrames(capture: *mut root::JS::StackCapture) {
-                crate::sys::unimplemented_entry("JS_StackCapture_AllFrames")
+                crate::sys::imp::JS_StackCapture_AllFrames(capture)
             }
             pub unsafe extern "C" fn JS_StackCapture_MaxFrames(max: u32, capture: *mut root::JS::StackCapture) {
-                crate::sys::unimplemented_entry("JS_StackCapture_MaxFrames")
+                crate::sys::imp::JS_StackCapture_MaxFrames(max, capture)
             }
             pub unsafe extern "C" fn JS_StackCapture_FirstSubsumedFrame(
                 cx: *mut root::JSContext,
                 ignoreSelfHostedFrames: bool,
                 capture: *mut root::JS::StackCapture,
             ) {
-                crate::sys::unimplemented_entry("JS_StackCapture_FirstSubsumedFrame")
+                crate::sys::imp::JS_StackCapture_FirstSubsumedFrame(cx, ignoreSelfHostedFrames, capture)
             }
             pub unsafe extern "C" fn GetLinearStringLength(s: *mut root::JSLinearString) -> usize {
                 crate::sys::imp::GetLinearStringLength(s)

@@ -283,3 +283,13 @@ NewFunctionWithReserved
 FunctionHasNativeReserved
 GetFunctionNativeReserved
 SetFunctionNativeReserved
+JS_StackCapture_AllFrames
+JS_StackCapture_MaxFrames
+JS_StackCapture_FirstSubsumedFrame
+CaptureCurrentStack
+BuildStackString
+GetSavedFrameSource
+GetSavedFrameLine
+GetSavedFrameColumn
+GetSavedFrameFunctionDisplayName
+GetSavedFrameParent

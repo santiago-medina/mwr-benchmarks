@@ -483,6 +483,22 @@ Test: `tests/resolve.rs` (identifier reference, `typeof`, `in`, property
 get, a nested lookup of the same id inside the hook, unresolved names and
 sloppy assignment).
 
+### Stack capture (js/public/Stack.h)
+
+Servo's console captures the JS stack for every message
+(components/script/dom/console.rs `get_js_stack`, through
+`CapturedJSStack`). The engine keeps no frame stack with source positions
+yet, so `CaptureCurrentStack` succeeds with a null stack, SpiderMonkey's
+answer when there are no frames. The `GetSavedFrame*` accessors follow
+js/src/vm/SavedStacks.cpp for a null frame: empty source, line and column 0,
+null name and parent, `AccessDenied`. `BuildStackString` of a null stack is
+the empty string. Console messages therefore carry no stack, and
+`console.trace` prints none. Real frames need an engine call stack with
+positions (function name, script URL, line, column), which is also what
+error `stack` and the ":0:1" error location need.
+
+Test: `tests/stacks.rs`.
+
 ### GC policy
 
 The facade creates its engine with the engine's default policy,

@@ -19,6 +19,7 @@ mod promises;
 mod props;
 mod proxy;
 mod scripts;
+mod stacks;
 
 pub use barriers::*;
 pub use context::*;
@@ -29,3 +30,4 @@ pub use promises::*;
 pub use props::*;
 pub use proxy::*;
 pub use scripts::*;
+pub use stacks::*;
