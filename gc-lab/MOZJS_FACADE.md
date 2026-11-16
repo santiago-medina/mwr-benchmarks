@@ -595,8 +595,8 @@ facade tests under GcPolicy::Stress"), so rooting bugs still fail at once.
 Every `ObjectCell` is leaked and every object with a cell is a root
 (`Host::trace_roots`). Nothing Servo can see is ever collected; only engine
 garbage that never got a cell is. Lifting this is a tracing project with its
-own design note (`FACADE_TRACING.md`, with a literature check, since it is the
-GC side of the binding API). What it needs, all on the facade side, because the
+own design note, `FACADE_TRACING.md` (written 2026-11-16; literature check
+requested), since it is the GC side of the binding API. What it needs, all on the facade side, because the
 engine `Host` already has `trace_roots`, a per-object `trace` hook and
 `finalize`:
 
@@ -732,7 +732,8 @@ Test: `tests/jit.rs`.
    evaluation.
 4. Servo-path interpreter guards and GC policy: done ("Interpreter guards",
    "GC policy"). Left: the interrupt callback that replaces the step limit, and
-   lifting the keep-alive policy ("Cell lifetime"), which gets its own design
-   note (`FACADE_TRACING.md`) before C2.
+   lifting the keep-alive policy ("Cell lifetime"): design in
+   `FACADE_TRACING.md` (precise roots, class trace hooks, post-sweep finalize,
+   poison mode; four migration steps).
 5. Facade overhead micro-benchmark (literature check), before and after
    numbers in the commit.
