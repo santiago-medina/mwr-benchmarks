@@ -5581,7 +5581,7 @@ pub mod root {
                 flags: ::std::os::raw::c_uint,
                 name: *const ::std::os::raw::c_char,
             ) -> *mut root::JSFunction {
-                crate::sys::unimplemented_entry("NewFunctionWithReserved")
+                crate::sys::imp::NewFunctionWithReserved(cx, call, nargs, flags, name)
             }
             pub unsafe extern "C" fn NewFunctionByIdWithReserved(
                 cx: *mut root::JSContext,
@@ -5607,17 +5607,17 @@ pub mod root {
                 fun: *mut root::JSObject,
                 which: usize,
             ) -> *const root::JS::Value {
-                crate::sys::unimplemented_entry("GetFunctionNativeReserved")
+                crate::sys::imp::GetFunctionNativeReserved(fun, which)
             }
             pub unsafe extern "C" fn SetFunctionNativeReserved(
                 fun: *mut root::JSObject,
                 which: usize,
                 val: *const root::JS::Value,
             ) {
-                crate::sys::unimplemented_entry("SetFunctionNativeReserved")
+                crate::sys::imp::SetFunctionNativeReserved(fun, which, val)
             }
             pub unsafe extern "C" fn FunctionHasNativeReserved(fun: *mut root::JSObject) -> bool {
-                crate::sys::unimplemented_entry("FunctionHasNativeReserved")
+                crate::sys::imp::FunctionHasNativeReserved(fun)
             }
             pub unsafe extern "C" fn GetObjectProto(
                 cx: *mut root::JSContext,
@@ -13196,19 +13196,19 @@ pub mod root {
                 cx: *mut root::JSContext,
                 executor: root::JS::HandleObject,
             ) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("NewPromiseObject")
+                crate::sys::imp::NewPromiseObject(cx, executor)
             }
             #[doc = " Returns true if the given object is an unwrapped PromiseObject, false\n otherwise."]
             pub unsafe extern "C" fn IsPromiseObject(obj: root::JS::HandleObject) -> bool {
-                crate::sys::unimplemented_entry("IsPromiseObject")
+                crate::sys::imp::IsPromiseObject(obj)
             }
             #[doc = " Returns the current compartment's original Promise constructor."]
             pub unsafe extern "C" fn GetPromiseConstructor(cx: *mut root::JSContext) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("GetPromiseConstructor")
+                crate::sys::imp::GetPromiseConstructor(cx)
             }
             #[doc = " Returns the current compartment's original Promise.prototype."]
             pub unsafe extern "C" fn GetPromisePrototype(cx: *mut root::JSContext) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("GetPromisePrototype")
+                crate::sys::imp::GetPromisePrototype(cx)
             }
         #[repr(i32)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -13219,7 +13219,7 @@ pub mod root {
         }
             #[doc = " Returns the given Promise's state as a JS::PromiseState enum value.\n\n Returns JS::PromiseState::Pending if the given object is a wrapper that\n can't safely be unwrapped."]
             pub unsafe extern "C" fn GetPromiseState(promise: root::JS::HandleObject) -> root::JS::PromiseState {
-                crate::sys::unimplemented_entry("GetPromiseState")
+                crate::sys::imp::GetPromiseState(promise)
             }
             #[doc = " Returns the given Promise's process-unique ID."]
             pub unsafe extern "C" fn GetPromiseID(promise: root::JS::HandleObject) -> u64 {
@@ -13227,19 +13227,19 @@ pub mod root {
             }
             #[doc = " Returns whether the given promise's rejection is already handled or not.\n\n The caller must check the given promise is rejected before checking it's\n handled or not."]
             pub unsafe extern "C" fn GetPromiseIsHandled(promise: root::JS::HandleObject) -> bool {
-                crate::sys::unimplemented_entry("GetPromiseIsHandled")
+                crate::sys::imp::GetPromiseIsHandled(promise)
             }
             pub unsafe extern "C" fn SetSettledPromiseIsHandled(
                 cx: *mut root::JSContext,
                 promise: root::JS::HandleObject,
             ) -> bool {
-                crate::sys::unimplemented_entry("SetSettledPromiseIsHandled")
+                crate::sys::imp::SetSettledPromiseIsHandled(cx, promise)
             }
             pub unsafe extern "C" fn SetAnyPromiseIsHandled(
                 cx: *mut root::JSContext,
                 promise: root::JS::HandleObject,
             ) -> bool {
-                crate::sys::unimplemented_entry("SetAnyPromiseIsHandled")
+                crate::sys::imp::SetAnyPromiseIsHandled(cx, promise)
             }
             #[doc = " Returns a js::SavedFrame linked list of the stack that lead to the given\n Promise's allocation.\n\n The promise parameter here should be an unwrapped promise."]
             pub unsafe extern "C" fn GetPromiseAllocationSite(promise: root::JS::HandleObject)
@@ -13261,14 +13261,14 @@ pub mod root {
                 cx: *mut root::JSContext,
                 resolutionValue: root::JS::HandleValue,
             ) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("CallOriginalPromiseResolve")
+                crate::sys::imp::CallOriginalPromiseResolve(cx, resolutionValue)
             }
             #[doc = " Calls the current compartment's original Promise.reject on the original\n Promise constructor, with `resolutionValue` passed as an argument."]
             pub unsafe extern "C" fn CallOriginalPromiseReject(
                 cx: *mut root::JSContext,
                 rejectionValue: root::JS::HandleValue,
             ) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("CallOriginalPromiseReject")
+                crate::sys::imp::CallOriginalPromiseReject(cx, rejectionValue)
             }
             #[doc = " Resolves the given Promise with the given `resolutionValue`.\n\n Calls the `resolve` function that was passed to the executor function when\n the Promise was created."]
             pub unsafe extern "C" fn ResolvePromise(
@@ -13276,7 +13276,7 @@ pub mod root {
                 promiseObj: root::JS::HandleObject,
                 resolutionValue: root::JS::HandleValue,
             ) -> bool {
-                crate::sys::unimplemented_entry("ResolvePromise")
+                crate::sys::imp::ResolvePromise(cx, promiseObj, resolutionValue)
             }
             #[doc = " Rejects the given `promise` with the given `rejectionValue`.\n\n Calls the `reject` function that was passed to the executor function when\n the Promise was created."]
             pub unsafe extern "C" fn RejectPromise(
@@ -13284,7 +13284,7 @@ pub mod root {
                 promiseObj: root::JS::HandleObject,
                 rejectionValue: root::JS::HandleValue,
             ) -> bool {
-                crate::sys::unimplemented_entry("RejectPromise")
+                crate::sys::imp::RejectPromise(cx, promiseObj, rejectionValue)
             }
             #[doc = " Create a Promise with the given fulfill/reject handlers, that will be\n fulfilled/rejected with the value/reason that the promise `promise` is\n fulfilled/rejected with.\n\n This function basically acts like `promise.then(onFulfilled, onRejected)`,\n except that its behavior is unaffected by changes to `Promise`,\n `Promise[Symbol.species]`, `Promise.prototype.then`, `promise.constructor`,\n `promise.then`, and so on.\n\n This function throws if `promise` is not a Promise from this or another\n realm.\n\n This function will assert if `onFulfilled` or `onRejected` is non-null and\n also not IsCallable."]
             pub unsafe extern "C" fn CallOriginalPromiseThen(
@@ -13293,7 +13293,7 @@ pub mod root {
                 onFulfilled: root::JS::HandleObject,
                 onRejected: root::JS::HandleObject,
             ) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("CallOriginalPromiseThen")
+                crate::sys::imp::CallOriginalPromiseThen(cx, promise, onFulfilled, onRejected)
             }
             #[doc = " Unforgeable, optimized version of the JS builtin Promise.prototype.then.\n\n Takes a Promise instance and nullable `onFulfilled`/`onRejected` callables to\n enqueue as reactions for that promise. In contrast to Promise.prototype.then,\n this doesn't create and return a new Promise instance.\n\n Throws a TypeError if `promise` isn't a Promise (or possibly a different\n error if it's a security wrapper or dead object proxy)."]
             pub unsafe extern "C" fn AddPromiseReactions(
@@ -13302,7 +13302,7 @@ pub mod root {
                 onFulfilled: root::JS::HandleObject,
                 onRejected: root::JS::HandleObject,
             ) -> bool {
-                crate::sys::unimplemented_entry("AddPromiseReactions")
+                crate::sys::imp::AddPromiseReactions(cx, promise, onFulfilled, onRejected)
             }
             #[doc = " Unforgeable, optimized version of the JS builtin Promise.prototype.then.\n\n Takes a Promise instance and nullable `onFulfilled`/`onRejected` callables to\n enqueue as reactions for that promise. In contrast to Promise.prototype.then,\n this doesn't create and return a new Promise instance.\n\n Throws a TypeError if `promise` isn't a Promise (or possibly a different\n error if it's a security wrapper or dead object proxy).\n\n If `onRejected` is null and `promise` is rejected, this function -- unlike\n the function above -- will not report an unhandled rejection."]
             pub unsafe extern "C" fn AddPromiseReactionsIgnoringUnhandledRejection(
@@ -13311,7 +13311,7 @@ pub mod root {
                 onFulfilled: root::JS::HandleObject,
                 onRejected: root::JS::HandleObject,
             ) -> bool {
-                crate::sys::unimplemented_entry("AddPromiseReactionsIgnoringUnhandledRejection")
+                crate::sys::imp::AddPromiseReactionsIgnoringUnhandledRejection(cx, promise, onFulfilled, onRejected)
             }
         #[repr(i32)]
         #[derive(Debug, Copy, Clone, Hash, PartialEq, Eq)]
@@ -13331,7 +13331,7 @@ pub mod root {
                 promise: root::JS::HandleObject,
                 state: root::JS::PromiseUserInputEventHandlingState,
             ) -> bool {
-                crate::sys::unimplemented_entry("SetPromiseUserInputEventHandlingState")
+                crate::sys::imp::SetPromiseUserInputEventHandlingState(promise, state)
             }
             #[doc = " Unforgeable version of the JS builtin Promise.all.\n\n Takes a HandleObjectVector of Promise objects and returns a promise that's\n resolved with an array of resolution values when all those promises have\n been resolved, or rejected with the rejection value of the first rejected\n promise.\n\n Asserts that all objects in the `promises` vector are, maybe wrapped,\n instances of `Promise` or a subclass of `Promise`."]
             pub unsafe extern "C" fn GetWaitForAllPromise(

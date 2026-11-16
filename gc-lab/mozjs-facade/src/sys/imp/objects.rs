@@ -75,7 +75,9 @@ pub(super) struct Shared {
     cells: RefCell<HashMap<ObjectId, &'static ObjectCell>>,
     /// Reserved slots, bit-exact (`PrivateValue` doubles and int32 values keep
     /// their tags), keyed by object.
-    slots: RefCell<HashMap<ObjectId, Vec<JSVal>>>,
+    pub(super) slots: RefCell<HashMap<ObjectId, Vec<JSVal>>>,
+    /// SetPromiseUserInputEventHandlingState flags, by promise (promises.rs).
+    pub(super) user_input: RefCell<HashMap<ObjectId, JS::PromiseUserInputEventHandlingState>>,
     /// The host-owned microtask queue (jobs.rs).
     pub(super) microtasks: RefCell<std::collections::VecDeque<super::jobs::Microtask>>,
     /// Engine job serial of each dequeued `JSMicroTask*` not yet run.
@@ -129,6 +131,15 @@ impl Host for FacadeHost {
         new_target: Option<ObjectId>,
     ) -> Result<JsValue, ScriptError> {
         super::natives::call_native(&self.0, engine, function, this, args, new_target)
+    }
+
+    fn promise_rejection_tracker(&self, engine: &mut Engine<'_>, promise: ObjectId, handled: bool) {
+        let cx = self.0.context.get() as *const super::context::Context;
+        if cx.is_null() {
+            return;
+        }
+        // SAFETY: `context` is the live owning Context (set by JS_NewContext).
+        super::promises::track_rejection(unsafe { &*cx }, engine, promise, handled);
     }
 
     fn enqueue_job(&self, serial: u64) {

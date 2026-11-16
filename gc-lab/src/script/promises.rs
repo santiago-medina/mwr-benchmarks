@@ -30,7 +30,14 @@ pub(super) struct Reaction {
 }
 #[derive(Clone)]
 pub(super) enum State {
-    Pending,
+    /// `resolving`: the cell behind the resolving functions
+    /// CreateResolvingFunctions made at construction (§27.2.1.3). The
+    /// embedder's ResolvePromise and RejectPromise go through it, so they
+    /// honour [[AlreadyResolved]]. Kept in the pending state only, which
+    /// keeps `Ext` within its layout bound.
+    Pending {
+        resolving: Option<Id>,
+    },
     Fulfilled(Value),
     Rejected(Value),
 }
@@ -45,8 +52,12 @@ impl PromiseState {
         let mut values = vec![];
         match &self.state {
             State::Fulfilled(v) | State::Rejected(v) => values.push(v.clone()),
-            State::Pending => {}
+            State::Pending { .. } => {}
         }
+        let mut ids: Vec<Id> = match &self.state {
+            State::Pending { resolving } => resolving.iter().copied().collect(),
+            _ => vec![],
+        };
         for r in &self.reactions {
             values.extend(r.fulfilled.clone());
             values.extend(r.rejected.clone());
@@ -54,7 +65,8 @@ impl PromiseState {
                 values.extend(cap.values());
             }
         }
-        values.iter().filter_map(Value::id).collect()
+        ids.extend(values.iter().filter_map(Value::id));
+        ids
     }
 }
 #[derive(Clone)]
@@ -507,16 +519,7 @@ impl Engine<'_> {
             return self.throw_error("TypeError", "promise executor is not callable");
         }
         let proto = self.prototype_from_constructor(new_target, |i| i.promise)?;
-        let id = self.new_object(Some(proto))?;
-        self.protect(&Value::Object(id))?;
-        let mut data = self.data(id)?.clone();
-        data.promise = Some(PromiseState {
-            state: State::Pending,
-            reactions: vec![],
-            handled: false,
-        });
-        self.replace_data(id, data)?;
-        let (resolve, reject) = self.resolving_functions(id)?;
+        let (id, resolve, reject) = self.new_pending_promise(proto)?;
         match self.invoke(executor, vec![resolve, reject.clone()]) {
             Ok(_) => {}
             Err(ScriptError::Thrown(ex)) => {
@@ -526,6 +529,61 @@ impl Engine<'_> {
             Err(e) => return Err(e),
         }
         Ok(Value::Object(id))
+    }
+    /// Promise ( executor ) steps 3-8 (§27.2.3.1): a pending promise with
+    /// `proto` and its resolving functions; the caller runs the executor.
+    pub(super) fn new_pending_promise(&mut self, proto: Id) -> Result<(Id, Value, Value)> {
+        let id = self.new_object(Some(proto))?;
+        self.protect(&Value::Object(id))?;
+        let mut data = self.data(id)?.clone();
+        data.promise = Some(PromiseState {
+            state: State::Pending { resolving: None },
+            reactions: vec![],
+            handled: false,
+        });
+        self.replace_data(id, data)?;
+        let (resolve, reject) = self.resolving_functions(id)?;
+        let Some(Internal::Resolve { cell, .. }) = resolve
+            .id()
+            .and_then(|f| self.data(f).ok().and_then(|d| d.internal.clone()))
+        else {
+            unreachable!()
+        };
+        let mut data = self.data(id)?.clone();
+        data.promise.as_mut().unwrap().state = State::Pending {
+            resolving: Some(cell),
+        };
+        self.replace_data(id, data)?;
+        Ok((id, resolve, reject))
+    }
+    /// Calls the resolve or reject function made for promise `id` at
+    /// construction (§27.2.1.3.1-2); a promise without one is settled directly.
+    pub(super) fn resolve_by_record(&mut self, id: Id, value: Value, reject: bool) -> Result<()> {
+        let cell = match self
+            .data(id)?
+            .promise
+            .as_ref()
+            .ok_or(ScriptError::Runtime("missing promise record"))?
+            .state
+        {
+            State::Pending { resolving } => resolving,
+            // Settled: [[AlreadyResolved]] is true, so resolving is a no-op.
+            _ => return Ok(()),
+        };
+        match cell {
+            Some(cell) => {
+                self.promise_internal(Internal::Resolve { cell, reject }, vec![value])?;
+            }
+            None if reject => self.settle(id, value, true)?,
+            None => self.resolve_value(id, value)?,
+        }
+        Ok(())
+    }
+    /// HostPromiseRejectionTracker ( promise, operation ) (§27.2.1.9).
+    fn rejection_tracker(&mut self, id: Id, handled: bool) {
+        if let Some(host) = self.host.clone() {
+            host.promise_rejection_tracker(self, ObjectId(id), handled);
+        }
     }
     pub(super) fn capability(&mut self, constructor: Value) -> Result<Capability> {
         let cell = self.new_object(None)?;
@@ -558,7 +616,7 @@ impl Engine<'_> {
             .promise
             .as_mut()
             .ok_or(ScriptError::Runtime("missing promise record"))?;
-        if !matches!(p.state, State::Pending) {
+        if !matches!(p.state, State::Pending { .. }) {
             return Ok(());
         }
         let reactions = std::mem::take(&mut p.reactions);
@@ -592,6 +650,7 @@ impl Engine<'_> {
                 return Err(ScriptError::Runtime("unhandled rejection diagnostic limit"));
             }
             self.unhandled.insert(id, (assertion, diagnostic));
+            self.rejection_tracker(id, false);
         }
         for job in jobs {
             self.enqueue_job(job)?;
@@ -783,9 +842,12 @@ impl Engine<'_> {
             .promise
             .as_mut()
             .ok_or(ScriptError::Runtime("missing promise record"))?;
+        // PerformPromiseThen step 11.c (§27.2.5.4.1): a rejected promise that
+        // was not handled reports "handle".
+        let report_handle = !p.handled && matches!(p.state, State::Rejected(_));
         p.handled = true;
         let job = match &p.state {
-            State::Pending => {
+            State::Pending { .. } => {
                 p.reactions.push(reaction);
                 None
             }
@@ -804,6 +866,9 @@ impl Engine<'_> {
         };
         self.replace_data(id, data)?;
         self.unhandled.remove(&id);
+        if report_handle {
+            self.rejection_tracker(id, true);
+        }
         if let Some(job) = job {
             self.enqueue_job(job)?;
         }

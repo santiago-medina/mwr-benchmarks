@@ -120,3 +120,38 @@ tres perfiles Test262 con su comprobación independiente en Node.
 Los tres informes corresponden al mismo binario. El hash de todas las fuentes
 Rust actuales coincide con el medido por la prueba nativa. La caché de dependencias
 se restauró y la compilación nativa tardó 71 segundos.
+
+## Embedder API
+
+_English; added with the mozjs facade Promise cluster (MOZJS_FACADE.md
+"Promises")._
+
+`Engine` (src/script/embed.rs) exposes the §27.2 operations an embedder
+needs, so bindings never re-implement them:
+
+- `new_promise(executor)`: with an executor, Promise(executor)
+  (§27.2.3.1). Without one, a pending promise whose resolving functions
+  (CreateResolvingFunctions, §27.2.1.3) are stored in
+  `PromiseState::resolving`, a GC edge of the promise.
+- `resolve_promise(p, v, reject)`: calls those stored resolving functions,
+  so [[AlreadyResolved]] is shared with any script that got them through
+  the executor. A promise without them is settled directly.
+- `promise_resolve_original(v)`, `promise_reject_original(v)`:
+  PromiseResolve(%Promise%, v) (§27.2.4.7.1) and Promise.reject with
+  %Promise% (§27.2.4.6). They never read user-visible properties.
+- `perform_promise_then(p, on_fulfilled, on_rejected, result)`:
+  PerformPromiseThen (§27.2.5.4.1). Non-callable handlers become empty,
+  like steps 3-4. With `result`, the capability is
+  NewPromiseCapability(%Promise%). Without it, no derived promise exists.
+- `promise_state`, `promise_is_handled`, `set_promise_is_handled`,
+  `is_promise`, `promise_constructor`, `promise_prototype`: plain reads of
+  the internal slots and intrinsics. `set_promise_is_handled` sets
+  [[PromiseIsHandled]] and clears the unhandled set, with no tracker
+  event.
+- `Host::promise_rejection_tracker(engine, promise, handled)`:
+  HostPromiseRejectionTracker (§27.2.1.9). It is called with `handled`
+  false from RejectPromise step 7 when no handler is attached, and with
+  `handled` true from PerformPromiseThen step 11.c when the first handler
+  is attached to a rejected promise that was not yet handled. It may
+  re-enter the engine and it cannot fail the operation.
+

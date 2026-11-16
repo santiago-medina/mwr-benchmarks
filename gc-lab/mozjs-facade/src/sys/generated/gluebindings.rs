@@ -1260,7 +1260,7 @@ pub mod root {
             promise: root::JS::HandleObject,
             dest: root::JS::MutableHandleValue,
         ) {
-            crate::sys::unimplemented_entry("JS_GetPromiseResult")
+            crate::sys::imp::JS_GetPromiseResult(promise, dest)
         }
         pub unsafe extern "C" fn JS_GetScriptPrivate(script: *mut root::JSScript, dest: root::JS::MutableHandleValue) {
             crate::sys::imp::JS_GetScriptPrivate(script, dest)

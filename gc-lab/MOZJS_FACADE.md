@@ -301,8 +301,8 @@ embedder's own task (Servo enqueues a `PrivateValue` boxing a Rust runnable).
   job, because Servo skips a task whose global is null.
 - Not modelled yet: incumbent globals and host-defined data
   (`MaybeGetHostDefinedDataFromJSMicroTask` returns null for both, which
-  Servo reads as "no incumbent"), the promise behind a job, the user-input
-  flag (always `DontCare`), and the debugger queue (always empty).
+  Servo reads as "no incumbent"), the promise behind a job, and the
+  debugger queue (always empty).
   `JobQueueIsEmpty` and `JobQueueMayNotBeEmpty` are hints, and the engine
   always queues. `GetJobQueue` returns the pointer `SetJobQueue` stored.
 - Jobs cancelled after an engine fault are pruned before any `Has*`, count,
@@ -311,6 +311,62 @@ embedder's own task (Servo enqueues a `PrivateValue` boxing a Rust runnable).
 Test: `tests/microtasks.rs` (an embedder task prepended, a promise job, and
 an embedder task appended, drained in order; a collection runs between the
 dequeue and the run).
+
+### Promises (js/public/Promise.h)
+
+`imp/promises.rs`, 21 entry points: what Servo's dom/promise/promise.rs,
+script_runtime.rs and modules/module_loading.rs call. Each one converts
+handles and calls one engine operation from the embedding API
+(`Engine::new_promise`, `resolve_promise`, `perform_promise_then`, ...;
+PROMISES.md "Embedder API"). The facade holds no promise algorithm.
+
+| Entry point | Engine operation (ECMA-262) |
+|---|---|
+| `NewPromiseObject(executor)` | `new_promise`: Promise(executor), §27.2.3.1. A null executor makes a pending promise whose resolving functions are kept for the embedder |
+| `ResolvePromise`, `RejectPromise` | `resolve_promise`: the promise's own resolving functions (§27.2.1.3), so [[AlreadyResolved]] holds across embedder and script calls, as in SpiderMonkey |
+| `CallOriginalPromiseResolve` | `promise_resolve_original`: PromiseResolve(%Promise%, x), §27.2.4.7.1 |
+| `CallOriginalPromiseReject` | `promise_reject_original`: Promise.reject with %Promise%, §27.2.4.6 |
+| `CallOriginalPromiseThen` | `perform_promise_then` with NewPromiseCapability(%Promise%) (§27.2.5.4 without the species lookup) |
+| `AddPromiseReactions`, `...IgnoringUnhandledRejection` | `perform_promise_then` with no capability (§27.2.5.4.1 step 1 "resultCapability undefined") |
+| `GetPromiseState`, `JS_GetPromiseResult` | `promise_state`: [[PromiseState]], [[PromiseResult]] |
+| `GetPromiseIsHandled`, `SetSettledPromiseIsHandled`, `SetAnyPromiseIsHandled` | `promise_is_handled`, `set_promise_is_handled`: [[PromiseIsHandled]] |
+| `IsPromiseObject`, `GetPromiseConstructor`, `GetPromisePrototype` | `is_promise`, %Promise%, %Promise.prototype% |
+
+Facade state, not engine state:
+
+- **User-input flag.** `Set/GetPromiseUserInputEventHandlingState` keep a
+  `Shared::user_input` map. New promises are `DontCare`.
+- **Function reserved slots.** `NewFunctionWithReserved` is `JS_NewFunction`
+  plus two bit-exact slots in `Shared::slots`, the map that holds
+  `JS_SetReservedSlot` values. Servo's native handlers keep their holder
+  object in slot 0. To keep that holder alive, the function gets a traced
+  host tag with class 0, so its cell keeps a null `JSClass`, and
+  `FacadeHost::trace` reports the slot edges. `GetFunctionNativeReserved`
+  returns a pointer into the slot vector. The vector never grows, so the
+  pointer stays valid.
+
+**Rejection tracker.** HostPromiseRejectionTracker (§27.2.1.9) is a `Host`
+hook, `promise_rejection_tracker(engine, promise, handled)`. The engine
+calls it from RejectPromise step 7 ("reject") and from PerformPromiseThen
+step 11.c ("handle"), synchronously, like SpiderMonkey. The facade calls
+the callback stored by `SetPromiseRejectionTrackerCallback`
+(`mutedErrors` false) inside `run_parked`, so Servo can re-enter the
+engine. A failure there is logged and never fails the rejection. Marking a
+promise handled through the API sends no "handle" event, as in
+SpiderMonkey.
+
+**Jobs.** Reaction jobs reach the facade queue through `Host::enqueue_job`
+(see "Microtasks"), so Servo's checkpoint drains them with everything else.
+
+Not modelled: `GetPromiseID` (Servo does not call it), wrapper unwrapping
+(the facade never wraps a promise), and the difference between the two
+`AddPromiseReactions` variants. The engine makes no derived promise for
+either, so neither one reports an unhandled rejection.
+
+Test: `tests/promises.rs`. It covers Servo's native executor and native
+handlers with reserved slots across collections, [[AlreadyResolved]], the
+original resolve, reject and then, and the tracker's "reject" and "handle"
+events with a callback that re-enters the engine.
 
 ### Classic scripts and error reports
 

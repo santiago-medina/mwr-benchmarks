@@ -61,6 +61,13 @@ pub struct PropertyDescriptor {
 /// A JavaScript value as seen by the embedder.
 #[derive(Clone, Debug, PartialEq)]
 pub struct JsValue(pub(super) Value);
+/// [[PromiseState]] (ECMA-262 §27.2.6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PromiseStatus {
+    Pending,
+    Fulfilled,
+    Rejected,
+}
 
 /// A property key: a string or a symbol (by its engine-wide number).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -211,6 +218,17 @@ pub trait Host {
     /// queue. A notification only: it must not call into the engine. The host
     /// runs the job later with [`Engine::run_host_job`].
     fn enqueue_job(&self, _serial: u64) {}
+    /// HostPromiseRejectionTracker (ECMA-262 §27.2.1.9): `promise` was rejected
+    /// with no handler (`handled` false, operation "reject"), or such a
+    /// promise got its first handler (`handled` true, operation "handle").
+    /// It may re-enter the engine; it cannot fail the rejection.
+    fn promise_rejection_tracker(
+        &self,
+        _engine: &mut Engine<'_>,
+        _promise: ObjectId,
+        _handled: bool,
+    ) {
+    }
     /// An essential internal method of the host exotic object `object`, created
     /// with [`Engine::create_host_exotic`] and `handler`. It may re-enter the
     /// engine; errors propagate as abrupt completions.
@@ -644,6 +662,155 @@ impl Engine<'_> {
         self.frame(|e| {
             e.protect(&function.0)?;
             e.construct(function.0.clone(), args).map(JsValue)
+        })
+    }
+
+    // ----- promises (ECMA-262 §27.2, PROMISES.md "Embedder API") -----
+
+    /// %Promise% of the current realm.
+    pub fn promise_constructor(&self) -> Option<ObjectId> {
+        self.intrinsics
+            .as_ref()
+            .map(|i| ObjectId(i.functions["Promise"]))
+    }
+    /// %Promise.prototype% of the current realm.
+    pub fn promise_prototype(&self) -> Option<ObjectId> {
+        self.intrinsics.as_ref().map(|i| ObjectId(i.promise))
+    }
+    /// `new %Promise%(executor)` (§27.2.3.1) in the current realm. With no
+    /// executor the promise stays pending until [`Engine::resolve_promise`].
+    pub fn new_promise(&mut self, executor: Option<&JsValue>) -> Result<ObjectId> {
+        let constructor = self
+            .promise_constructor()
+            .ok_or(ScriptError::Runtime("no realm"))?;
+        self.frame(|e| match executor {
+            Some(executor) => {
+                e.protect(&executor.0)?;
+                let promise =
+                    e.promise_constructor_target(Value::Object(constructor.0), executor.0.clone())?;
+                Ok(ObjectId(promise.id().expect("a promise is an object")))
+            }
+            None => {
+                let proto = e.intrinsics.as_ref().unwrap().promise;
+                e.new_pending_promise(proto).map(|(id, _, _)| ObjectId(id))
+            }
+        })
+    }
+    /// IsPromise (§27.2.1.6): the object has a [[PromiseState]] slot. Host
+    /// objects and proxies (wrappers included) have none.
+    pub fn is_promise(&self, object: ObjectId) -> bool {
+        !matches!(
+            self.objects.get(&object.0),
+            Some(super::vm::Object::Node { .. } | super::vm::Object::Proxy { .. })
+        ) && self.data(object.0).is_ok_and(|d| d.promise.is_some())
+    }
+    fn promise_record(&self, object: ObjectId) -> Result<&super::promises::PromiseState> {
+        if !self.is_promise(object) {
+            return Err(ScriptError::Runtime("not a promise"));
+        }
+        Ok(self.data(object.0)?.promise.as_ref().unwrap())
+    }
+    /// [[PromiseState]] and [[PromiseResult]] (§27.2.6, Table 92); the result is
+    /// undefined while pending.
+    pub fn promise_state(&self, object: ObjectId) -> Result<(PromiseStatus, JsValue)> {
+        use super::promises::State;
+        Ok(match &self.promise_record(object)?.state {
+            State::Pending { .. } => (PromiseStatus::Pending, JsValue::undefined()),
+            State::Fulfilled(v) => (PromiseStatus::Fulfilled, JsValue(v.clone())),
+            State::Rejected(v) => (PromiseStatus::Rejected, JsValue(v.clone())),
+        })
+    }
+    /// [[PromiseIsHandled]].
+    pub fn promise_is_handled(&self, object: ObjectId) -> Result<bool> {
+        Ok(self.promise_record(object)?.handled)
+    }
+    /// Sets [[PromiseIsHandled]] to true without a reaction, as WebIDL "mark
+    /// as handled" does; the rejection tracker is not called.
+    pub fn set_promise_is_handled(&mut self, object: ObjectId) -> Result<()> {
+        self.promise_record(object)?;
+        let mut data = self.data(object.0)?.clone();
+        data.promise.as_mut().unwrap().handled = true;
+        self.replace_data(object.0, data)?;
+        self.unhandled.remove(&object.0);
+        Ok(())
+    }
+    /// Calls the promise's own resolve (`reject` false) or reject function
+    /// (§27.2.1.3.1-2): a promise already resolved, or locked in to a
+    /// thenable, is left alone.
+    pub fn resolve_promise(
+        &mut self,
+        object: ObjectId,
+        value: &JsValue,
+        reject: bool,
+    ) -> Result<()> {
+        self.promise_record(object)?;
+        self.frame(|e| {
+            e.protect(&value.0)?;
+            e.protect(&Value::Object(object.0))?;
+            e.resolve_by_record(object.0, value.0.clone(), reject)
+        })
+    }
+    /// PromiseResolve ( %Promise%, value ) (§27.2.4.7.1), unaffected by user
+    /// changes to `Promise.resolve`.
+    pub fn promise_resolve_original(&mut self, value: &JsValue) -> Result<ObjectId> {
+        let constructor = self
+            .promise_constructor()
+            .ok_or(ScriptError::Runtime("no realm"))?;
+        self.frame(|e| {
+            e.protect(&value.0)?;
+            let p = e.promise_resolve(Value::Object(constructor.0), value.0.clone())?;
+            Ok(ObjectId(p.id().expect("a promise is an object")))
+        })
+    }
+    /// Promise.reject steps 2-4 (§27.2.4.6) with C = %Promise%.
+    pub fn promise_reject_original(&mut self, value: &JsValue) -> Result<ObjectId> {
+        self.frame(|e| {
+            e.protect(&value.0)?;
+            let proto = e.intrinsics.as_ref().unwrap().promise;
+            let (id, _, reject) = e.new_pending_promise(proto)?;
+            e.invoke(reject, vec![value.0.clone()])?;
+            Ok(ObjectId(id))
+        })
+    }
+    /// PerformPromiseThen ( promise, onFulfilled, onRejected [ , resultCapability ] )
+    /// (§27.2.5.4.1). With `result` true the capability is
+    /// NewPromiseCapability(%Promise%) and its promise is returned (the
+    /// original `then`, ignoring species); otherwise no derived promise is made.
+    /// A handler that is not callable is dropped (steps 3-4).
+    pub fn perform_promise_then(
+        &mut self,
+        promise: ObjectId,
+        on_fulfilled: Option<&JsValue>,
+        on_rejected: Option<&JsValue>,
+        result: bool,
+    ) -> Result<Option<ObjectId>> {
+        self.promise_record(promise)?;
+        let constructor = self
+            .promise_constructor()
+            .ok_or(ScriptError::Runtime("no realm"))?;
+        self.frame(|e| {
+            let mut handler = |v: Option<&JsValue>| -> Result<Option<Value>> {
+                match v {
+                    Some(v) if e.callable(&v.0) => {
+                        e.protect(&v.0)?;
+                        Ok(Some(v.0.clone()))
+                    }
+                    _ => Ok(None),
+                }
+            };
+            let fulfilled = handler(on_fulfilled)?;
+            let rejected = handler(on_rejected)?;
+            let capability = if result {
+                Some(e.capability(Value::Object(constructor.0))?)
+            } else {
+                None
+            };
+            let derived = capability
+                .as_ref()
+                .and_then(|c| c.promise.id())
+                .map(ObjectId);
+            e.attach_reaction(promise.0, fulfilled, rejected, capability)?;
+            Ok(derived)
         })
     }
 

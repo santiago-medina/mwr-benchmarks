@@ -267,11 +267,3 @@ pub unsafe fn GetJobQueue(cx: *mut root::JSContext) -> *mut JS::JobQueue {
 pub unsafe fn JobQueueIsEmpty(_cx: *mut root::JSContext) {}
 
 pub unsafe fn JobQueueMayNotBeEmpty(_cx: *mut root::JSContext) {}
-
-/// Promises carry no user-input flag yet: every promise is DontCare, the
-/// state SpiderMonkey gives a new promise.
-pub unsafe fn GetPromiseUserInputEventHandlingState(
-    _promise: *mut root::JSObject,
-) -> JS::PromiseUserInputEventHandlingState {
-    JS::PromiseUserInputEventHandlingState::DontCare
-}

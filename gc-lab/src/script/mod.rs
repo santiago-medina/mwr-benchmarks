@@ -13,8 +13,8 @@ mod vm;
 pub use vm::{Engine, GcPolicy, ScriptError, SuspendedEngine};
 mod embed;
 pub use embed::{
-    ExoticOp, ExoticReply, Host, JsValue, ObjectId, PartialDescriptor, PropertyDescriptor,
-    PropertyKey, RealmId,
+    ExoticOp, ExoticReply, Host, JsValue, ObjectId, PartialDescriptor, PromiseStatus,
+    PropertyDescriptor, PropertyKey, RealmId,
 };
 
 mod adapter;

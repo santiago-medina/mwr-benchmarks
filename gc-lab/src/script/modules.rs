@@ -1329,7 +1329,7 @@ impl Engine<'_> {
                 self.unhandled.remove(&p);
                 Err(self.thrown(error))
             }
-            State::Pending => Err(ScriptError::Runtime("module without await suspended")),
+            State::Pending { .. } => Err(ScriptError::Runtime("module without await suspended")),
         }
     }
     /// ExecuteAsyncModule (§16.2.1.6.3.2).
