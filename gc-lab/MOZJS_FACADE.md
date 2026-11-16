@@ -448,6 +448,41 @@ these roots still hold once the C1 keep-alive policy is lifted.
 
 Test: `tests/globals.rs`.
 
+### Lazy resolve (`JSClassOps::resolve`)
+
+Servo's `Window` and worker globals define almost nothing up front: their
+class's `resolve` hook (`resolve_window` in
+components/script_bindings/utils.rs) defines a WebIDL interface object
+(`console`, `document`'s `Document`, ...) or a standard class the first time
+a lookup misses it, as WebIDL §3.7 lets an implementation do for interface
+objects. Without the hook, the C1 script probe at 7d4fbfe stopped at
+"console is not defined".
+
+SpiderMonkey calls the hook from its native lookup (js/src/vm/NativeObject.cpp
+`CallResolveOp`): on an own-property miss it runs `resolve(cx, obj, id,
+&resolved)`, guarded by `AutoResolving` so a lookup of the same object and
+id inside the hook sees the plain shape, and then reads the property again.
+The engine does the same in ordinary [[GetOwnProperty]] (§10.1.5.1, the
+`ordinary_own` step that reads the property map): an object marked with
+`Engine::set_host_resolve` that misses `key` calls `Host::resolve`, with
+`Engine::resolving` as the guard, then reads the map again. Every other
+ordinary method that asks about one own key ([[HasProperty]], [[Get]],
+[[Set]], [[DefineOwnProperty]], identifier resolution on the global object
+environment) goes through it, and the `plain` fast paths skip marked
+objects. The facade marks a global or class object when its class has
+`cOps->resolve`. `FacadeHost::resolve` then calls the hook with the engine
+parked, so it can reenter through JSAPI (`JS_ResolveStandardClass`,
+`JS_DefinePropertyById`). `mayResolve` is only a side-effect-free filter on
+the hook, so the facade does not call it.
+
+Not yet: `newEnumerate`/`enumerate`, which let [[OwnPropertyKeys]] list the
+names the hook could still resolve (`Object.keys(window)`, `for-in` over the
+global). Until then only names already resolved are listed.
+
+Test: `tests/resolve.rs` (identifier reference, `typeof`, `in`, property
+get, a nested lookup of the same id inside the hook, unresolved names and
+sloppy assignment).
+
 ### GC policy
 
 The facade creates its engine with the engine's default policy,

@@ -32,7 +32,7 @@ use std::ptr;
 use std::rc::Rc;
 
 use gc_lab::script::{
-    Engine, ExoticOp, ExoticReply, Host, JsValue, ObjectId, RealmId, ScriptError,
+    Engine, ExoticOp, ExoticReply, Host, JsValue, ObjectId, PropertyKey, RealmId, ScriptError,
 };
 use gc_lab::Model;
 
@@ -184,6 +184,54 @@ impl Host for FacadeHost {
         op: ExoticOp,
     ) -> Result<ExoticReply, ScriptError> {
         super::proxy::exotic(&self.0, engine, object, handler, op)
+    }
+
+    /// `JSClassOps::resolve` (js/src/vm/NativeObject.cpp `CallResolveOp`): a lookup
+    /// missed an own `key` on an object of a class with a resolve hook, so the hook
+    /// may define it (Servo's `resolve_window` defines WebIDL interface objects and
+    /// standard classes lazily). It runs parked, so it reenters through JSAPI; the
+    /// engine's resolving guard plays SpiderMonkey's `AutoResolving`. `mayResolve`
+    /// is only a side-effect-free filter for the hook, so it is not consulted.
+    fn resolve(
+        &self,
+        engine: &mut Engine<'_>,
+        object: ObjectId,
+        class: u64,
+        key: &PropertyKey,
+    ) -> Result<bool, ScriptError> {
+        let Some(hook) = resolve_hook(class as usize as *const root::JSClass) else {
+            return Ok(false);
+        };
+        let cx_ptr = self.0.context.get() as *mut root::JSContext;
+        // SAFETY: set by JS_NewContext; the context outlives its engine.
+        let cx = unsafe { context(cx_ptr) };
+        let obj = cx.heap.object(cx, engine, object, ptr::null());
+        let id = super::props::id_of(cx, key);
+        // SAFETY: the handles point to locals that outlive the hook call; object
+        // values are facade cells, which the collector treats as roots.
+        let obj_h = unsafe { JS::HandleObject::from_marked_location(&obj) };
+        let id_h = unsafe { JS::HandleId::from_marked_location(&id) };
+        let mut resolved = false;
+        let out: *mut bool = &mut resolved;
+        super::natives::run_parked(cx, engine, || unsafe { hook(cx_ptr, obj_h, id_h, out) })?;
+        Ok(resolved)
+    }
+}
+
+/// The resolve hook of `clasp`, if it has one.
+fn resolve_hook(clasp: *const root::JSClass) -> root::JSResolveOp {
+    if clasp.is_null() {
+        return None;
+    }
+    // SAFETY: a non-null JSClass from the embedder, valid for the process, and
+    // its cOps, when non-null, likewise.
+    unsafe {
+        let ops = (*clasp).cOps;
+        if ops.is_null() {
+            None
+        } else {
+            (*ops).resolve
+        }
     }
 }
 
@@ -413,6 +461,9 @@ pub unsafe fn JS_NewGlobalObject(
         let realm = engine.create_global_realm()?;
         let global = engine.realm_global(realm)?;
         engine.attach_host(global, clasp as u64, 0, 0, true)?;
+        if resolve_hook(clasp).is_some() {
+            engine.set_host_resolve(global, true)?;
+        }
         Ok((realm, global))
     });
     let Some((realm, global)) = engine_result(context, created) else {
@@ -639,7 +690,11 @@ pub(super) unsafe fn new_object(
         if clasp.is_null() {
             engine.create_object(proto)
         } else {
-            engine.create_host_object(proto, clasp as u64, 0, 0, true)
+            let id = engine.create_host_object(proto, clasp as u64, 0, 0, true)?;
+            if resolve_hook(clasp).is_some() {
+                engine.set_host_resolve(id, true)?;
+            }
+            Ok(id)
         }
     });
     let Some(id) = engine_result(context, created) else {

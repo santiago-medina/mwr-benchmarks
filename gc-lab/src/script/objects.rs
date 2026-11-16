@@ -112,6 +112,10 @@ pub(super) struct Data {
     /// Immutable prototype exotic object (§10.4.7), set by an embedder for
     /// WebIDL global objects (WebIDL §3.7.1 "[[SetPrototypeOf]]").
     pub immutable_prototype: bool,
+    /// An embedder object whose class has a resolve hook (mozjs `JSClassOps::resolve`,
+    /// HOST_EXOTIC.md "Lazy resolve"): [[GetOwnProperty]] asks `Host::resolve` before it
+    /// reports a key absent, and no `plain` fast path applies.
+    pub host_resolve: bool,
     /// §20.2.3.5 [[SourceText]] of a script-defined or dynamic function.
     pub source: Option<super::parser::SourceText>,
     ext: Option<Box<Ext>>,
@@ -214,6 +218,7 @@ impl Data {
             extensible: true,
             raw_json: false,
             immutable_prototype: false,
+            host_resolve: false,
             arguments: false,
             array: false,
             source: None,
@@ -457,6 +462,11 @@ impl Engine<'_> {
         }
         let data = self.data(id)?;
         let mut property = data.properties.get(&key).cloned();
+        if property.is_none() && data.host_resolve && self.host_resolve(id, &key)? {
+            let data = self.data(id)?;
+            property = data.properties.get(&key).cloned();
+        }
+        let data = self.data(id)?;
         if let (Some(p), Some((env, name))) = (&mut property, self.mapped_slot(data, &key)) {
             if let (Kind::Data { value, .. }, Some(Object::Environment { bindings, .. })) =
                 (&mut p.kind, self.objects.get(&env))
@@ -655,6 +665,7 @@ impl Engine<'_> {
             | Object::Bound { data: d, .. }
             | Object::Closure { data: d, .. }
                 if d.typed.is_none()
+                    && !d.host_resolve
                     && d.namespace.is_none()
                     && d.parameter_map.is_none()
                     && !(d.array && matches!(key, Key::String(s) if s == "length")) =>

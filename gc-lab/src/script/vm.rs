@@ -186,6 +186,10 @@ pub const GC_GROWTH_FACTOR: usize = 2;
 
 pub struct Engine<'host> {
     pub(super) runtime: Runtime,
+    /// The (object, key) pairs whose host resolve hook is running (embed.rs
+    /// `host_resolve`): a nested lookup of the same pair sees the plain map, as
+    /// SpiderMonkey's AutoResolving makes it.
+    pub(super) resolving: Vec<(Id, super::objects::Key)>,
     pub(super) objects: crate::dual::IdMap<Object>,
     roots: Vec<ExternalRoot>,
     pub(super) modules: super::modules::Registry,
@@ -311,6 +315,7 @@ impl<'host> Engine<'host> {
             tail_call: None,
             bytecode: Default::default(),
             host: None,
+            resolving: Vec::new(),
         })
     }
     // Move all VM state while changing only the lifetime of the borrowed host.
@@ -320,6 +325,7 @@ impl<'host> Engine<'host> {
     ) -> Engine<'next> {
         let mut engine = Engine {
             runtime: self.runtime,
+            resolving: self.resolving,
             objects: self.objects,
             roots: self.roots,
             network: self.network,

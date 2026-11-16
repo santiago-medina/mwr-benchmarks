@@ -229,6 +229,21 @@ pub trait Host {
         _handled: bool,
     ) {
     }
+    /// The resolve hook of a host object's class (mozjs `JSClassOps::resolve`), for an
+    /// object marked with [`Engine::set_host_resolve`]: [[GetOwnProperty]] found no own
+    /// `key` and asks the host to define it lazily (WebIDL interface objects on a
+    /// global, HOST_EXOTIC.md "Lazy resolve"). Returns whether the host defined it; the
+    /// lookup then reads the property map again. It may re-enter the engine; a nested
+    /// lookup of the same object and key does not call the hook again.
+    fn resolve(
+        &self,
+        _engine: &mut Engine<'_>,
+        _object: ObjectId,
+        _class: u64,
+        _key: &PropertyKey,
+    ) -> Result<bool> {
+        Ok(false)
+    }
     /// An essential internal method of the host exotic object `object`, created
     /// with [`Engine::create_host_exotic`] and `handler`. It may re-enter the
     /// engine; errors propagate as abrupt completions.
@@ -286,6 +301,25 @@ impl Engine<'_> {
             host.call(e, function, JsValue(this), &args, new_target.map(ObjectId))
                 .map(|v| v.0)
         })
+    }
+
+    /// Call `Host::resolve` for an own-property miss on a `host_resolve` object.
+    pub(super) fn host_resolve(&mut self, id: Id, key: &Key) -> Result<bool> {
+        let Some(host) = self.host.clone() else {
+            return Ok(false);
+        };
+        if self.resolving.iter().any(|(i, k)| *i == id && k == key) {
+            return Ok(false);
+        }
+        let class = self.runtime.host_tag(id).map_or(0, |t| t.class);
+        let public = match key {
+            Key::String(s) => PropertyKey::String(s.clone()),
+            Key::Symbol(s) => PropertyKey::Symbol(*s),
+        };
+        self.resolving.push((id, key.clone()));
+        let result = self.frame(|e| host.resolve(e, ObjectId(id), class, &public));
+        self.resolving.retain(|(i, k)| !(*i == id && k == key));
+        result
     }
 
     pub(super) fn run_host_finalizers(&mut self) {
@@ -942,6 +976,16 @@ impl Engine<'_> {
         prototype: Option<ObjectId>,
     ) -> Result<bool> {
         self.frame(|e| e.set_prototype(object.0, prototype.map(|p| p.0)))
+    }
+    /// Mark a host object whose class has a resolve hook: own-property misses call
+    /// [`Host::resolve`] (HOST_EXOTIC.md "Lazy resolve").
+    pub fn set_host_resolve(&mut self, object: ObjectId, on: bool) -> Result<()> {
+        if self.data(object.0)?.host_resolve == on {
+            return Ok(());
+        }
+        let mut data = self.data(object.0)?.clone();
+        data.host_resolve = on;
+        self.replace_data(object.0, data)
     }
     /// Make `object` an immutable prototype exotic object (§10.4.7): later
     /// [[SetPrototypeOf]] calls only accept its current [[Prototype]]. Used for
