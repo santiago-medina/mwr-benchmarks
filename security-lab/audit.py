@@ -41,7 +41,10 @@ def triage(source: str, path: str):
     return findings
 
 def annotate_reviewed_isdot(findings, sources):
-    """Downgrade only guarded indexes when both upstream conditions hold."""
+    """Downgrade only a local IsDot-guarded access with its helper contract.
+
+    This is a conservative heuristic, not a C++ control-flow proof.
+    """
     path_source = sources.get("url/url_canon_path.cc", "")
     helper_source = sources.get("url/url_canon_internal.h", "")
     contract_ok = (
@@ -49,21 +52,40 @@ def annotate_reviewed_isdot(findings, sources):
         and "return 3;" in helper_source
         and "spec[2] == 'e' || spec[2] == 'E'" in helper_source
     )
-    guard_ok = (
-        "if (dotlen == 3 && is_preserving_percent_encoded_dot_in_path)" in path_source
-        and "IsDot(path_value.substr(i))" in path_source
-    )
-    if contract_ok and guard_ok:
-        for finding in findings:
-            if finding["rule"] == "INDEX_OFFSET" and (
-                finding["snippet"] == "output->push_back(path_value[i + 2]);"
-            ):
-                finding["status"] = "reviewed-likely-false-positive"
-                finding["priority"] = "info"
-                finding["rationale"] = (
-                    "Guarded by dotlen==3; IsDot returns 3 only for complete "
-                    "%2e or %2E. Re-review if upstream contracts change."
-                )
+    if not contract_ok:
+        return findings
+
+    lines = path_source.splitlines()
+    for finding in findings:
+        if (
+            finding["file"] != "url/url_canon_path.cc"
+            or finding["rule"] != "INDEX_OFFSET"
+            or finding["snippet"] != "output->push_back(path_value[i + 2]);"
+        ):
+            continue
+        index = finding["line"] - 1
+        if not (0 <= index < len(lines)):
+            continue
+        # Require the exact local branch guard, immediately enclosing the
+        # indexed read, rather than matching a guard elsewhere in the file.
+        nearby = lines[max(0, index - 4):index]
+        guard = "if (dotlen == 3 && is_preserving_percent_encoded_dot_in_path) {"
+        guard_lines = [i for i, line in enumerate(nearby) if line.strip() == guard]
+        if not guard_lines:
+            continue
+        if any("}" in line for line in nearby[guard_lines[-1] + 1:]):
+            continue
+        # Require the IsDot assignment to be present in the same function.
+        # This does not substitute for compiler-based dataflow analysis.
+        prior = "\n".join(lines[max(0, index - 90):index])
+        if "IsDot(path_value.substr(i))" not in prior:
+            continue
+        finding["status"] = "reviewed-likely-false-positive"
+        finding["priority"] = "info"
+        finding["rationale"] = (
+            "The local dotlen==3 guard and the IsDot contract imply that "
+            "i+2 is in range; re-review after upstream changes."
+        )
     return findings
 
 def download(url: str) -> str:
