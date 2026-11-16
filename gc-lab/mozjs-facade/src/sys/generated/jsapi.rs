@@ -14255,7 +14255,7 @@ pub mod root {
                 realm: *mut root::JS::Realm,
                 principals: *mut root::JSPrincipals,
             ) {
-                crate::sys::unimplemented_entry("SetRealmPrincipals")
+                crate::sys::imp::SetRealmPrincipals(realm, principals)
             }
             pub unsafe extern "C" fn GetIsSecureContext(realm: *mut root::JS::Realm) -> bool {
                 crate::sys::unimplemented_entry("GetIsSecureContext")

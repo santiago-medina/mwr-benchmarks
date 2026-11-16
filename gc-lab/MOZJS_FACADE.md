@@ -392,7 +392,7 @@ rooting bugs into immediate, reproducible failures. It is far too slow for
 pages: switch the facade to `GcPolicy::Threshold` before C2 or any
 performance measurement (see "Next (C1)").
 
-257 entry points are implemented in total.
+258 entry points are implemented in total.
 
 ## C1 result (servoshell links)
 

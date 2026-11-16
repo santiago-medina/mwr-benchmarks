@@ -106,7 +106,7 @@ pub struct RealmCell {
     context: *const Context,
     id: RealmId,
     global: Cell<*mut root::JSObject>,
-    principals: *mut root::JSPrincipals,
+    principals: Cell<*mut root::JSPrincipals>,
     compartment: &'static CompartmentCell,
 }
 
@@ -414,7 +414,7 @@ pub unsafe fn JS_NewGlobalObject(
         context,
         id: realm,
         global: Cell::new(ptr::null_mut()),
-        principals,
+        principals: Cell::new(principals),
         compartment,
     }));
     heap.realms.borrow_mut().insert(realm, realm_cell);
@@ -519,7 +519,35 @@ pub unsafe fn JS_IsGlobalObject(obj: *mut root::JSObject) -> bool {
 }
 
 pub unsafe fn GetRealmPrincipals(realm: *mut JS::Realm) -> *mut root::JSPrincipals {
-    unsafe { realm_cell(realm) }.principals
+    unsafe { realm_cell(realm) }.principals.get()
+}
+
+/// `JS::SetRealmPrincipals` (Realm.cpp): the realm holds a reference to its
+/// principals. A realm cannot change between system and non-system
+/// principals; SpiderMonkey release-asserts that.
+pub unsafe fn SetRealmPrincipals(realm: *mut JS::Realm, principals: *mut root::JSPrincipals) {
+    let cell = unsafe { realm_cell(realm) };
+    let old = cell.principals.get();
+    if principals == old {
+        return;
+    }
+    // SAFETY: a realm's context outlives it.
+    let context = unsafe { &*cell.context };
+    let system =
+        !principals.is_null() && principals as usize == context.heap.trusted_principals.get();
+    assert_eq!(
+        cell.compartment.system, system,
+        "mozjs facade: SetRealmPrincipals would change whether a realm is a system realm"
+    );
+    let cx = cell.context as *mut root::JSContext;
+    if !old.is_null() {
+        unsafe { super::JS_DropPrincipals(cx, old) };
+        cell.principals.set(ptr::null_mut());
+    }
+    if !principals.is_null() {
+        unsafe { super::JS_HoldPrincipals(principals) };
+        cell.principals.set(principals);
+    }
 }
 
 pub unsafe fn JS_SetTrustedPrincipals(cx: *mut root::JSContext, prin: *mut root::JSPrincipals) {

@@ -173,3 +173,58 @@ fn globals_realms_and_reserved_slots() {
         JS_DestroyContext(cx);
     }
 }
+
+static DESTROYED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+unsafe extern "C" fn destroy_principals(principals: *mut mozjs::jsapi::JSPrincipals) {
+    DESTROYED.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    unsafe { mozjs::glue::DestroyRustJSPrincipals(principals) };
+}
+
+/// Window::update_jsprincipals_from_document: `JS::SetRealmPrincipals` swaps
+/// the realm's principals, holding the new ones and dropping the old.
+#[test]
+fn set_realm_principals_holds_and_drops() {
+    use mozjs::glue::CreateRustJSPrincipals;
+    use mozjs::jsapi::{
+        GetRealmPrincipals, JS_DropPrincipals, JS_HoldPrincipals, JS_InitDestroyPrincipalsCallback,
+        SetRealmPrincipals,
+    };
+    use std::sync::atomic::Ordering;
+    unsafe {
+        let cx = JS_NewContext(32 << 20, ptr::null_mut());
+        JS_InitDestroyPrincipalsCallback(cx, Some(destroy_principals));
+        let mut options = RealmOptions::default();
+        options.creationOptions_.compSpec_ = CompartmentSpecifier::NewCompartmentAndZone;
+        let global = new_global(cx, &*options);
+        let realm = get_object_realm(global);
+        assert!(GetRealmPrincipals(realm).is_null());
+
+        // A new JSPrincipals has refcount 0; the test holds one reference.
+        let first = CreateRustJSPrincipals(ptr::null(), ptr::null_mut());
+        let second = CreateRustJSPrincipals(ptr::null(), ptr::null_mut());
+        JS_HoldPrincipals(first);
+        JS_HoldPrincipals(second);
+        SetRealmPrincipals(realm, first);
+        assert_eq!(GetRealmPrincipals(realm), first);
+        SetRealmPrincipals(realm, first);
+        JS_DropPrincipals(cx, first);
+        assert_eq!(
+            DESTROYED.load(Ordering::SeqCst),
+            0,
+            "the realm still holds it"
+        );
+
+        SetRealmPrincipals(realm, second);
+        assert_eq!(GetRealmPrincipals(realm), second);
+        assert_eq!(
+            DESTROYED.load(Ordering::SeqCst),
+            1,
+            "the realm dropped the old one"
+        );
+        JS_DropPrincipals(cx, second);
+        SetRealmPrincipals(realm, ptr::null_mut());
+        assert!(GetRealmPrincipals(realm).is_null());
+        assert_eq!(DESTROYED.load(Ordering::SeqCst), 2);
+    }
+}

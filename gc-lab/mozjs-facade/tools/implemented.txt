@@ -64,6 +64,7 @@ GetObjectRealmOrNull
 GetNonCCWObjectGlobal
 JS_IsGlobalObject
 GetRealmPrincipals
+SetRealmPrincipals
 JS_SetTrustedPrincipals
 JS_IterateCompartments
 IsSharableCompartment
