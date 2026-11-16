@@ -191,6 +191,17 @@ pub struct ProxyState {
     pub lazy_proto: bool,
 }
 
+/// `js::ProxyClass`: the class of a proxy made with a null `JSClass`.
+static DEFAULT_PROXY_CLASS: root::JSClass = root::JSClass {
+    name: c"Proxy".as_ptr(),
+    flags: root::JSCLASS_IS_PROXY
+        | ((2 & root::JSCLASS_RESERVED_SLOTS_MASK) << root::JSCLASS_RESERVED_SLOTS_SHIFT),
+    cOps: ptr::null(),
+    spec: ptr::null(),
+    ext: ptr::null(),
+    oOps: ptr::null(),
+};
+
 /// jsglue.cpp `NewProxyObject`: a proxy of `aClass` with a static prototype
 /// `proto` (or a lazy one), its private value and the class's reserved slots.
 pub unsafe fn NewProxyObject(
@@ -201,6 +212,13 @@ pub unsafe fn NewProxyObject(
     aClass: *const root::JSClass,
     aLazyProto: bool,
 ) -> *mut root::JSObject {
+    // A null class is `js::ProxyClass` (Proxy.cpp): "Proxy", two reserved
+    // slots. Servo's DOM proxies (wrap.rs) store DOM_OBJECT_SLOT there.
+    let aClass = if aClass.is_null() {
+        &DEFAULT_PROXY_CLASS as *const root::JSClass
+    } else {
+        aClass
+    };
     let cx = unsafe { context::context(aCx) };
     let heap = &cx.heap;
     let proto = (!aLazyProto && !proto.is_null()).then(|| unsafe { object_cell(proto) }.id);

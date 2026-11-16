@@ -240,6 +240,15 @@ fn named_properties_proxy_runs_its_traps() {
         assert_eq!(v.to_object(), other);
         SetProxyPrivate(proxy, &private);
 
+        // wrap.rs: a DOM proxy made with a null class is `js::ProxyClass`,
+        // whose two reserved slots hold the DOM object.
+        let bare = NewProxyObject(cx, handler, handle(&private), proto, ptr::null(), false);
+        assert!(!bare.is_null());
+        SetProxyReservedSlot(bare, 0, &slot);
+        SetProxyReservedSlot(bare, 1, &slot);
+        GetProxyReservedSlot(bare, 1, &mut v);
+        assert_eq!(v.to_int32(), 7);
+
         // window_named_properties.rs: an immutable prototype.
         let mut succeeded = false;
         assert!(JS_SetImmutablePrototype(cx, handle(&proxy), &mut succeeded));
