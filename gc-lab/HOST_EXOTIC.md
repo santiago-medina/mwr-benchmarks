@@ -190,3 +190,70 @@ Literature Review (#82), request #426, 2026-11-16: "Adopt it". Report:
 Prior art: SpiderMonkey `js::BaseProxyHandler`/`ForwardingProxyHandler`
 (jsglue.cpp), V8 named/indexed interceptors, Ladybird LibJS `PlatformObject`,
 WebIDL §3.9 legacy platform objects.
+
+## E3b: the WindowProxy
+
+Servo's `ScriptThread::load` makes a WindowProxy for every new Window
+(windowproxy.rs `WindowProxy::new`): `NewWindowProxy(cx, window, handler)`
+with a handler from `CreateWrapperProxyHandler(&PROXY_TRAPS)`, then reserved
+slot 0 = the `WindowProxy` Rust object and `SetWindowProxy(cx, window, proxy)`.
+`script_thread.rs` first registers the class with
+`SetWindowProxyClass(GetWindowProxyClass())`.
+
+**What it is in the specs.** HTML 7.2 (WindowProxy) makes the realm's global
+this value the WindowProxy, which forwards every internal method to the
+browsing context's current Window. ECMA-262 has the hook:
+§9.3.3 SetRealmGlobalObject step 3 stores `thisValue` as the global
+Environment Record's [[GlobalThisValue]] (§9.1.1.4), which answers top-level
+`this` (§9.1.1.4.11 GetThisBinding), the sloppy coercion of a nullish `this`
+(§10.2.1.2 OrdinaryCallBindThis step 6) and the initial value of `globalThis`
+(§19.1.1). The global object itself stays the Window: bare identifiers still
+resolve on it.
+
+**Design.** No new mechanism, so no new literature check: it is E3's host
+exotic with one more handler kind behaviour.
+
+- Engine: `Intrinsics::global_this` (initially the global object) and
+  `Engine::set_global_this_value(realm, this)`, which sets it, rebinds the
+  global environment's `this` and rewrites `globalThis` while it still holds
+  the global object. `realm_global_this(realm)` reads it back. The binding
+  keeps the value alive (a `link` from the global environment).
+- Facade `WrapperNew` (jsglue.cpp, `js::Wrapper::New`): a host exotic whose
+  private value is the target and whose prototype is lazy
+  (`TaggedProto::LazyProto`). `NewWindowProxy` is `WrapperNew` with the glue's
+  `WindowProxyClass` ("Proxy", `JSCLASS_IS_PROXY`, two reserved slots,
+  `js::SwappableProxyReservedSlots`).
+- A Wrapper-kind handler forwards every trap it lacks to the target, as
+  `js::ForwardingProxyHandler` does (a DOM handler's missing trap is still
+  the ordinary algorithm on the proxy). [[IsExtensible]] and
+  [[PreventExtensions]] have no embedding entry point for the forward and stay
+  ordinary on the wrapper; Servo defines both traps.
+- `GetWindowProxyClass` returns the glue class; `IsWindowProxy` compares
+  against the class `SetWindowProxyClass` registered (the runtime's
+  `maybeWindowProxyClass`). Before this change the glue getter returned the
+  registered class, null at Servo's registration, so `IsWindowProxy` was
+  always false.
+- Unwrapping (js/src/proxy/Wrapper.cpp): `IsWrapper` is true for a
+  Wrapper-kind proxy; `UncheckedUnwrapObject`/`UnwrapObjectDynamic` follow it
+  to the target unless asked to stop at a WindowProxy; `UnwrapObjectStatic`
+  and `CheckedUnwrapStatic` always stop there. Servo's
+  `private_from_proto_check` relies on the dynamic unwrap when a Window method
+  runs with the WindowProxy as `this`.
+- `SetWindowProxy` sets the global's realm [[GlobalThisValue]];
+  `ToWindowIfWindowProxy` returns the target; `ToWindowProxyIfWindowSlow`
+  maps a realm's global to its [[GlobalThisValue]] when that is a WindowProxy.
+
+**Navigation (not yet).** Servo retargets a WindowProxy on navigation with
+`JS_TransplantObject` (windowproxy.rs, `set_window`): the old proxy object
+keeps its identity and gets the new Window as target. With the E3 layout
+that is a swap of the facade `ProxyState` (handler, private) and the reserved
+slots under the same `ObjectId`, plus `set_global_this_value` on the new
+realm; it waits until the Servo probe reaches it.
+
+**Open point.** HTML's WindowProxy [[GetOwnProperty]] and
+[[DefineOwnProperty]] make non-configurable properties look configurable;
+that is Servo's trap code, not the facade's, and runs as is.
+
+Tests: `mozjs-facade/tests/window_proxy.rs` (class registration, unwraps,
+trap and forwarded reads, `this`/`globalThis`/sloppy `this` before and after
+`SetWindowProxy`) and `tests/embedding.rs::host_global_this_value`.

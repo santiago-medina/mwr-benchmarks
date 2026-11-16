@@ -23,10 +23,10 @@ use std::os::raw::{c_char, c_uint, c_void};
 use std::ptr;
 
 use gc_lab::script::{
-    Engine, JsValue, ObjectId, PartialDescriptor, PropertyDescriptor, PropertyKey,
+    Engine, JsValue, ObjectId, PartialDescriptor, PropertyDescriptor, PropertyKey, ScriptError,
 };
 
-use super::context::{context, Context, GetWindowProxyClass};
+use super::context::{context, Context};
 use super::natives::{
     attributes, define_native_accessor, from_jsval, handle_object, handle_object_or_null, key_of,
     latin1, native_wrapper, object_ptr, string_cell, to_jsval,
@@ -1069,21 +1069,96 @@ pub unsafe fn GetFunctionRealm(
 /// The WindowProxy is the object of the class Servo registered with
 /// SetWindowProxyClass.
 pub unsafe fn IsWindowProxy(obj: *mut root::JSObject) -> bool {
-    let class = unsafe { GetWindowProxyClass() };
+    let class = super::context::registered_window_proxy_class();
     !class.is_null() && unsafe { class_of(obj) } == class
 }
 
-/// Wrappers are the identity (natives.rs), so none is ever dead.
+/// Wrappers are never cut (no nuking), so none is ever dead.
 pub unsafe fn JS_IsDeadWrapper(_obj: *mut root::JSObject) -> bool {
     false
 }
 
+/// jsglue.cpp `UnwrapObjectDynamic` (`js::CheckedUnwrapDynamic`): every
+/// unwrap is allowed (one compartment), so this is `UncheckedUnwrap`.
 pub unsafe fn UnwrapObjectDynamic(
     obj: *mut root::JSObject,
     _cx: *mut root::JSContext,
-    _stopAtWindowProxy: bool,
+    stopAtWindowProxy: bool,
 ) -> *mut root::JSObject {
+    super::proxy::unchecked_unwrap(obj, stopAtWindowProxy)
+}
+
+/// jsglue.cpp `UnwrapObjectStatic` (`js::CheckedUnwrapStatic`), which
+/// always stops at a WindowProxy.
+pub unsafe fn UnwrapObjectStatic(obj: *mut root::JSObject) -> *mut root::JSObject {
+    super::proxy::unchecked_unwrap(obj, true)
+}
+
+/// js::SetWindowProxy: the realm of `global` gets `windowProxy` as its
+/// [[GlobalThisValue]] (ECMA-262 §9.3.3 step 3; HTML: a Window realm's global
+/// this value is its WindowProxy).
+pub unsafe fn SetWindowProxy(
+    cx: *mut root::JSContext,
+    global: JS::HandleObject,
+    windowProxy: JS::HandleObject,
+) {
+    let context = unsafe { context(cx) };
+    // SAFETY: Handles point to rooted, live facade objects.
+    let (global, proxy) = unsafe {
+        (
+            object_cell(*global.ptr).id,
+            object_cell(*windowProxy.ptr).id,
+        )
+    };
+    let set = context.heap.with_engine(|engine| {
+        let realm = engine.object_realm(global);
+        if engine.realm_global(realm)? != global {
+            return Err(ScriptError::Runtime(
+                "SetWindowProxy on a non-global object",
+            ));
+        }
+        engine.set_global_this_value(realm, proxy)
+    });
+    engine_result(context, set);
+}
+
+/// js::ToWindowIfWindowProxy: a WindowProxy's Window (its target).
+pub unsafe fn ToWindowIfWindowProxy(obj: *mut root::JSObject) -> *mut root::JSObject {
+    if unsafe { IsWindowProxy(obj) } {
+        if let Some(target) = super::proxy::wrapper_target(obj) {
+            return target;
+        }
+    }
     obj
+}
+
+/// js::detail::ToWindowProxyIfWindowSlow: a realm's global object maps to its
+/// [[GlobalThisValue]] when that is a WindowProxy, any other object to itself.
+pub unsafe fn ToWindowProxyIfWindowSlow(obj: *mut root::JSObject) -> *mut root::JSObject {
+    // SAFETY: callers pass a JSObject* the facade handed out.
+    let cell = unsafe { object_cell(obj) };
+    let context = cell.context();
+    let id = cell.id;
+    let this = context.heap.with_engine(|engine| {
+        let realm = engine.object_realm(id);
+        match engine.realm_global(realm) {
+            Ok(global) if global == id => engine.realm_global_this(realm).ok().filter(|t| *t != id),
+            _ => None,
+        }
+    });
+    match this {
+        Some(this) => {
+            let proxy = context
+                .heap
+                .with_engine(|engine| context.heap.object(context, engine, this, ptr::null()));
+            if unsafe { IsWindowProxy(proxy) } {
+                proxy
+            } else {
+                obj
+            }
+        }
+        None => obj,
+    }
 }
 
 // --- Functions and calls ---

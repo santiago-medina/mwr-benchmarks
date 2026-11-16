@@ -1139,17 +1139,19 @@ pub unsafe fn JS_NewPlainObject(cx: *mut root::JSContext) -> *mut root::JSObject
 
 pub unsafe fn UncheckedUnwrapObject(
     obj: *mut root::JSObject,
-    _stop_at_window_proxy: bool,
+    stop_at_window_proxy: bool,
 ) -> *mut root::JSObject {
-    obj
+    super::proxy::unchecked_unwrap(obj, stop_at_window_proxy)
 }
 
+/// `js::CheckedUnwrapStatic` stops at a WindowProxy.
 pub unsafe fn CheckedUnwrapStatic(obj: *mut root::JSObject) -> *mut root::JSObject {
-    obj
+    super::proxy::unchecked_unwrap(obj, true)
 }
 
-pub unsafe fn IsWrapper(_obj: *mut root::JSObject) -> bool {
-    false
+/// `js::IsWrapper`: a proxy of a `js::Wrapper` handler (the WindowProxy).
+pub unsafe fn IsWrapper(obj: *mut root::JSObject) -> bool {
+    super::proxy::wrapper_target(obj).is_some()
 }
 
 pub unsafe fn JS_WrapObject(_cx: *mut root::JSContext, _objp: JS::MutableHandleObject) -> bool {

@@ -289,3 +289,54 @@ fn realms_per_global() {
     assert_eq!(x.as_number(), Some(1.0));
     assert_eq!(e.realm_global(r1).unwrap(), g1);
 }
+
+/// §9.3.3 SetRealmGlobalObject step 3: a host [[GlobalThisValue]] (HTML's
+/// WindowProxy) answers top-level `this`, sloppy nullish `this` (§10.2.1.2
+/// step 6) and `globalThis` (§19.1.1) in its realm only.
+#[test]
+fn host_global_this_value() {
+    let host = Rc::new(TestHost::default());
+    let mut e = Engine::new(Model::Indirect, Model::Indirect).unwrap();
+    e.set_step_limit(1_000_000);
+    e.set_host(host.clone());
+    let r0 = e.create_global_realm().unwrap();
+    let r1 = e.create_global_realm().unwrap();
+    let g1 = e.realm_global(r1).unwrap();
+    assert_eq!(e.realm_global_this(r1).unwrap(), g1);
+    let this = e.create_object(e.object_prototype()).unwrap();
+    let root = e.root(this).unwrap();
+    e.set_global_this_value(r1, this).unwrap();
+    assert_eq!(e.realm_global_this(r1).unwrap(), this);
+    assert_eq!(
+        e.realm_global_this(r0).unwrap(),
+        e.realm_global(r0).unwrap()
+    );
+    assert_eq!(e.current_realm_id(), r0);
+    let t = e.evaluate_script("this === globalThis").unwrap();
+    assert_eq!(t.as_bool(), Some(true));
+    assert_eq!(
+        e.evaluate_script("this").unwrap().as_object(),
+        e.global_object()
+    );
+
+    e.enter_realm_id(r1).unwrap();
+    for src in ["this", "globalThis", "(function () { return this })()"] {
+        assert_eq!(
+            e.evaluate_script(src).unwrap().as_object(),
+            Some(this),
+            "{src}"
+        );
+    }
+    let strict = e
+        .evaluate_script("(function () { 'use strict'; return this })()")
+        .unwrap();
+    assert!(strict.is_undefined());
+    e.evaluate_script("var y = 3;").unwrap();
+    let y = e.get_property(g1, "y").unwrap();
+    assert_eq!(y.as_number(), Some(3.0));
+    e.enter_realm_id(r0).unwrap();
+    // The global environment's `this` binding keeps the value alive.
+    e.unroot(root).unwrap();
+    e.collect();
+    assert!(e.is_alive(this));
+}

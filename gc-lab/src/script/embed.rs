@@ -12,7 +12,7 @@
 //!
 //! Ids returned here are not rooted: a GC can run at any allocation, so the embedder
 //! roots what it keeps before calling back into the engine.
-use super::objects::{Descriptor, Key, Kind};
+use super::objects::{Descriptor, Key, Kind, Property};
 use super::vm::{Engine, ScriptError, Value};
 use crate::dual::{ExternalRoot, HostTag, HostTracer, Id};
 use std::rc::Rc;
@@ -325,6 +325,65 @@ impl Engine<'_> {
         };
         intrinsics
             .map(|i| ObjectId(i.global))
+            .ok_or(ScriptError::Runtime("no such realm"))
+    }
+    /// Set `realm`'s [[GlobalThisValue]] to `this` (§9.3.3 SetRealmGlobalObject step 3,
+    /// done after the realm exists, as mozjs `js::SetWindowProxy` does). Top-level `this`,
+    /// sloppy calls with a nullish receiver (§10.2.1.2 step 6) and the initial value of
+    /// `globalThis` (§19.1.1) then answer `this`; the global object itself is unchanged.
+    /// `globalThis` is rewritten only while it still holds the global object.
+    pub fn set_global_this_value(&mut self, realm: RealmId, this: ObjectId) -> Result<()> {
+        if realm.0 != self.current_realm && realm.0 >= self.realms.len() {
+            return Err(ScriptError::Runtime("no such realm"));
+        }
+        if !self.objects.contains_key(&this.0) {
+            return Err(ScriptError::Runtime("dead object"));
+        }
+        self.in_realm(realm.0, |e| {
+            let env = e
+                .global
+                .ok_or(ScriptError::Runtime("no global environment"))?;
+            let env = e.runtime.resolve(env)?;
+            let intrinsics = e
+                .intrinsics
+                .as_mut()
+                .ok_or(ScriptError::Runtime("no such realm"))?;
+            intrinsics.global_this = this.0;
+            let global = intrinsics.global;
+            e.initialize(env, "this", Value::Object(this.0))?;
+            let current = e.own(global, Key::String("globalThis".into()))?;
+            if let Some(Property {
+                kind:
+                    Kind::Data {
+                        value: Value::Object(id),
+                        ..
+                    },
+                ..
+            }) = current
+            {
+                if id == global {
+                    e.define(
+                        global,
+                        "globalThis",
+                        Descriptor {
+                            value: Some(Value::Object(this.0)),
+                            ..Descriptor::default()
+                        },
+                    )?;
+                }
+            }
+            Ok(())
+        })
+    }
+    /// The realm's [[GlobalThisValue]] (§9.1.1.4.11 GetThisBinding).
+    pub fn realm_global_this(&self, realm: RealmId) -> Result<ObjectId> {
+        let intrinsics = if realm.0 == self.current_realm {
+            self.intrinsics.as_ref()
+        } else {
+            self.realms.get(realm.0).and_then(|r| r.intrinsics.as_ref())
+        };
+        intrinsics
+            .map(|i| ObjectId(i.global_this))
             .ok_or(ScriptError::Runtime("no such realm"))
     }
     /// The realm an object was allocated in ([[Realm]] of functions, §10.2).

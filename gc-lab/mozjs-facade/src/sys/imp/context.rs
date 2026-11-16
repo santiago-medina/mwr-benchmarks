@@ -530,8 +530,16 @@ pub unsafe fn SetWindowProxyClass(cx: *mut root::JSContext, clasp: *const root::
     *WINDOW_PROXY_CLASS.lock().unwrap() = clasp as usize;
 }
 
-pub unsafe fn GetWindowProxyClass() -> *const root::JSClass {
+/// The class `SetWindowProxyClass` registered (SpiderMonkey's runtime
+/// `maybeWindowProxyClass`), or null.
+pub fn registered_window_proxy_class() -> *const root::JSClass {
     *WINDOW_PROXY_CLASS.lock().unwrap() as *const root::JSClass
+}
+
+/// jsglue.cpp `GetWindowProxyClass`: the glue's own WindowProxy class, the
+/// one `NewWindowProxy` uses (not the registered one, which starts null).
+pub unsafe fn GetWindowProxyClass() -> *const root::JSClass {
+    &super::proxy::WINDOW_PROXY_CLASS
 }
 
 // --- Pending exceptions (jsapi.h, js/public/Exception.h) ---

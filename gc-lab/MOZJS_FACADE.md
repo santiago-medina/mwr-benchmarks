@@ -270,10 +270,12 @@ handlers run on every object once interfaces exist.
   TypeError, not supported yet), `IsCallable`, `JS_IsNativeFunction`,
   `GetFunctionRealm` (§7.3.24). `JS_ObjectIsFunction` is IsCallable: the
   engine has no callable non-function host objects.
-- Wrappers are the identity, so `IsWindowProxy` compares the class with the
-  registered window proxy class, `JS_IsDeadWrapper` is false and
-  `UnwrapObjectDynamic` returns its argument. `GetCurrentRealmOrNull` reads
-  the context's realm.
+- The only wrapper is the WindowProxy (HOST_EXOTIC.md, E3b): `IsWindowProxy`
+  compares the class with the one `SetWindowProxyClass` registered,
+  `GetWindowProxyClass` is the glue's own class, the unwraps follow a
+  Wrapper-kind proxy to its target (stopping at a WindowProxy when asked) and
+  `JS_IsDeadWrapper` is false. `GetCurrentRealmOrNull` reads the context's
+  realm.
 
 Test: `tests/properties.rs`.
 

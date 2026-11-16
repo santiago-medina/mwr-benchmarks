@@ -904,7 +904,7 @@ pub mod root {
             aHandler: *const ::std::os::raw::c_void,
             aClass: *const root::JSClass,
         ) -> *mut root::JSObject {
-            crate::sys::unimplemented_entry("WrapperNew")
+            crate::sys::imp::WrapperNew(aCx, aObj, aHandler, aClass)
         }
         pub static WindowProxyClass: root::JSClass = unsafe { ::core::mem::zeroed() };
         pub unsafe extern "C" fn GetWindowProxyClass() -> *const root::JSClass {
@@ -915,7 +915,7 @@ pub mod root {
             aObj: root::JS::HandleObject,
             aHandler: *const ::std::os::raw::c_void,
         ) -> *mut root::JSObject {
-            crate::sys::unimplemented_entry("NewWindowProxy")
+            crate::sys::imp::NewWindowProxy(aCx, aObj, aHandler)
         }
         pub unsafe extern "C" fn GetProxyReservedSlot(
             obj: *mut root::JSObject,
@@ -1003,7 +1003,7 @@ pub mod root {
             crate::sys::imp::IsWrapper(obj)
         }
         pub unsafe extern "C" fn UnwrapObjectStatic(obj: *mut root::JSObject) -> *mut root::JSObject {
-            crate::sys::unimplemented_entry("UnwrapObjectStatic")
+            crate::sys::imp::UnwrapObjectStatic(obj)
         }
         pub unsafe extern "C" fn UnwrapObjectDynamic(
             obj: *mut root::JSObject,

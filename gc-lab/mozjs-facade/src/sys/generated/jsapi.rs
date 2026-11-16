@@ -4391,7 +4391,7 @@ pub mod root {
                     crate::sys::unimplemented_entry("IsWindowSlow")
                 }
                 pub unsafe extern "C" fn ToWindowProxyIfWindowSlow(obj: *mut root::JSObject) -> *mut root::JSObject {
-                    crate::sys::unimplemented_entry("ToWindowProxyIfWindowSlow")
+                    crate::sys::imp::ToWindowProxyIfWindowSlow(obj)
                 }
         }
         #[repr(C)]
@@ -5462,7 +5462,7 @@ pub mod root {
                 global: root::JS::Handle<*mut root::JSObject>,
                 windowProxy: root::JS::Handle<*mut root::JSObject>,
             ) {
-                crate::sys::unimplemented_entry("SetWindowProxy")
+                crate::sys::imp::SetWindowProxy(cx, global, windowProxy)
             }
             #[doc = " Returns true iff `obj` has the WindowProxy Class (see SetWindowProxyClass)."]
             pub unsafe extern "C" fn IsWindowProxy(obj: *mut root::JSObject) -> bool {
@@ -5470,7 +5470,7 @@ pub mod root {
             }
             #[doc = " If `obj` is a WindowProxy, get its associated Window (the compartment's\n global), else return `obj`. This function is infallible and never returns\n nullptr."]
             pub unsafe extern "C" fn ToWindowIfWindowProxy(obj: *mut root::JSObject) -> *mut root::JSObject {
-                crate::sys::unimplemented_entry("ToWindowIfWindowProxy")
+                crate::sys::imp::ToWindowIfWindowProxy(obj)
             }
             pub unsafe extern "C" fn IsArgumentsObject(obj: root::JS::HandleObject) -> bool {
                 crate::sys::unimplemented_entry("IsArgumentsObject")

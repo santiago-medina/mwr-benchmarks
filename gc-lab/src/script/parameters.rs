@@ -58,10 +58,11 @@ impl Engine<'_> {
         self.protect(&Value::Object(parameters))?;
         let mut mapped = None;
         self.set_env_strict(parameters, !sloppy);
-        // Sloppy functions coerce `this`: nullish → global object, primitives → wrappers.
+        // Sloppy functions coerce `this` (§10.2.1.2 OrdinaryCallBindThis step 6): nullish
+        // → the callee realm's [[GlobalThisValue]], primitives → wrappers.
         let receiver = match receiver {
             Value::Undefined | Value::Null if sloppy => {
-                Value::Object(self.intrinsics.as_ref().unwrap().global)
+                Value::Object(self.intrinsics.as_ref().unwrap().global_this)
             }
             Value::String(_)
             | Value::Number(_)

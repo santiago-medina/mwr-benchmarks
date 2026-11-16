@@ -296,7 +296,115 @@ pub unsafe fn IsProxyHandlerFamily(obj: *mut root::JSObject) -> bool {
     proxy_state(obj).is_some_and(|p| unsafe { handler(p.handler) }.family == family())
 }
 
+// --- Wrappers and the WindowProxy (HOST_EXOTIC.md, E3b) ---
+
+/// jsglue.cpp `WindowProxyClass`: `PROXY_CLASS_DEF("Proxy",
+/// JSCLASS_HAS_RESERVED_SLOTS(js::SwappableProxyReservedSlots))`, two slots.
+/// Servo registers it with `SetWindowProxyClass(GetWindowProxyClass())`.
+pub static WINDOW_PROXY_CLASS: root::JSClass = root::JSClass {
+    name: c"Proxy".as_ptr(),
+    flags: root::JSCLASS_IS_PROXY
+        | ((2 & root::JSCLASS_RESERVED_SLOTS_MASK) << root::JSCLASS_RESERVED_SLOTS_SHIFT),
+    cOps: ptr::null(),
+    spec: ptr::null(),
+    ext: ptr::null(),
+    oOps: ptr::null(),
+};
+
+/// jsglue.cpp `WrapperNew` (`js::Wrapper::New`): a proxy whose private value
+/// is the target `aObj` and whose prototype is lazy (`TaggedProto::LazyProto`),
+/// so [[GetPrototypeOf]] reaches the handler or, with no trap, the target.
+pub unsafe fn WrapperNew(
+    aCx: *mut root::JSContext,
+    aObj: JS::HandleObject,
+    aHandler: *const c_void,
+    aClass: *const root::JSClass,
+) -> *mut root::JSObject {
+    // SAFETY: a Handle points to a rooted, live object.
+    let private = crate::sys::jsval::ObjectValue(unsafe { *aObj.ptr });
+    let private_h = unsafe { JS::HandleValue::from_marked_location(&private) };
+    unsafe { NewProxyObject(aCx, aHandler, private_h, ptr::null_mut(), aClass, true) }
+}
+
+/// jsglue.cpp `NewWindowProxy`: `WrapperNew` with the WindowProxy class.
+pub unsafe fn NewWindowProxy(
+    aCx: *mut root::JSContext,
+    aObj: JS::HandleObject,
+    aHandler: *const c_void,
+) -> *mut root::JSObject {
+    unsafe { WrapperNew(aCx, aObj, aHandler, &WINDOW_PROXY_CLASS) }
+}
+
+/// The target of a `js::Wrapper` (a proxy of a Wrapper-kind handler), or None.
+pub fn wrapper_target(obj: *mut root::JSObject) -> Option<*mut root::JSObject> {
+    let state = proxy_state(obj)?;
+    // SAFETY: handler words are handler pointers made by this module.
+    let kind = unsafe { handler(state.handler) }.kind;
+    (kind == HandlerKind::Wrapper && state.private.is_object()).then(|| state.private.to_object())
+}
+
+/// js/src/proxy/Wrapper.cpp `js::UncheckedUnwrap`: follow wrappers to the
+/// innermost object, stopping at a WindowProxy when asked.
+pub fn unchecked_unwrap(
+    mut obj: *mut root::JSObject,
+    stop_at_window_proxy: bool,
+) -> *mut root::JSObject {
+    while let Some(target) = wrapper_target(obj) {
+        if stop_at_window_proxy && unsafe { super::props::IsWindowProxy(obj) } {
+            break;
+        }
+        obj = target;
+    }
+    obj
+}
+
 // --- Trap dispatch (FacadeHost::exotic) ---
+
+/// Whether `op` has no trap in `traps`, so a wrapper forwards it. A static
+/// prototype never reaches the handler.
+fn trap_missing(traps: &glue::ProxyTraps, op: &ExoticOp, lazy: bool) -> bool {
+    match op {
+        ExoticOp::GetPrototypeOf => lazy && traps.getPrototype.is_none(),
+        ExoticOp::SetPrototypeOf(_) => lazy && traps.setPrototype.is_none(),
+        ExoticOp::IsExtensible => traps.isExtensible.is_none(),
+        ExoticOp::PreventExtensions => traps.preventExtensions.is_none(),
+        ExoticOp::GetOwnProperty(_) => traps.getOwnPropertyDescriptor.is_none(),
+        ExoticOp::DefineOwnProperty(..) => traps.defineProperty.is_none(),
+        ExoticOp::HasProperty(_) => traps.has.is_none(),
+        ExoticOp::Get(..) => traps.get.is_none(),
+        ExoticOp::Set(..) => traps.set.is_none(),
+        ExoticOp::Delete(_) => traps.delete_.is_none(),
+        ExoticOp::OwnPropertyKeys => traps.ownPropertyKeys.is_none(),
+    }
+}
+
+/// `js::ForwardingProxyHandler`'s default traps: `op` on the wrapper's
+/// target. [[IsExtensible]] and [[PreventExtensions]] have no embedding entry
+/// point yet and stay ordinary on the wrapper (Servo's WindowProxy defines both).
+fn forward(
+    engine: &mut Engine<'_>,
+    target: ObjectId,
+    op: ExoticOp,
+) -> Result<ExoticReply, ScriptError> {
+    Ok(match op {
+        ExoticOp::GetPrototypeOf => ExoticReply::Prototype(engine.prototype_of(target)?),
+        ExoticOp::SetPrototypeOf(p) => ExoticReply::Bool(engine.set_object_prototype(target, p)?),
+        ExoticOp::IsExtensible | ExoticOp::PreventExtensions => ExoticReply::Default,
+        ExoticOp::GetOwnProperty(key) => ExoticReply::Property(engine.own_property(target, key)?),
+        ExoticOp::DefineOwnProperty(key, desc) => {
+            ExoticReply::Bool(engine.define_own_property(target, key, desc)?)
+        }
+        ExoticOp::HasProperty(key) => ExoticReply::Bool(engine.has_property(target, key)?),
+        ExoticOp::Get(key, receiver) => {
+            ExoticReply::Value(engine.get_property_with_receiver(target, key, &receiver)?)
+        }
+        ExoticOp::Set(key, value, receiver) => {
+            ExoticReply::Bool(engine.set_property_with_receiver(target, key, value, &receiver)?)
+        }
+        ExoticOp::Delete(key) => ExoticReply::Bool(engine.delete_property(target, key)?),
+        ExoticOp::OwnPropertyKeys => ExoticReply::Keys(engine.own_property_keys(target)?),
+    })
+}
 
 fn op_ok(result: &JS::ObjectOpResult) -> bool {
     result.code_ == JS::ObjectOpResult_SpecialCodes::OkCode as usize
@@ -326,11 +434,19 @@ pub(super) fn exotic(
         // Wrapper singletons carry no traps: the ordinary algorithms (D).
         return Ok(ExoticReply::Default);
     };
-    let lazy = shared
+    let (lazy, private) = shared
         .proxies
         .borrow()
         .get(&object)
-        .is_some_and(|p| p.lazy_proto);
+        .map_or((false, JSVal::default()), |p| (p.lazy_proto, p.private));
+    // A `js::Wrapper` (CreateWrapperProxyHandler) forwards every trap the
+    // embedder left out to its target, the private object (jsglue.cpp
+    // `WrapperProxyHandler`, js/src/proxy/Wrapper.cpp).
+    let kind = unsafe { handler(handler_word as usize as *const c_void) }.kind;
+    if kind == HandlerKind::Wrapper && private.is_object() && trap_missing(&traps, &op, lazy) {
+        let target = unsafe { object_cell(private.to_object()) }.id;
+        return forward(engine, target, op);
+    }
     let proxy = cx.heap.object(cx, engine, object, ptr::null());
     // SAFETY (all handles below): they point to locals that outlive the trap
     // call; object values are facade cells, which the collector treats as roots.

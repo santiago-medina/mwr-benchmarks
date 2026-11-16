@@ -256,3 +256,9 @@ SetProxyReservedSlot
 GetProxyHandler
 GetProxyHandlerExtra
 IsProxyHandlerFamily
+WrapperNew
+NewWindowProxy
+SetWindowProxy
+ToWindowIfWindowProxy
+ToWindowProxyIfWindowSlow
+UnwrapObjectStatic

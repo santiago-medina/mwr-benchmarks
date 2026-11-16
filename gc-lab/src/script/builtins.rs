@@ -15,6 +15,10 @@ pub(super) struct Intrinsics {
     pub function: Id,
     pub async_function: Id,
     pub global: Id,
+    /// [[GlobalThisValue]] of the realm's global Environment Record (§9.1.1.4): the
+    /// global object unless the host set another (§9.3.3 SetRealmGlobalObject step 3,
+    /// a WindowProxy in HTML).
+    pub global_this: Id,
     pub functions: HashMap<String, Id>,
     pub errors: HashMap<String, Id>,
     pub collection: HashMap<String, Id>,
@@ -404,6 +408,7 @@ impl Engine<'_> {
             function,
             async_function: function,
             global,
+            global_this: global,
             functions: HashMap::new(),
             errors: HashMap::new(),
             collection: HashMap::new(),
