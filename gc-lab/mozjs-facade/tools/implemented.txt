@@ -307,3 +307,6 @@ JS_Stringify
 JS_ParseJSON
 JS_ParseJSON1
 JS_ParseJSON2
+gluebindings.rs:CallJitGetterOp
+gluebindings.rs:CallJitSetterOp
+gluebindings.rs:CallJitMethodOp

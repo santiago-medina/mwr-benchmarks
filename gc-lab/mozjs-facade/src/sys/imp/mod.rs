@@ -13,6 +13,7 @@
 mod barriers;
 mod context;
 mod inspect;
+mod jit;
 mod jobs;
 mod natives;
 mod objects;
@@ -25,6 +26,7 @@ mod stacks;
 pub use barriers::*;
 pub use context::*;
 pub use inspect::*;
+pub use jit::*;
 pub use jobs::*;
 pub use natives::*;
 pub use objects::*;

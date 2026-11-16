@@ -614,6 +614,18 @@ WebIDL `document` on the global (C1 step dom-read failed with
 
 Test: `tests/inspect.rs`.
 
+### JIT-info glue (WebIDL accessors and methods)
+
+Servo's generated bindings call every DOM attribute getter, setter and
+regular method through `CallJitGetterOp`, `CallJitSetterOp` and
+`CallJitMethodOp` (mozjs `jsglue.cpp`). `src/sys/imp/jit.rs` unpacks the
+JSNative `vp` array the way `JS::CallArgs` lays it out: the getter gets a
+handle to `vp[0]` (rval), the setter a handle to `vp[2]` (`args[0]`), and
+the method a `JSJitMethodCallArgs` with `argv = vp + 2`, `argc` and the
+constructing bit (`vp[1]` is magic). An info with no op returns false
+instead of calling through null. Pure FFI; the engine is not involved.
+Test: `tests/jit.rs`.
+
 ## Next (C1)
 
 1. Drive the C0 count to 0. Expected sources of errors: items the 0.26.4 Rust

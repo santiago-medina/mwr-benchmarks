@@ -836,7 +836,7 @@ pub mod root {
             argc: ::std::os::raw::c_uint,
             vp: *mut root::JS::Value,
         ) -> bool {
-            crate::sys::unimplemented_entry("CallJitGetterOp")
+            crate::sys::imp::CallJitGetterOp(info, cx, thisObj, specializedThis, argc, vp)
         }
         pub unsafe extern "C" fn CallJitSetterOp(
             info: *const root::JSJitInfo,
@@ -846,7 +846,7 @@ pub mod root {
             argc: ::std::os::raw::c_uint,
             vp: *mut root::JS::Value,
         ) -> bool {
-            crate::sys::unimplemented_entry("CallJitSetterOp")
+            crate::sys::imp::CallJitSetterOp(info, cx, thisObj, specializedThis, argc, vp)
         }
         pub unsafe extern "C" fn CallJitMethodOp(
             info: *const root::JSJitInfo,
@@ -856,7 +856,7 @@ pub mod root {
             argc: u32,
             vp: *mut root::JS::Value,
         ) -> bool {
-            crate::sys::unimplemented_entry("CallJitMethodOp")
+            crate::sys::imp::CallJitMethodOp(info, cx, thisObj, specializedThis, argc, vp)
         }
         pub unsafe extern "C" fn CreateProxyHandler(
             aTraps: *const root::ProxyTraps,
