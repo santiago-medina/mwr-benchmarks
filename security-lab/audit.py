@@ -77,8 +77,20 @@ def annotate_reviewed_isdot(findings, sources):
             continue
         # Require the IsDot assignment to be present in the same function.
         # This does not substitute for compiler-based dataflow analysis.
-        prior = "\n".join(lines[max(0, index - 90):index])
-        if "IsDot(path_value.substr(i))" not in prior:
+        prior_lines = lines[max(0, index - 90):index]
+        call_positions = [
+            i for i, line in enumerate(prior_lines)
+            if "IsDot(path_value.substr(i))" in line
+        ]
+        if not call_positions:
+            continue
+        # A helper call in an earlier function cannot establish an
+        # invariant for the current read. Top-level closing braces are
+        # a conservative boundary in this Chromium source.
+        if any(
+            line.strip() == "}" and line.startswith("}")
+            for line in prior_lines[call_positions[-1] + 1:]
+        ):
             continue
         finding["status"] = "reviewed-likely-false-positive"
         finding["priority"] = "info"
