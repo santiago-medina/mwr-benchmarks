@@ -63,6 +63,28 @@ class AuditTests(unittest.TestCase):
             ["reviewed-likely-false-positive", "needs-human-review"],
         )
 
+    def test_isdot_call_in_previous_function_does_not_downgrade(self):
+        source = (
+            "void prior() {\n"
+            "  IsDot(path_value.substr(i));\n"
+            "}\n"
+            "void current() {\n"
+            "  if (dotlen == 3 && is_preserving_percent_encoded_dot_in_path) {\n"
+            "    output->push_back(path_value[i + 2]);\n"
+            "  }\n"
+            "}\n"
+        )
+        helper = (
+            "if (spec.size() >= 3 && spec[0] == '%' && spec[1] == '2' && "
+            "(spec[2] == 'e' || spec[2] == 'E')) return 3;"
+        )
+        findings = triage(source, "url/url_canon_path.cc")
+        annotate_reviewed_isdot(findings, {
+            "url/url_canon_path.cc": source,
+            "url/url_canon_internal.h": helper,
+        })
+        self.assertEqual(findings[0]["status"], "needs-human-review")
+
     def test_report_never_claims_confirmed_issue(self):
         report = audit({"url/url_canon_path.cc": "DCHECK(valid);", "url/url_canon_unittest.cc": "TEST(Example, Ok) {}"})
         self.assertEqual(report["confirmed_vulnerabilities"], 0)
